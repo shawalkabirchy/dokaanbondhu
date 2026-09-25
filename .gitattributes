@@ -1,0 +1,2 @@
+# Keep LF line endings on every machine (Prettier's endOfLine is lf, spec 3.5)
+* text=auto eol=lf

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalPassThroughEnv": [
+    "PLATFORM_DATABASE_URL",
+    "PLATFORM_ADMIN_DATABASE_URL",
+    "PLATFORM_MIGRATION_DATABASE_URL",
+    "PLATFORM_API_PASSWORD",
+    "PLATFORM_ADMIN_PASSWORD",
+    "SUPABASE_URL",
+    "SUPABASE_SECRET_KEY",
+    "JWT_TEST_SECRET",
+    "AES_KEY",
+    "EVAL_MODE_SECRET",
+    "LOG_LEVEL",
+    "PORT",
+    "EVAL_SERVER_URL",
+    "EVAL_SHOP_ID",
+    "EVAL_OWNER_EMAIL",
+    "EVAL_OWNER_PASSWORD",
+    "EVAL_STAFF_EMAIL",
+    "EVAL_STAFF_PASSWORD",
+    "EXPO_PUBLIC_API_BASE_URL",
+    "EXPO_PUBLIC_SUPABASE_URL",
+    "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+  ],
+  "tasks": {
+    "typecheck": {},
+    "test": {
+      "cache": false
+    }
+  }
+}

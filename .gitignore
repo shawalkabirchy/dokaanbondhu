@@ -1,0 +1,14 @@
+node_modules/
+.turbo/
+.next/
+dist/
+coverage/
+.expo/
+android/
+ios/
+.env.local
+.env*.local
+__pycache__/
+.venv/
+*.jks
+*.keystore
