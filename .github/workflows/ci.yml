@@ -1,5 +1,5 @@
-# DokaanBondhu CI (spec 18.3). integration, python and mobile are placeholders until their steps:
-# integration and python in step 2, mobile when the app is created in step 2.
+# DokaanBondhu CI (spec 18.3). python and mobile are placeholders until the speech worker and the app exist
+# (later in step 2).
 name: CI
 
 on: [push, pull_request]
@@ -31,15 +31,61 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env: # throwaway values, local to the job's container
+      PLATFORM_MIGRATION_DATABASE_URL: postgres://postgres:ci@localhost:5432/platform
+      PLATFORM_DATABASE_URL: postgres://platform_api:ci-platform-api@localhost:5432/platform
+      PLATFORM_ADMIN_DATABASE_URL: postgres://platform_admin:ci-platform-admin@localhost:5432/platform
+      PLATFORM_API_PASSWORD: ci-platform-api
+      PLATFORM_ADMIN_PASSWORD: ci-platform-admin
+      GEARGRID_ENV: ci
+      MIGRATION_DATABASE_URL: postgres://postgres:ci@localhost:5432/geargrid # GearGrid's own scripts
+      APP_API_PASSWORD: ci-app-api
+      DOKAAN_RO_PASSWORD: ci-dokaan-ro
     steps:
-      - run: echo "Integration tests start in step 2 (spec 18.3)."
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5 # GearGrid is public, so no key is needed (D66)
+        with:
+          repository: shawalkabirchy/geargrid
+          ref: main
+          path: geargrid
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            geargrid/package-lock.json
+      - name: Create the platform and geargrid databases in the one container
+        run: |
+          psql postgres://postgres:ci@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "create database platform" -c "create database geargrid"
+          echo "SEED_API_KEY=ggk_$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+      - name: GearGrid, the test host (bootstrap, migrate, roles, seed)
+        working-directory: geargrid
+        run: |
+          npm ci
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/bootstrap.sql
+          npm run db:migrate && npm run db:roles && npm run db:seed
+      - name: Platform database (bootstrap, migrate, roles)
+        run: |
+          npm ci
+          psql "$PLATFORM_MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/platform-db/bootstrap.sql
+          npm run db:migrate && npm run db:roles
+      - run: npm run test:integration
 
   python:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Speech worker tests start in step 2 (spec 18.3)."
+      - run: echo "Speech worker tests start later in step 2 (spec 18.3)."
 
   mobile:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Mobile app checks start in step 2 (spec 18.3)."
+      - run: echo "Mobile app checks start later in step 2 (spec 18.3)."
