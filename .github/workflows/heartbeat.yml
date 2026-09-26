@@ -1,0 +1,19 @@
+# Daily "select 1" against dokaan-dev, so the free Supabase project is never paused for inactivity (spec 7.4, D37).
+# dokaan-prod joins in step 9 (D59). The secret DOKAAN_DEV_DATABASE_URL uses the project's postgres user through the
+# session pooler and ends with ?sslmode=verify-full only; PGSSLROOTCERT points psql at the checked-out certificate.
+name: Heartbeat
+
+on:
+  schedule:
+    - cron: "23 3 * * *" # every day at 09:23 in Dhaka
+  workflow_dispatch:
+
+jobs:
+  select-one:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: psql "$DOKAAN_DEV_DATABASE_URL" -v ON_ERROR_STOP=1 -c "select 1"
+        env:
+          DOKAAN_DEV_DATABASE_URL: ${{ secrets.DOKAAN_DEV_DATABASE_URL }}
+          PGSSLROOTCERT: ${{ github.workspace }}/certs/supabase-root-2021.crt
