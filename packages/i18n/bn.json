@@ -1,0 +1,28 @@
+{
+  "errors": {
+    "VALIDATION_FAILED": "অনুরোধটি সঠিক নয়।",
+    "UNAUTHENTICATED": "আবার লগইন করুন।",
+    "SETUP_TOKEN_INVALID": "এই সেটআপ লিংকটি সঠিক নয় বা এর মেয়াদ শেষ।",
+    "FORBIDDEN": "এটা শুধু মালিক করতে পারেন।",
+    "USER_DISABLED": "এই লগইন বন্ধ করা আছে। মালিককে বলুন।",
+    "UNDO_NOT_ALLOWED": "এটা আপনি ফেরাতে পারবেন না।",
+    "EXTERNAL_PROVIDERS_NOT_ALLOWED": "মালিক বাইরের এআই সেবা চালু করেননি।",
+    "NOT_FOUND": "পাওয়া যায়নি।",
+    "TURN_NOT_FOUND": "রেকর্ডিংটি পাওয়া যায়নি। আবার বলুন।",
+    "CONVERSATION_NOT_FOUND": "কথোপকথনটি পাওয়া যায়নি।",
+    "CHUNKS_MISSING": "রেকর্ডিংয়ের কিছু অংশ পাওয়া যায়নি।",
+    "ACTION_EXPIRED": "নিশ্চিত করার সময় শেষ। আবার বলুন।",
+    "ACTION_NOT_PENDING": "এই কাজটি আগেই শেষ হয়েছে।",
+    "UNDO_NOT_AVAILABLE": "এটা ফেরানো যায় না।",
+    "CAPABILITY_NOT_VERIFIED": "আগে স্যান্ডবক্সে এই কাজটি যাচাই করুন।",
+    "CHUNK_TOO_LARGE": "রেকর্ডিংয়ের একটি অংশ খুব বড়।",
+    "TURN_TOO_LONG": "৩০ সেকেন্ডের কম সময় ধরে বলুন।",
+    "RATE_LIMITED": "অনেক বেশি অনুরোধ। একটু অপেক্ষা করুন।",
+    "CONNECTION_FAILED": "দোকানের অ্যাপে পৌঁছানো যায়নি।",
+    "HOST_ERROR": "দোকানের অ্যাপে সমস্যা হয়েছে।",
+    "ASSISTANT_UNAVAILABLE": "এখন উত্তর দেওয়া যাচ্ছে না।",
+    "SPEECH_UNAVAILABLE": "এখন ভয়েস কাজ করছে না। লিখে পাঠান।",
+    "TTS_UNAVAILABLE": "উত্তরটি শুধু লেখায় দেখানো হলো।",
+    "INTERNAL": "কিছু একটা ভুল হয়েছে।"
+  }
+}

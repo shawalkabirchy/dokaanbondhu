@@ -1,0 +1,28 @@
+{
+  "errors": {
+    "VALIDATION_FAILED": "The request is not valid.",
+    "UNAUTHENTICATED": "Please sign in again.",
+    "SETUP_TOKEN_INVALID": "This setup link is not valid or has expired.",
+    "FORBIDDEN": "Only the owner can do this.",
+    "USER_DISABLED": "This login is turned off. Please ask the owner.",
+    "UNDO_NOT_ALLOWED": "You cannot undo this.",
+    "EXTERNAL_PROVIDERS_NOT_ALLOWED": "The owner has not allowed outside AI services.",
+    "NOT_FOUND": "Not found.",
+    "TURN_NOT_FOUND": "This recording was not found. Please speak again.",
+    "CONVERSATION_NOT_FOUND": "This conversation was not found.",
+    "CHUNKS_MISSING": "Part of the recording is missing.",
+    "ACTION_EXPIRED": "Too late to confirm. Please ask again.",
+    "ACTION_NOT_PENDING": "This action is already finished.",
+    "UNDO_NOT_AVAILABLE": "This cannot be undone.",
+    "CAPABILITY_NOT_VERIFIED": "Check this action in the sandbox first.",
+    "CHUNK_TOO_LARGE": "A piece of the recording is too large.",
+    "TURN_TOO_LONG": "Please speak for less than 30 seconds.",
+    "RATE_LIMITED": "Too many requests. Please wait a moment.",
+    "CONNECTION_FAILED": "Could not reach the shop's app.",
+    "HOST_ERROR": "The shop's app had a problem.",
+    "ASSISTANT_UNAVAILABLE": "The assistant cannot answer right now.",
+    "SPEECH_UNAVAILABLE": "Voice is not working right now. Please type.",
+    "TTS_UNAVAILABLE": "The answer is shown as text only.",
+    "INTERNAL": "Something went wrong."
+  }
+}

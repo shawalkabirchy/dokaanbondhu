@@ -1,0 +1,19 @@
+{
+  "name": "@dokaanbondhu/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./crypto": "./src/crypto/index.ts",
+    "./log": "./src/log/index.ts",
+    "./providers": "./src/providers/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests --exclude \"**/*.integration.test.ts\""
+  },
+  "dependencies": {
+    "@dokaanbondhu/core": "*",
+    "pino": "10.3.1"
+  }
+}
