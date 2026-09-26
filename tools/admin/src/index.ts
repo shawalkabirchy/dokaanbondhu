@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
+import { llmChain, llmStream, type ToolDef } from "@dokaanbondhu/engine/providers";
 import { aiProviders, createPlatform, shops, users, type Platform } from "@dokaanbondhu/platform-db";
 import { createClient } from "@supabase/supabase-js";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -202,6 +203,88 @@ const commands: Record<string, Command> = {
       return rowId;
     });
     out(`Provider ${provider} (${job}, ${shopId ?? "global"}): ${id}`);
+  },
+
+  /**
+   * try-llm --shop <id> --question <text> [--extra-body <json>]: one question through the shop's LLM chain with the
+   * find_parts tool, printing the tool call and the timings (proof P4 in step 2, P10 on the pod). Test data only.
+   */
+  "try-llm": async (platform, args) => {
+    const { values } = parseArgs({
+      args,
+      options: { shop: { type: "string" }, question: { type: "string" }, "extra-body": { type: "string" } },
+    });
+    const shopId = uuid.parse(values.shop);
+    const question = z.string().min(1).parse(values.question);
+    const extraBody = values["extra-body"] === undefined ? undefined : JSON.parse(values["extra-body"]);
+    if (!env.success) throw new Error("unreachable");
+    const { rows, settings } = await platform.withAdmin(async (tx) => {
+      const [shop] = await tx.select().from(shops).where(eq(shops.id, shopId));
+      if (!shop) throw new Error(`no shop ${shopId}`);
+      const rows = await tx
+        .select()
+        .from(aiProviders)
+        .where(sql`${aiProviders.shopId} = ${shopId} or ${aiProviders.shopId} is null`);
+      return { rows, settings: shop.settings };
+    });
+    const withBody =
+      extraBody === undefined ? rows : rows.map((row) => ({ ...row, options: { extra_body: extraBody } }));
+    const chain = llmChain(
+      withBody,
+      shopId,
+      settings.external_providers_allowed === true,
+      parseAesKey(env.data.AES_KEY),
+    );
+    if (chain.length === 0) throw new Error("no LLM provider applies to this shop");
+    const findParts: ToolDef = {
+      type: "function",
+      function: {
+        name: "find_parts",
+        description:
+          "Search the shop's catalog for spare parts. Every argument is a string, as the user said it.",
+        parameters: {
+          type: "object",
+          properties: Object.fromEntries(
+            ["part_type", "vehicle", "year", "engine", "position", "quality", "brand", "part_number"].map(
+              (name) => [name, { type: "string" }],
+            ),
+          ),
+          required: ["part_type"],
+        },
+      },
+    };
+    const started = Date.now();
+    const marks: Record<string, number> = {};
+    let text = "";
+    let reasoningChars = 0;
+    let provider = "";
+    for await (const delta of llmStream(
+      chain,
+      {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You help the staff of a car spare parts shop in Bangladesh. To answer about parts, call find_parts.",
+          },
+          { role: "user", content: question },
+        ],
+        tools: [findParts],
+        temperature: 0,
+        maxTokens: 512,
+      },
+      { onFallback: (id, reason) => out(`fallback from ${id}: ${reason}`) },
+    )) {
+      provider = delta.providerId;
+      marks[delta.type] ??= Date.now() - started;
+      if (delta.type === "reasoning") reasoningChars += delta.text.length;
+      if (delta.type === "text") text += delta.text;
+      if (delta.type === "tool_calls")
+        for (const call of delta.calls) out(`tool call: ${call.name} ${call.arguments}`);
+    }
+    out(`provider: ${provider}`);
+    out(`timings (ms from the request): ${JSON.stringify(marks)}; total ${Date.now() - started}`);
+    out(`reasoning characters: ${reasoningChars}${text ? `; text: ${text}` : ""}`);
   },
 
   /** list-shops */
