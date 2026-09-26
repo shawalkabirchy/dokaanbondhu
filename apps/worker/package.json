@@ -1,0 +1,20 @@
+{
+  "name": "@dokaanbondhu/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../../.env.local --import tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests --exclude \"**/*.integration.test.ts\""
+  },
+  "dependencies": {
+    "@dokaanbondhu/engine": "*",
+    "@dokaanbondhu/platform-db": "*",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "pg-boss": "12.34.0",
+    "tsx": "4.23.15",
+    "zod": "4.6.5"
+  }
+}

@@ -24,5 +24,85 @@
     "SPEECH_UNAVAILABLE": "Voice is not working right now. Please type.",
     "TTS_UNAVAILABLE": "The answer is shown as text only.",
     "INTERNAL": "Something went wrong."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "retry": "Try again",
+    "error": "Something went wrong."
+  },
+  "login": {
+    "title": "DokaanBondhu",
+    "subtitle": "Sign in to your shop",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "failed": "Wrong email or password."
+  },
+  "tabs": {
+    "voice": "Voice",
+    "chat": "Chat",
+    "history": "History",
+    "staff": "Staff",
+    "more": "More"
+  },
+  "offline": {
+    "banner": "The assistant is offline. The shop's own app keeps working.",
+    "mic_off": "Voice is off right now. You can still type."
+  },
+  "status": {
+    "listening": "Listening…",
+    "searching": "Searching…"
+  },
+  "voice": {
+    "hold": "Hold to talk",
+    "coming": "Spoken answers come in step 4. For now this page checks the recording.",
+    "check_title": "Recording check",
+    "chunks": "Chunks",
+    "last_chunk": "Last chunk",
+    "total": "Total",
+    "stream_test": "Test the reply stream"
+  },
+  "chat": {
+    "coming": "Chat answers come in step 3."
+  },
+  "history": {
+    "coming": "The action history comes in step 5."
+  },
+  "settings": {
+    "title": "Settings",
+    "shop": "Shop",
+    "signed_in_as": "Signed in as",
+    "role_owner": "Owner",
+    "role_staff": "Staff",
+    "language": "Language",
+    "voice": "Voice",
+    "external": "Allow outside AI services",
+    "staff_price": "Staff may change prices",
+    "saved": "Saved.",
+    "advanced": "Advanced",
+    "server": "Server address",
+    "server_check": "Check and save",
+    "server_ok": "Server found. Saved.",
+    "server_bad": "No DokaanBondhu server answers at this address.",
+    "server_https": "Only https addresses are allowed.",
+    "sign_out": "Sign out"
+  },
+  "staff": {
+    "title": "Staff",
+    "add": "Add a staff login",
+    "name": "Name",
+    "email": "Email",
+    "password": "Password (at least 8 characters)",
+    "phone": "Phone (optional)",
+    "create": "Add",
+    "created": "Staff login added.",
+    "disable": "Turn off",
+    "enable": "Turn on",
+    "active": "Active",
+    "disabled": "Off",
+    "owner": "Owner",
+    "none": "No staff logins yet."
   }
 }

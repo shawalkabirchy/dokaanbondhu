@@ -1,5 +1,4 @@
-# DokaanBondhu CI (spec 18.3). python and mobile are placeholders until the speech worker and the app exist
-# (later in step 2).
+# DokaanBondhu CI (spec 18.3). python is a placeholder until the speech worker exists (later in step 2).
 name: CI
 
 on: [push, pull_request]
@@ -88,4 +87,15 @@ jobs:
   mobile:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Mobile app checks start later in step 2 (spec 18.3)."
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Expo SDK 57 versions (typescript is pinned on purpose, spec 3.4)
+        working-directory: apps/mobile
+        run: npx expo install --check
+      - name: App tests (Jest)
+        working-directory: apps/mobile
+        run: npx jest
