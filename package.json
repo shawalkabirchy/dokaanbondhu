@@ -16,11 +16,17 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:generate": "drizzle-kit generate --config packages/platform-db/drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config packages/platform-db/drizzle.config.ts",
+    "db:roles": "node --env-file-if-exists=.env.local --import tsx packages/platform-db/scripts/roles.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.6",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.10",
     "eslint": "10.11.0",
     "prettier": "3.9.9",
     "turbo": "2.11.0",
@@ -28,5 +34,11 @@
     "typescript-eslint": "8.70.1",
     "vite": "8.3.0",
     "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "tsx": "4.23.15",
+    "zod": "4.6.5"
   }
 }
