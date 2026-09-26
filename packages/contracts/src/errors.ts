@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// The error shape of every endpoint that does not stream, the same nested shape GearGrid uses (spec 8.6).
+// The error shape of every endpoint that does not stream: one nested error object (spec 8.6).
 
 export const ERROR_CODES = [
   "VALIDATION_FAILED",

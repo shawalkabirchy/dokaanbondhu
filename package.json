@@ -20,7 +20,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:generate": "drizzle-kit generate --config packages/platform-db/drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config packages/platform-db/drizzle.config.ts",
-    "db:roles": "node --env-file-if-exists=.env.local --import tsx packages/platform-db/scripts/roles.ts"
+    "db:roles": "node --env-file-if-exists=.env.local --import tsx packages/platform-db/scripts/roles.ts",
+    "admin": "node --env-file-if-exists=.env.local --import tsx tools/admin/src/index.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
