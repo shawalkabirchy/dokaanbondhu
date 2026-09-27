@@ -1,6 +1,6 @@
 # Consent form: voice recordings for the DokaanBondhu AI test set
 
-> **Draft (step 2, D62, D76). To check before use.** Fill in every `[…]` before printing. One signed copy per
+> **Draft (step 2, D62, D76). To check before use.** The names, contact and dates below are **sample values (28 Sep): replace them with the real ones before printing**. One signed copy per
 > speaker; keep it with the project records. The speaker gets a copy.
 
 ---
@@ -10,7 +10,7 @@
 ### দোকানবন্ধু এআই: পরীক্ষার জন্য ভয়েস রেকর্ডিংয়ের সম্মতিপত্র
 
 **প্রকল্প:** দোকানবন্ধু এআই, গাড়ির যন্ত্রাংশের দোকানের জন্য বাংলা ভয়েস ও চ্যাট সহকারী (একটি ক্যাপস্টোন প্রকল্প)।
-**গবেষক:** [নাম], [বিশ্ববিদ্যালয় ও বিভাগ]। **তত্ত্বাবধায়ক:** [নাম]। **যোগাযোগ:** [ফোন / ইমেইল]।
+**গবেষক:** আরিফ হোসেন, কম্পিউটার সায়েন্স অ্যান্ড ইঞ্জিনিয়ারিং বিভাগ, এক্সাম্পল ইউনিভার্সিটি, ঢাকা। **তত্ত্বাবধায়ক:** ড. নুসরাত জাহান। **যোগাযোগ:** ০১৭০০-০০০০০০ / researcher@example.com।
 
 **আপনাকে কী করতে হবে।** আপনি কিছু ছোট কার্ড পাবেন। প্রতিটি কার্ডে একটি কাজ লেখা থাকবে, যেমন "জিজ্ঞেস করুন ২০১৪
 সালের এক্সিওর সামনের ব্রেক প্যাড আছে কি না"। আপনি অ্যাপের বোতাম চেপে ধরে নিজের ভাষায় কাজটি বলবেন। প্রতিটি রেকর্ডিং
@@ -29,9 +29,9 @@
 
 রেকর্ডিং দিয়ে কোনো এআই মডেলকে প্রশিক্ষণ দেওয়া হবে না, এবং তা কাউকে বিক্রি বা শেয়ার করা হবে না।
 
-**মুছে ফেলা।** প্রকল্প শেষ হলে, [তারিখ]-এর মধ্যে, উপরের সব জায়গা থেকে সব কপি মুছে ফেলা হবে।
+**মুছে ফেলা।** প্রকল্প শেষ হলে, ৩১ জানুয়ারি ২০২৭-এর মধ্যে, উপরের সব জায়গা থেকে সব কপি মুছে ফেলা হবে।
 
-**আপনার অধিকার।** অংশ নেওয়া সম্পূর্ণ আপনার ইচ্ছা। যেকোনো সময় থামতে পারেন। চূড়ান্ত পরীক্ষার আগে ([তারিখ]) যোগাযোগ
+**আপনার অধিকার।** অংশ নেওয়া সম্পূর্ণ আপনার ইচ্ছা। যেকোনো সময় থামতে পারেন। চূড়ান্ত পরীক্ষার আগে (১৫ ডিসেম্বর ২০২৬) যোগাযোগ
 করলে আপনার সব রেকর্ডিং মুছে ফেলা হবে, কোনো কারণ বলতে হবে না। রেকর্ডিংয়ে কোনো ক্রেতা বা অন্য কারও কণ্ঠ পরিষ্কার শোনা গেলে
 সেটি আবার রেকর্ড করা হবে।
 
@@ -48,7 +48,7 @@
 ### DokaanBondhu AI: consent to voice recordings for the test set
 
 **Project:** DokaanBondhu AI, a Bangla voice and chat assistant for car spare parts shops (a capstone project).
-**Researcher:** [name], [university and department]. **Supervisor:** [name]. **Contact:** [phone / email].
+**Researcher:** Arif Hossain, Department of Computer Science and Engineering, Example University, Dhaka. **Supervisor:** Dr. Nusrat Jahan. **Contact:** 01700-000000 / researcher@example.com.
 
 **What you will do.** You get short cards. Each card describes one task, such as "Ask whether a front brake pad for a
 2014 Axio is in stock". You hold the button in the app and say the task in your own words. Each recording lasts a few
@@ -67,10 +67,10 @@ totals (for example percentages). Your name appears nowhere; you get a code inst
 
 The recordings are not used to train any AI model, and they are not sold or shared.
 
-**Deletion.** After the project, by [date], every copy is deleted from all the places above.
+**Deletion.** After the project, by 31 January 2027, every copy is deleted from all the places above.
 
 **Your rights.** Taking part is voluntary. You may stop at any time. If you ask before the final evaluation
-([date]), all your recordings are deleted, and you need not give a reason. A recording in which a customer or anyone
+(15 December 2026), all your recordings are deleted, and you need not give a reason. A recording in which a customer or anyone
 else can be clearly heard is recorded again.
 
 ☐ I have read this, or had it read to me, and I agree.
