@@ -1,0 +1,12 @@
+# The speech worker's working set (spec 14.1), installed into the Modal image. After P2 the installed set is
+# frozen into requirements.lock, which the pod uses (spec 19.2).
+torch==2.5.1
+faster-whisper==1.1.1
+ctranslate2==4.5.0
+parler-tts @ git+https://github.com/huggingface/parler-tts.git@d108732cd57788ec86bc857d99a6cabd66663d68
+sentencepiece
+fastapi
+uvicorn[standard]
+python-multipart
+soundfile
+huggingface_hub

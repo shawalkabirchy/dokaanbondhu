@@ -1,0 +1,14 @@
+# The light set CI installs for the speech worker's tests (spec 14.1, 18.3): no torch, no parler-tts.
+# faster-whisper's CPU parts decode audio and run the VAD; the models are fakes.
+fastapi==0.141.1
+python-multipart==0.0.32
+numpy==2.4.6
+soundfile==0.14.0
+faster-whisper==1.1.1
+ctranslate2==4.5.0
+# below 1.0 like the full set (transformers 4.46.1); it brings requests, which faster-whisper 1.1.1 imports
+huggingface-hub==0.36.2
+httpx==0.28.1
+pytest==9.1.1
+# ctranslate2 4.5.0 imports pkg_resources on Windows only (local runs on the laptop)
+setuptools==80.9.0; sys_platform == "win32"
