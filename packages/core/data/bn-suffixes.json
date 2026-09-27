@@ -1,0 +1,22 @@
+{
+  "comment": "Grammatical endings removed once when matching a token (spec 10.1): genitive, dative, locative and classifier endings, longest first.",
+  "bn": [
+    "গুলোর",
+    "গুলো",
+    "গুলা",
+    "টার",
+    "টির",
+    "টাকে",
+    "েরটা",
+    "ের",
+    "এর",
+    "র",
+    "কে",
+    "রে",
+    "তে",
+    "টা",
+    "টি",
+    "খানা"
+  ],
+  "latin": ["gulo", "gula", "er", "ke", "re", "te", "ta", "ti", "r"]
+}

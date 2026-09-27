@@ -1,0 +1,4 @@
+{
+  "comment": "Part types that do the same job in different forms (spec 10.7): when the asked type has no recorded fitment at that position but its pair has, the pair is used and named. Used only with the pair's own recorded fitment.",
+  "pairs": [["Brake Pad", "Brake Shoe"]]
+}

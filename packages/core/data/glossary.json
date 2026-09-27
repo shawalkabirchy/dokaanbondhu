@@ -1,0 +1,535 @@
+[
+  {
+    "target_concept": "part_type",
+    "target_value": "Starter Motor",
+    "bn": ["সেলফ", "সেলফ মোটর", "স্টার্টার", "স্টার্টার মোটর"],
+    "latin": ["self", "selph", "self motor", "starter", "starter motor"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Alternator",
+    "bn": ["ডায়নামো", "অল্টারনেটর"],
+    "latin": ["dynamo", "dainamo", "alternator"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Spark Plug",
+    "bn": ["প্লাগ", "স্পার্ক প্লাগ", "ইরিডিয়াম প্লাগ"],
+    "latin": ["plug", "spark plug", "iridium plug"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Ignition Coil",
+    "bn": ["কয়েল", "ইগনিশন কয়েল"],
+    "latin": ["coil", "koyel", "ignition coil"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Battery",
+    "bn": ["ব্যাটারি"],
+    "latin": ["battery", "betari"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Headlight",
+    "bn": ["হেডলাইট", "হেড লাইট"],
+    "latin": ["headlight", "head light", "head lamp"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Tail Light",
+    "bn": ["ব্যাকলাইট", "টেইল লাইট", "পেছনের বাতি"],
+    "latin": ["backlight", "back light", "tail light", "tail lamp"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Brake Pad",
+    "bn": ["ব্রেক প্যাড", "প্যাড"],
+    "latin": ["brake pad", "break pad", "pad"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Brake Shoe",
+    "bn": ["লাইনিং", "ব্রেক শু", "ব্রেক লাইনিং"],
+    "latin": ["lining", "brake shoe", "break shoe", "brake shu"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Brake Disc",
+    "bn": ["ডিস্ক", "ব্রেক ডিস্ক"],
+    "latin": ["disc", "disk", "brake disc", "rotor"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Shock Absorber",
+    "bn": ["শক", "শকার", "শক অ্যাবজর্বার", "শক এবজরবার"],
+    "latin": ["shock", "shocker", "shock absorber"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Ball Joint",
+    "bn": ["বল জয়েন্ট"],
+    "latin": ["ball joint", "bol joint"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Tie Rod End",
+    "bn": ["টাই রড", "টাই রড এন্ড"],
+    "latin": ["tie rod", "tai rod", "tie rod end"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Bushing",
+    "bn": ["বুশ", "বুশিং"],
+    "latin": ["bush", "bushing"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Engine Mount",
+    "bn": ["মাউন্টিং", "ইঞ্জিন মাউন্ট"],
+    "latin": ["mounting", "engine mount"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Engine Oil",
+    "bn": ["মবিল", "ইঞ্জিন অয়েল"],
+    "latin": ["mobil", "mobile", "engine oil"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Oil Filter",
+    "bn": ["মবিল ফিল্টার", "অয়েল ফিল্টার", "তেলের ফিল্টার"],
+    "latin": ["mobil filter", "oil filter"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Air Filter",
+    "bn": ["এয়ার ফিল্টার", "হাওয়া ফিল্টার", "বাতাসের ফিল্টার"],
+    "latin": ["air filter", "hawa filter", "air cleaner"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Cabin Filter",
+    "bn": ["এসি ফিল্টার", "কেবিন ফিল্টার"],
+    "latin": ["ac filter", "cabin filter"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Fuel Filter",
+    "bn": ["ফুয়েল ফিল্টার", "তেল ফিল্টার"],
+    "latin": ["fuel filter", "diesel filter"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Fan Belt",
+    "bn": ["ফ্যান বেল্ট", "ফ্যানবেল্ট"],
+    "latin": ["fan belt", "fanbelt", "drive belt"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Timing Belt",
+    "bn": ["টাইমিং বেল্ট"],
+    "latin": ["timing belt"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Timing Chain Kit",
+    "bn": ["টাইমিং চেইন", "টাইমিং চেইন কিট"],
+    "latin": ["timing chain", "timing chain kit"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Gasket",
+    "bn": ["গ্যাসকেট"],
+    "latin": ["gasket", "gaskit"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Radiator",
+    "bn": ["রেডিয়েটর", "রেডিয়েটার"],
+    "latin": ["radiator", "rediator"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Radiator Cap",
+    "bn": ["রেডিয়েটর ক্যাপ", "রেডিয়েটরের ঢাকনা"],
+    "latin": ["radiator cap"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Radiator Hose",
+    "bn": ["রেডিয়েটর হোস", "হোস পাইপ"],
+    "latin": ["radiator hose", "hose pipe"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Cooling Fan",
+    "bn": ["কুলিং ফ্যান", "রেডিয়েটর ফ্যান"],
+    "latin": ["cooling fan", "radiator fan"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Water Pump",
+    "bn": ["ওয়াটার পাম্প", "পানির পাম্প"],
+    "latin": ["water pump", "pani pump"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Thermostat",
+    "bn": ["থার্মোস্ট্যাট", "থার্মোস্টেট"],
+    "latin": ["thermostat"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Clutch Plate",
+    "bn": ["ক্লাচ প্লেট"],
+    "latin": ["clutch plate", "clach plate"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Clutch Cover",
+    "bn": ["প্রেসার প্লেট", "ক্লাচ কভার"],
+    "latin": ["pressure plate", "clutch cover"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Silencer",
+    "bn": ["সাইলেন্সার"],
+    "latin": ["silencer", "muffler"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Oxygen Sensor",
+    "bn": ["অক্সিজেন সেন্সর"],
+    "latin": ["oxygen sensor", "o2 sensor"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Fuel Pump",
+    "bn": ["ফুয়েল পাম্প", "তেলের পাম্প"],
+    "latin": ["fuel pump"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Wheel Bearing",
+    "bn": ["বিয়ারিং", "চাকার বিয়ারিং"],
+    "latin": ["bearing", "wheel bearing"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Stabilizer Link",
+    "bn": ["স্টেবিলাইজার লিংক"],
+    "latin": ["stabilizer link", "stabiliser link"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Side Mirror",
+    "bn": ["লুকিং গ্লাস", "সাইড মিরর", "আয়না"],
+    "latin": ["looking glass", "side mirror", "mirror"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Wiper Blade",
+    "bn": ["ওয়াইপার"],
+    "latin": ["wiper", "wiper blade"]
+  },
+  { "target_concept": "part_type", "target_value": "Horn", "bn": ["হর্ন", "হরন"], "latin": ["horn", "hon"] },
+  { "target_concept": "part_type", "target_value": "Fuse", "bn": ["ফিউজ"], "latin": ["fuse", "fiuj"] },
+  { "target_concept": "part_type", "target_value": "Relay", "bn": ["রিলে"], "latin": ["relay", "rile"] },
+  {
+    "target_concept": "part_type",
+    "target_value": "Bulb",
+    "bn": ["বাল্ব", "লাইট বাল্ব"],
+    "latin": ["bulb", "balb"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Coolant",
+    "bn": ["কুল্যান্ট", "কুলেন্ট"],
+    "latin": ["coolant", "long life coolant"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Brake Fluid",
+    "bn": ["ব্রেক অয়েল", "ব্রেক ফ্লুইড"],
+    "latin": ["brake oil", "brake fluid"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Transmission Fluid",
+    "bn": ["গিয়ার অয়েল", "এটিএফ"],
+    "latin": ["gear oil", "atf", "transmission fluid"]
+  },
+  { "target_concept": "part_type", "target_value": "Grease", "bn": ["গ্রিজ"], "latin": ["grease", "griz"] },
+  {
+    "target_concept": "part_type",
+    "target_value": "Piston Ring",
+    "bn": ["পিস্টন রিং"],
+    "latin": ["piston ring"]
+  },
+  { "target_concept": "part_type", "target_value": "Oil Seal", "bn": ["অয়েল সিল"], "latin": ["oil seal"] },
+  {
+    "target_concept": "part_type",
+    "target_value": "Sliding Door Roller",
+    "bn": ["স্লাইডিং রোলার", "দরজার রোলার"],
+    "latin": ["sliding roller", "door roller"]
+  },
+  {
+    "target_concept": "part_type",
+    "target_value": "Chain Sprocket Kit",
+    "bn": ["চেইন সেট", "চেইন স্প্রকেট"],
+    "latin": ["chain set", "chain sprocket"]
+  },
+
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Axio",
+    "bn": ["এক্সিও", "এক্সিয়ো"],
+    "latin": ["axio", "exio", "aksio"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Fielder",
+    "bn": ["ফিল্ডার"],
+    "latin": ["fielder", "filder"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Premio",
+    "bn": ["প্রিমিও", "প্রেমিও"],
+    "latin": ["premio", "primio"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Allion",
+    "bn": ["এলিয়ন", "অ্যালিয়ন"],
+    "latin": ["allion", "alion", "elion"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Corolla",
+    "bn": ["করোলা"],
+    "latin": ["corolla", "karola", "korola"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Probox",
+    "bn": ["প্রোবক্স"],
+    "latin": ["probox"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Aqua",
+    "bn": ["অ্যাকুয়া", "একুয়া"],
+    "latin": ["aqua", "akua"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Prius",
+    "bn": ["প্রিয়াস"],
+    "latin": ["prius", "priyas"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Vitz",
+    "bn": ["ভিটজ", "ভিটস"],
+    "latin": ["vitz", "vits"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Harrier",
+    "bn": ["হ্যারিয়ার", "হেরিয়ার"],
+    "latin": ["harrier", "herrier"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota RAV4",
+    "bn": ["র‍্যাভ ফোর", "রাভ ফোর"],
+    "latin": ["rav4", "rav 4", "rav four"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Hilux",
+    "bn": ["হাইলাক্স"],
+    "latin": ["hilux", "hilax"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Noah",
+    "bn": ["নোয়া", "নোহা"],
+    "latin": ["noah", "noa", "nowa"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Voxy",
+    "bn": ["ভক্সি"],
+    "latin": ["voxy", "boxy"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Toyota Hiace",
+    "bn": ["হায়েস", "হাইএস"],
+    "latin": ["hiace", "haies", "hiyas"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Nissan Sunny",
+    "bn": ["সানি"],
+    "latin": ["sunny", "sani"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Nissan X-Trail",
+    "bn": ["এক্স-ট্রেইল", "এক্সট্রেইল"],
+    "latin": ["x-trail", "xtrail", "x trail"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Nissan Bluebird Sylphy",
+    "bn": ["ব্লুবার্ড", "ব্লুবার্ড সিলফি"],
+    "latin": ["bluebird", "bluebird sylphy"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Nissan Caravan",
+    "bn": ["ক্যারাভান", "কারাভান"],
+    "latin": ["caravan", "karavan"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Honda Civic",
+    "bn": ["সিভিক"],
+    "latin": ["civic", "sivic"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Honda Grace",
+    "bn": ["গ্রেস"],
+    "latin": ["grace", "gres"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Honda Vezel",
+    "bn": ["ভেজেল"],
+    "latin": ["vezel", "vesel"]
+  },
+  { "target_concept": "vehicle_model", "target_value": "Honda Fit", "bn": ["ফিট"], "latin": ["fit"] },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Mitsubishi Lancer",
+    "bn": ["ল্যান্সার"],
+    "latin": ["lancer", "lanser"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Mitsubishi Pajero",
+    "bn": ["পাজেরো"],
+    "latin": ["pajero", "pajeru"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Suzuki Swift",
+    "bn": ["সুইফট"],
+    "latin": ["swift", "suift"]
+  },
+  {
+    "target_concept": "vehicle_model",
+    "target_value": "Suzuki Alto 800",
+    "bn": ["অল্টো", "অল্টো ৮০০"],
+    "latin": ["alto", "alto 800"]
+  },
+
+  {
+    "target_concept": "quality",
+    "target_value": "genuine",
+    "bn": ["জেনুইন", "অরিজিনাল", "আসল"],
+    "latin": ["genuine", "jenuin", "original", "asol"]
+  },
+  {
+    "target_concept": "quality",
+    "target_value": "aftermarket",
+    "bn": ["নন-জেনুইন", "নন জেনুইন", "কপি", "চায়না", "লোকাল"],
+    "latin": ["non genuine", "non-genuine", "copy", "china", "local", "aftermarket"]
+  },
+  {
+    "target_concept": "quality",
+    "target_value": "reconditioned",
+    "bn": ["রিকন্ডিশন", "রিকন"],
+    "latin": ["recondition", "reconditioned", "recon"]
+  },
+  {
+    "target_concept": "quality",
+    "target_value": "used",
+    "bn": ["পুরাতন", "পুরানো", "সেকেন্ড হ্যান্ড"],
+    "latin": ["used", "puraton", "second hand"]
+  },
+
+  {
+    "target_concept": "position",
+    "target_value": "front",
+    "bn": ["সামনের", "সামনে", "ফ্রন্ট"],
+    "latin": ["samner", "samne", "shamne", "shamner", "front"]
+  },
+  {
+    "target_concept": "position",
+    "target_value": "rear",
+    "bn": ["পেছনের", "পিছনের", "পেছনে", "রিয়ার"],
+    "latin": ["pechoner", "pichoner", "pechone", "rear", "back"]
+  },
+  {
+    "target_concept": "position",
+    "target_value": "left",
+    "bn": ["বাম", "বামের", "বাঁ"],
+    "latin": ["bam", "bamer", "left"]
+  },
+  {
+    "target_concept": "position",
+    "target_value": "right",
+    "bn": ["ডান", "ডানের"],
+    "latin": ["dan", "daner", "right"]
+  },
+
+  {
+    "target_concept": "unit",
+    "target_value": "piece",
+    "bn": ["টা", "টি", "পিস"],
+    "latin": ["ta", "ti", "pis", "piece", "pcs"]
+  },
+  { "target_concept": "unit", "target_value": "set", "bn": ["সেট"], "latin": ["set"] },
+  { "target_concept": "unit", "target_value": "pair", "bn": ["জোড়া", "জোড়"], "latin": ["jora", "pair"] },
+  { "target_concept": "unit", "target_value": "hali", "bn": ["হালি"], "latin": ["hali"] },
+  { "target_concept": "unit", "target_value": "dozen", "bn": ["ডজন"], "latin": ["dozon", "dozen"] },
+  {
+    "target_concept": "unit",
+    "target_value": "liter",
+    "bn": ["লিটার"],
+    "latin": ["liter", "litre", "litar"]
+  },
+  {
+    "target_concept": "unit",
+    "target_value": "tin",
+    "bn": ["টিন", "গ্যালন"],
+    "latin": ["tin", "gallon", "galon"]
+  },
+  {
+    "target_concept": "unit",
+    "target_value": "box",
+    "bn": ["বক্স", "কার্টন"],
+    "latin": ["box", "carton", "kartun"]
+  },
+
+  { "target_concept": "brand", "target_value": "Toyota", "bn": ["টয়োটা"], "latin": ["toyota", "toiota"] },
+  {
+    "target_concept": "brand",
+    "target_value": "Denso",
+    "bn": ["ডেনসো", "ডেনসু"],
+    "latin": ["denso", "densu"]
+  },
+  { "target_concept": "brand", "target_value": "Bosch", "bn": ["বশ", "বোশ"], "latin": ["bosch", "bosh"] },
+  { "target_concept": "brand", "target_value": "NGK", "bn": ["এনজিকে"], "latin": ["ngk", "en ji ke"] },
+  { "target_concept": "brand", "target_value": "Akebono", "bn": ["আকেবোনো"], "latin": ["akebono"] },
+  { "target_concept": "brand", "target_value": "Nissan", "bn": ["নিসান"], "latin": ["nissan", "nisan"] },
+  { "target_concept": "brand", "target_value": "Honda", "bn": ["হোন্ডা"], "latin": ["honda"] },
+  { "target_concept": "brand", "target_value": "Mitsubishi", "bn": ["মিতসুবিশি"], "latin": ["mitsubishi"] },
+  { "target_concept": "brand", "target_value": "Suzuki", "bn": ["সুজুকি"], "latin": ["suzuki"] }
+]
