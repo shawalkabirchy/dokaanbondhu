@@ -114,6 +114,28 @@ export interface JoinMap {
   table: string;
   /** Columns as "table.column". */
   on: { left: string; right: string }[];
+  /**
+   * parent: the entity's table points to the joined row (a sale line's sale, a part's brand); always joined, and
+   * a row is left out when its parent exists and fails a filter. child: the joined rows point to the entity (a
+   * part's numbers); joined only when one of its fields is used, and its filters only trim that list. When missing,
+   * a join is a parent when the entity's own column ends in _id.
+   */
+  kind?: "parent" | "child";
+}
+
+/** A join's kind, and the joined table's column that is null when there is no joined row. */
+export function joinShape(
+  entity: { hostTable: string },
+  join: JoinMap,
+): { kind: "parent" | "child"; presence: string } {
+  const pair = join.on[0];
+  if (!pair) return { kind: "child", presence: `${join.table}.id` };
+  const [own, other] = pair.left.startsWith(`${join.table}.`)
+    ? [pair.right, pair.left]
+    : [pair.left, pair.right];
+  const kind =
+    join.kind ?? (own.startsWith(`${entity.hostTable}.`) && own.endsWith("_id") ? "parent" : "child");
+  return { kind, presence: other };
 }
 
 export interface FieldMap {

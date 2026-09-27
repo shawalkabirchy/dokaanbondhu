@@ -2,6 +2,7 @@ import {
   CONCEPT_FIELDS,
   confirmedEntity,
   confirmedField,
+  joinShape,
   SchemaMapError,
   type Concept,
   type Dialect,
@@ -155,9 +156,11 @@ class Builder {
   }
 
   /**
-   * FROM or JOIN text of one entity use, with the joined tables it needs and their row filters. The row filters of
-   * a FROM or inner-joined entity's own table go to WHERE (returned as deferred, so positional parameters stay in
-   * text order); a left-joined entity keeps them in its ON clause.
+   * FROM or JOIN text of one entity use, with its own joined tables and their row filters (spec 11.2, D17).
+   * The entity's own tables are left-joined: a parent join always (its filters must apply), a child join only
+   * when one of its fields is used. For a FROM or inner-joined entity, the filters of its own table, and a
+   * parent's filters as "no parent row, or the parent passes", go to WHERE (deferred, so positional parameters
+   * stay in text order); a child's filters and everything of a left-joined entity stay in ON clauses.
    */
   entitySql(
     alias: string,
@@ -180,19 +183,26 @@ class Builder {
       deferred.length = 0;
     }
     for (const join of entity.joins) {
-      if (!tables.has(join.table)) continue;
+      const shape = joinShape(entity, join);
+      const tableFilters = entity.rowFilters.filter((filter) => filter.table === join.table);
+      const needed = tables.has(join.table) || (shape.kind === "parent" && tableFilters.length > 0);
+      if (!needed) continue;
       const joinAlias = this.tableAlias(alias, entity, join.table);
       const onColumns = join.on.map(
         ({ left, right }) =>
           `${this.hostColumn(alias, entity, left)} = ${this.hostColumn(alias, entity, right)}`,
       );
-      const filters = entity.rowFilters
-        .filter((filter) => filter.table === join.table)
-        .map((filter) => this.filter(alias, entity, filter));
-      const joinKind = kind === "left" ? "LEFT JOIN" : "JOIN";
+      const inOn = kind === "left" || shape.kind === "child";
+      const onFilters = inOn ? tableFilters.map((filter) => this.filter(alias, entity, filter)) : [];
       parts.push(
-        `${joinKind} ${this.q(join.table)} AS ${this.q(joinAlias)} ON ${[...onColumns, ...filters].join(" AND ")}`,
+        `LEFT JOIN ${this.q(join.table)} AS ${this.q(joinAlias)} ON ${[...onColumns, ...onFilters].join(" AND ")}`,
       );
+      if (!inOn) {
+        const presence = this.hostColumn(alias, entity, shape.presence);
+        for (const filter of tableFilters) {
+          deferred.push(() => `(${presence} IS NULL OR ${this.filter(alias, entity, filter)})`);
+        }
+      }
     }
     return { sql: parts.join(" "), deferred };
   }

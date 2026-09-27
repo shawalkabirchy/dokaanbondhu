@@ -85,6 +85,13 @@ export function testMap(dialect: Dialect = "postgres"): SchemaMap {
           garage_price: ["items", "price_garage", 100],
         }),
       }),
+      SaleItem: entity({
+        concept: "SaleItem",
+        hostTable: "bill_lines",
+        joins: [{ table: "bills", on: [{ left: "bill_lines.bill_id", right: "bills.id" }] }],
+        rowFilters: [{ table: "bills", column: "state", op: "ne", value: "void" }],
+        fields: fields("bill_lines", { sale_id: "bill_id", part_id: "item_id", quantity: "qty" }),
+      }),
       Customer: entity({
         concept: "Customer",
         hostTable: "clients",

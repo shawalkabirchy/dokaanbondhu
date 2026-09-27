@@ -153,12 +153,22 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
       warnings.push(`${entity.concept}: unknown table ${entity.host_table}`);
       continue;
     }
-    const joins = entity.joins.filter((join) => {
-      const ok =
-        byName.has(join.table) && join.on.every((pair) => qualified(pair.left) && qualified(pair.right));
-      if (!ok) warnings.push(`${entity.concept}: join to ${join.table} dropped`);
-      return ok;
-    });
+    const joins = entity.joins
+      .filter((join) => {
+        const ok =
+          byName.has(join.table) && join.on.every((pair) => qualified(pair.left) && qualified(pair.right));
+        if (!ok) warnings.push(`${entity.concept}: join to ${join.table} dropped`);
+        return ok;
+      })
+      .map((join) => {
+        // From the foreign keys: the entity's table pointing at the joined table makes it a parent.
+        const own = byName.get(entity.host_table)?.columns ?? [];
+        const parent = own.some((c) => c.references?.table === join.table);
+        const child = (byName.get(join.table)?.columns ?? []).some(
+          (c) => c.references?.table === entity.host_table,
+        );
+        return parent || child ? { ...join, kind: parent ? ("parent" as const) : ("child" as const) } : join;
+      });
     const tablesOfEntity = new Set([entity.host_table, ...joins.map((join) => join.table)]);
     const rowFilters = entity.row_filters.filter((filter) => {
       const ok = tablesOfEntity.has(filter.table) && column(filter.table, filter.column) !== undefined;

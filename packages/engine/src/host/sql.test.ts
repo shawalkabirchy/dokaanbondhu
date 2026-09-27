@@ -74,9 +74,41 @@ describe("buildQuery (spec 11.2)", () => {
     });
     expect(numbers.text).toBe(
       'SELECT "p"."id" AS "id", array_agg(DISTINCT "p__item_codes"."code") AS "numbers" FROM "items" AS "p" ' +
-        'JOIN "item_codes" AS "p__item_codes" ON "p"."id" = "p__item_codes"."item_id" AND "p__item_codes"."deleted_at" IS NULL ' +
+        'LEFT JOIN "item_codes" AS "p__item_codes" ON "p"."id" = "p__item_codes"."item_id" AND "p__item_codes"."deleted_at" IS NULL ' +
         'WHERE "p"."deleted_at" IS NULL AND "p"."is_active" IS TRUE GROUP BY "p"."id"',
     );
+  });
+
+  it("always applies a parent's filters, so lines of a voided sale never count (D17)", () => {
+    const built = buildQuery(testMap(), {
+      from: { concept: "SaleItem", alias: "l" },
+      select: [{ ref: { alias: "l", field: "quantity" }, as: "qty", aggregate: "sum" }],
+    });
+    expect(built.text).toBe(
+      'SELECT SUM("l"."qty") AS "qty" FROM "bill_lines" AS "l" ' +
+        'LEFT JOIN "bills" AS "l__bills" ON "l"."bill_id" = "l__bills"."id" ' +
+        'WHERE ("l__bills"."id" IS NULL OR ("l__bills"."state" IS NULL OR "l__bills"."state" <> $1))',
+    );
+    expect(built.values).toEqual(["void"]);
+  });
+
+  it("keeps a part without a brand: an entity's own lookups are left joins", () => {
+    const map = testMap();
+    map.entities.Part!.joins.push({ table: "makers", on: [{ left: "items.maker_id", right: "makers.id" }] });
+    map.entities.Part!.fields.brand = {
+      conceptField: "brand",
+      hostTable: "makers",
+      hostColumn: "name",
+      dataType: null,
+      idType: null,
+      valueScale: 1,
+      confirmed: true,
+    };
+    const built = buildQuery(map, {
+      from: { concept: "Part", alias: "p" },
+      select: [{ ref: { alias: "p", field: "brand" }, as: "brand" }],
+    });
+    expect(built.text).toContain('LEFT JOIN "makers" AS "p__makers" ON "p"."maker_id" = "p__makers"."id"');
   });
 
   it("accepts only confirmed entities and fields, and safe aliases", () => {
