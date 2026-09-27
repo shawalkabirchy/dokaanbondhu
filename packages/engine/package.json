@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./conversation": "./src/conversation/index.ts",
     "./crypto": "./src/crypto/index.ts",
     "./host": "./src/host/index.ts",
     "./log": "./src/log/index.ts",

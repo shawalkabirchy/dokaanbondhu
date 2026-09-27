@@ -93,6 +93,10 @@ export const requestFrames = pgTable(
     capabilityId: uuid("capability_id").references(() => capabilities.id),
     slots: jsonb("slots").notNull(),
     asking: text("asking"),
+    offers: jsonb("offers")
+      .notNull()
+      .default(sql`'[]'::jsonb`), // the options offered with the last question, for a chip tap (D88)
+    request: text("request"), // the request as first said, so a question's answer can finish it (D88)
     attempts: jsonb("attempts")
       .notNull()
       .default(sql`'{}'::jsonb`),

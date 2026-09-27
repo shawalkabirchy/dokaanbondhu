@@ -15,6 +15,13 @@
       "when": 1790412740491,
       "tag": "0001_roles_grants_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790542348242,
+      "tag": "0002_frame_offers",
+      "breakpoints": true
     }
   ]
 }
