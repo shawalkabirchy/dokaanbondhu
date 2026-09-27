@@ -27,6 +27,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 log = logging.getLogger("speech")
+if not logging.getLogger().handlers:  # uvicorn configures only its own loggers
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # Models, pinned (P2 records the hashes; architecture, AI models).
 ASR_HF_ID = os.environ.get("ASR_HF_ID", "bengaliAI/tugstugi_bengaliai-asr_whisper-medium")
@@ -45,12 +47,14 @@ QUIET_RMS = 0.01
 PROMPT_MAX_TOKENS = 80  # Whisper's window is 448 tokens for prompt and text together (D53)
 VAD_PARAMETERS: dict[str, int] = {"min_silence_duration_ms": 300, "speech_pad_ms": 200}
 
-# The main decode of the trimmed clip, with every quality gate of spec 14.1 (D53).
+# The main decode of the trimmed clip, with every quality gate of spec 14.1 (D53). Timestamp mode lost the first
+# syllables of the clip (P2); word timestamps still come from alignment.
 MAIN_DECODE: dict[str, Any] = {
     "language": "bn",
     "task": "transcribe",
     "beam_size": 5,
     "word_timestamps": True,
+    "without_timestamps": True,
     "condition_on_previous_text": False,
     "vad_filter": True,
     "vad_parameters": VAD_PARAMETERS,
@@ -186,14 +190,15 @@ def transcribe_clip(data: bytes, keyterms: str, nbest: int, low_confidence_below
         with asr_lock:
             text, words = asr.transcribe(trimmed, initial_prompt=prompt, **MAIN_DECODE)
             try:
-                hypotheses = asr.nbest(
-                    trimmed, prompt=prompt, beam_size=max(nbest, 5), num_hypotheses=nbest, **NBEST_DECODE
-                )
+                # a few more hypotheses than asked, because some differ only by spaces (P2)
+                count = max(nbest + 3, 5)
+                hypotheses = asr.nbest(trimmed, prompt=prompt, beam_size=count, num_hypotheses=count, **NBEST_DECODE)
                 entries: list[dict[str, Any]] = []
                 for hypothesis, score in hypotheses:
                     hypothesis = hypothesis.strip()
                     if hypothesis and all(entry["text"] != hypothesis for entry in entries):
                         entries.append({"text": hypothesis, "score": round(float(score), 4)})
+                entries = entries[:nbest]
             except Exception as error:  # the best transcript stays usable without its alternatives
                 log.warning("n-best failed: %s", error)
                 entries = [{"text": text, "score": None}] if text else []
@@ -291,20 +296,22 @@ class WhisperAsr:
         self, audio: np.ndarray, *, initial_prompt: str | None, **options: Any
     ) -> tuple[str, list[dict[str, Any]]]:
         segments, _info = self.model.transcribe(audio, initial_prompt=initial_prompt, **options)
-        parts: list[str] = []
-        words: list[dict[str, Any]] = []
-        for segment in segments:
-            parts.append(segment.text)
-            for word in segment.words or []:
-                words.append(
-                    {
-                        "word": word.word.strip(),
-                        "start": round(word.start, 3),
-                        "end": round(word.end, 3),
-                        "probability": round(word.probability, 4),
-                    }
-                )
-        return "".join(parts).strip(), words
+        # A clip of at most 30 s is one window, so the first segment is the decode of the whole clip. Later segments
+        # come only from decoding again after the last aligned word, where the model invents words (P2); the
+        # generator is lazy, so stopping here also skips that decode.
+        first = next(iter(segments), None)
+        if first is None:
+            return "", []
+        words = [
+            {
+                "word": word.word.strip(),
+                "start": round(word.start, 3),
+                "end": round(word.end, 3),
+                "probability": round(word.probability, 4),
+            }
+            for word in first.words or []
+        ]
+        return first.text.strip(), words
 
     def nbest(self, audio: np.ndarray, *, prompt: str | None, **options: Any) -> list[tuple[str, float]]:
         from faster_whisper.audio import pad_or_trim
@@ -358,12 +365,15 @@ def load_models() -> None:
     cuda = ctranslate2.get_cuda_device_count() > 0
     device = "cuda" if cuda else "cpu"
     compute_type = os.environ.get("ASR_COMPUTE_TYPE") or ("float16" if cuda else "int8")
+    started = time.perf_counter()
     log.info("loading speech-to-text from %s on %s (%s)", ASR_MODEL_DIR, device, compute_type)
     state.asr = WhisperAsr(ASR_MODEL_DIR, device, compute_type)
-    log.info("loading text-to-speech %s", TTS_MODEL_ID)
+    log.info("speech-to-text loaded in %.1f s", time.perf_counter() - started)
+    started = time.perf_counter()
     state.tts = ParlerTts(
         TTS_MODEL_ID, TTS_MODEL_REVISION, os.environ.get("TTS_FP16") == "1", os.environ.get("HF_TOKEN") or None
     )
+    log.info("text-to-speech loaded in %.1f s", time.perf_counter() - started)
     state.device = device
 
 

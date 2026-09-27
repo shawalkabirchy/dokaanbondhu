@@ -48,6 +48,17 @@ def test_asr_answer_has_the_contract_shape(client) -> None:
     assert body["note"] is None
 
 
+def test_nbest_keeps_the_first_n_distinct_texts(client, fake_asr: FakeAsr) -> None:
+    fake_asr.hypotheses = [(" এক", -0.1), ("এক", -0.2), ("দুই", -0.3), ("তিন", -0.4), ("চার", -0.5)]
+    body = client.post(
+        "/asr",
+        files={"audio": ("clip.wav", clip("speech_with_silence.wav"), "audio/wav")},
+        data={"nbest": "2"},
+    ).json()
+    assert [entry["text"] for entry in body["nbest"]] == ["এক", "দুই"]
+    assert fake_asr.nbest_calls[0]["num_hypotheses"] == 5
+
+
 def test_nbest_failure_keeps_the_best_transcript(client, fake_asr: FakeAsr) -> None:
     fake_asr.nbest_error = RuntimeError("out of memory")
     body = client.post("/asr", files={"audio": ("clip.wav", clip("speech_with_silence.wav"), "audio/wav")}).json()

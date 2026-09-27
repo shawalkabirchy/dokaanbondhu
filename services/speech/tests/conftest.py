@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import speech_app  # noqa: E402
 
-DATA = Path(__file__).resolve().parent / "data"
+DATA = Path(__file__).resolve().parents[3] / "fixtures" / "audio"  # short synthetic clips (spec 18.5)
 
 
 class FakeAsr:

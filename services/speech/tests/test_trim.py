@@ -36,6 +36,7 @@ def test_main_decode_has_vad_filter_and_every_quality_gate(client, fake_asr: Fak
         "task": "transcribe",
         "beam_size": 5,
         "word_timestamps": True,
+        "without_timestamps": True,
         "condition_on_previous_text": False,
         "vad_filter": True,
         "vad_parameters": {"min_silence_duration_ms": 300, "speech_pad_ms": 200},
@@ -52,14 +53,35 @@ def test_main_decode_has_vad_filter_and_every_quality_gate(client, fake_asr: Fak
     nbest = fake_asr.nbest_calls[0]
     assert nbest["prompt"] == main["initial_prompt"]
     assert {key: value for key, value in nbest.items() if key not in ("audio", "prompt")} == {
-        "beam_size": 5,
-        "num_hypotheses": 3,
+        "beam_size": 6,
+        "num_hypotheses": 6,
         "return_scores": True,
         "max_length": 448,
         "suppress_blank": True,
         "repetition_penalty": 1.1,
         "no_repeat_ngram_size": 3,
     }
+
+
+def test_only_the_first_segment_is_kept_and_the_leftover_is_never_decoded() -> None:
+    """P2: after the first segment, faster-whisper decodes again from the last aligned word and invents words."""
+    from types import SimpleNamespace
+
+    decoded: list[str] = []
+
+    def segments():  # lazy, like faster-whisper's generator
+        decoded.append("first")
+        word = SimpleNamespace(word=" এক্সিও", start=0.0, end=0.61234, probability=0.912345)
+        yield SimpleNamespace(text=" এক্সিও দুই হাজার চৌদ্দ ", words=[word])
+        decoded.append("leftover")
+        yield SimpleNamespace(text="বিশ্ববিদ্যালয়ের প্রধানমন্ত্রী", words=[])
+
+    asr = speech_app.WhisperAsr.__new__(speech_app.WhisperAsr)
+    asr.model = SimpleNamespace(transcribe=lambda audio, **options: (segments(), None))
+    text, words = asr.transcribe(np.zeros(16_000, dtype=np.float32), initial_prompt=None)
+    assert text == "এক্সিও দুই হাজার চৌদ্দ"
+    assert words == [{"word": "এক্সিও", "start": 0.0, "end": 0.612, "probability": 0.9123}]
+    assert decoded == ["first"]
 
 
 def test_a_clip_without_speech_runs_neither_decode(client, fake_asr: FakeAsr) -> None:
