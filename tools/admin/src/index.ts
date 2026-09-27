@@ -1,15 +1,23 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
+import { HostPools, syncConnection } from "@dokaanbondhu/engine/host";
 import { llmChain, llmStream, type ToolDef } from "@dokaanbondhu/engine/providers";
-import { aiProviders, createPlatform, shops, users, type Platform } from "@dokaanbondhu/platform-db";
+import {
+  aiProviders,
+  connections,
+  createPlatform,
+  shops,
+  users,
+  type Platform,
+} from "@dokaanbondhu/platform-db";
 import { createClient } from "@supabase/supabase-js";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 // npm run admin -- <command> (spec 7.5): shops, owners, consent and AI providers, as platform_admin. On the laptop
 // it works on dokaan-dev; for dokaan-prod (step 9) it runs in the pod's terminal. Staff logins are made by the
-// owner in the app (D9), not here. sync-catalog comes in step 3 and import-verification in step 5.
+// owner in the app (D9), not here. import-verification comes in step 5.
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -298,6 +306,40 @@ const commands: Record<string, Command> = {
     if (rows.length === 0) out("No shops yet.");
     for (const row of rows)
       out(`${row.id}  ${row.name}  owner: ${row.owner ?? "-"}  settings: ${JSON.stringify(row.settings)}`);
+  },
+
+  /**
+   * sync-catalog --shop <id>: runs the catalog sync for the shop's database connections itself, the same code as the
+   * worker's catalog.sync job (spec 7.5); the server picks up the new cache within 60 s.
+   */
+  "sync-catalog": async (platform, args) => {
+    const { values } = parseArgs({ args, options: { shop: { type: "string" } } });
+    const shopId = uuid.parse(values.shop);
+    const rows = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: connections.id, label: connections.label })
+        .from(connections)
+        .where(and(eq(connections.shopId, shopId), eq(connections.kind, "db"))),
+    );
+    if (rows.length === 0) throw new Error(`shop ${shopId} has no database connection`);
+    const pools = new HostPools();
+    try {
+      for (const row of rows) {
+        const counts = await syncConnection(
+          (fn) => platform.withAdmin(fn),
+          pools,
+          parseAesKey(env.data.AES_KEY),
+          shopId,
+          row.id,
+        );
+        out(
+          `${row.label ?? row.id}: ${counts.parts} parts, ${counts.vehicles} vehicles, ${counts.customers} customers, ` +
+            `${counts.suppliers} suppliers; synced ${counts.syncedAt.toISOString()}`,
+        );
+      }
+    } finally {
+      await pools.closeAll();
+    }
   },
 
   /** disable-user --user <id> */

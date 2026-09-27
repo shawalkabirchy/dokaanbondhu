@@ -1,14 +1,17 @@
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
+import { HostPools } from "@dokaanbondhu/engine/host";
 import { createLogger } from "@dokaanbondhu/engine/log";
 import { createPlatform } from "@dokaanbondhu/platform-db";
 import { PgBoss } from "pg-boss";
 import { z } from "zod";
+import { runCatalogSync } from "./jobs/catalog-sync";
 import { runHealthProbe } from "./jobs/health-probe";
 import { runRetention } from "./jobs/retention";
 
 // The worker (spec 7.4): pg-boss in the platform database's pgboss schema, as platform_api, with its own pool of 2
 // and createSchema: false (the custom migration made the schema; pg-boss creates only its tables there). Cross-shop
-// jobs (retention, the health probe) use a platform_admin pool. catalog.sync joins in step 3.
+// jobs (retention, the health probe, catalog.sync) use a platform_admin pool; host databases are read through the
+// engine's pools.
 
 const env = z
   .object({
@@ -31,6 +34,7 @@ const admin = createPlatform(env.data.PLATFORM_ADMIN_DATABASE_URL, {
   max: 2,
   onIdleError: (error) => log.warn({ err: error }, "platform DB connection dropped while idle"),
 });
+const pools = new HostPools((error) => log.warn({ err: error }, "host DB connection dropped while idle"));
 const boss = new PgBoss({
   connectionString: env.data.PLATFORM_DATABASE_URL,
   schema: "pgboss",
@@ -42,8 +46,10 @@ boss.on("error", (error) => log.error({ err: error }, "pg-boss error"));
 await boss.start();
 await boss.createQueue("retention.nightly");
 await boss.createQueue("health.probe");
+await boss.createQueue("catalog.sync");
 await boss.schedule("retention.nightly", "0 2 * * *", null, { tz: "Asia/Dhaka" });
 await boss.schedule("health.probe", "*/5 * * * *", null, { tz: "Asia/Dhaka" });
+await boss.schedule("catalog.sync", "*/10 * * * *", null, { tz: "Asia/Dhaka" });
 
 // Job payloads carry only IDs, never secrets (spec 7.3).
 await boss.work("retention.nightly", async () => {
@@ -51,14 +57,25 @@ await boss.work("retention.nightly", async () => {
   log.info({ job: "retention.nightly", ...deleted }, "retention done");
 });
 await boss.work("health.probe", async () => {
-  const result = await runHealthProbe(admin, aesKey);
+  const result = await runHealthProbe(admin, pools, aesKey);
   log.info({ job: "health.probe", ...result }, "health probe done");
+});
+await boss.work("catalog.sync", async () => {
+  const result = await runCatalogSync(admin, pools, aesKey);
+  log.info({ job: "catalog.sync", synced: result.synced, failed: result.failed }, "catalog sync done");
+  for (const failure of result.results.filter((entry) => entry.error)) {
+    log.warn(
+      { job: "catalog.sync", connectionId: failure.connectionId, error: failure.error },
+      "catalog sync failed",
+    );
+  }
 });
 log.info("worker started");
 
 async function shutdown(signal: string) {
   log.info({ signal }, "worker stopping");
   await boss.stop({ graceful: true, timeout: 10_000 });
+  await pools.closeAll();
   await admin.end();
   process.exit(0);
 }
