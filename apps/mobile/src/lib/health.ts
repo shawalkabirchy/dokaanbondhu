@@ -24,7 +24,13 @@ export function useHealth() {
   const serverUrl = useDeviceSettings((state) => state.serverUrl);
   const query = useQuery({
     queryKey: ["health", serverUrl],
-    queryFn: () => fetchHealth(serverUrl).catch(() => DOWN),
+    // One slow check (the platform DB answering after 3 s) should not show "offline": ask once more 2 s later (D82).
+    queryFn: async () => {
+      const first = await fetchHealth(serverUrl).catch(() => DOWN);
+      if (first.status === "ok") return first;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return fetchHealth(serverUrl).catch(() => DOWN);
+    },
     staleTime: 60_000,
     refetchInterval: 60_000,
   });

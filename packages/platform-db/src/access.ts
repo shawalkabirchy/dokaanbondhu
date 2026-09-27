@@ -29,9 +29,23 @@ export interface Platform {
   end(): Promise<void>;
 }
 
+export interface PlatformPoolOptions {
+  max: number;
+  /** How long an unused connection stays open; pg's default is 10 s (D82). */
+  idleTimeoutMs?: number;
+  /** Told when a connection drops while idle; pg then removes it and the next query opens a new one. */
+  onIdleError?: (error: Error) => void;
+}
+
 /** Opens a pool on a platform role's connection string (with sslmode and sslrootcert, spec 4.2). */
-export function createPlatform(connectionString: string, options: { max: number }): Platform {
-  const pool = new pg.Pool({ connectionString, max: options.max });
+export function createPlatform(connectionString: string, options: PlatformPoolOptions): Platform {
+  const pool = new pg.Pool({
+    connectionString,
+    max: options.max,
+    idleTimeoutMillis: options.idleTimeoutMs ?? 10_000,
+  });
+  // Without a listener, a connection that drops while idle (network, pooler restart) would stop the process (D82).
+  pool.on("error", (error) => options.onIdleError?.(error));
   const db: Database = drizzle(pool, { schema });
 
   const withSetting = <T>(name: string, value: string, fn: (tx: Tx) => Promise<T>) =>

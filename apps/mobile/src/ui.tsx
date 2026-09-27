@@ -1,6 +1,15 @@
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+} from "react-native";
 import { useHealth } from "./lib/health";
 
 // Small shared building blocks: large touch targets and large text, usable with greasy hands (architecture,
@@ -29,13 +38,20 @@ export function OfflineBanner() {
   );
 }
 
+// Android draws the app under the keyboard (edge-to-edge), so the page makes room itself and the focused field
+// stays visible (D82). KeyboardAvoidingView measures itself within its parent, so the offset adds whatever is above
+// the page on screen (status bar, header).
 export function Screen({ children }: { children: ReactNode }) {
+  const [top, setTop] = useState(0);
+  const box = useRef<View>(null);
   return (
-    <View style={styles.flex}>
-      <OfflineBanner />
-      <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
-        {children}
-      </ScrollView>
+    <View ref={box} style={styles.flex} onLayout={() => box.current?.measureInWindow((_x, y) => setTop(y))}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={top}>
+        <OfflineBanner />
+        <ScrollView contentContainerStyle={styles.screen} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

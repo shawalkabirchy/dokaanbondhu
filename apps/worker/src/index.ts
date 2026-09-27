@@ -27,7 +27,10 @@ if (!env.success) {
 
 const log = createLogger({ name: "worker", level: env.data.LOG_LEVEL });
 const aesKey = parseAesKey(env.data.AES_KEY);
-const admin = createPlatform(env.data.PLATFORM_ADMIN_DATABASE_URL, { max: 2 });
+const admin = createPlatform(env.data.PLATFORM_ADMIN_DATABASE_URL, {
+  max: 2,
+  onIdleError: (error) => log.warn({ err: error }, "platform DB connection dropped while idle"),
+});
 const boss = new PgBoss({
   connectionString: env.data.PLATFORM_DATABASE_URL,
   schema: "pgboss",
