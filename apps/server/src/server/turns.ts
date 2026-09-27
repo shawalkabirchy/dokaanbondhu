@@ -193,6 +193,13 @@ export async function chatTurn(input: ChatTurnInput, emit: (event: ReplyEvent) =
       settings.external_providers_allowed,
       parseAesKey(serverEnv().AES_KEY),
     );
+    // Read before the turn, which changes the frame in place: the chip's label (what the user "said") and when the
+    // open frame would have expired.
+    const opened = conversation.state.frame;
+    const tapped = input.choice
+      ? opened?.offers?.find((offer) => offer.id === input.choice!.optionId)?.label
+      : undefined;
+    const openedExpiry = opened ? Date.parse(opened.expiresAt) : 0;
     const turnInput: TurnInput = {
       ...(input.text ? { text: input.text } : {}),
       ...(input.choice ? { choice: input.choice } : {}),
@@ -212,10 +219,6 @@ export async function chatTurn(input: ChatTurnInput, emit: (event: ReplyEvent) =
       (event) => (event.type === "done" ? (held = event) : emit(event)),
     );
 
-    // What the user sent: the text, or the label of the chip they tapped.
-    const tapped = input.choice
-      ? conversation.state.frame?.offers?.find((offer) => offer.id === input.choice!.optionId)?.label
-      : undefined;
     const now = new Date();
     await platform().withShop(caller.shopId, async (tx) => {
       await tx.insert(messages).values([
@@ -244,11 +247,10 @@ export async function chatTurn(input: ChatTurnInput, emit: (event: ReplyEvent) =
       // A new frame sets the old open one aside (or marks it expired); only one may be open (spec 9.3 rule 4).
       const next = outcome.state.frame;
       if (conversation.frameId && next?.id !== conversation.frameId) {
-        const old = conversation.state.frame!;
         await tx
           .update(requestFrames)
           .set({
-            status: Date.parse(old.expiresAt) < now.getTime() ? "expired" : "set_aside",
+            status: openedExpiry < now.getTime() ? "expired" : "set_aside",
             updatedAt: now,
           })
           .where(
