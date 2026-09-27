@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { guardReadQuery, ReadQueryRejected, runReadQuery } from "./read-query";
+import { testMap } from "./test-map";
+
+const map = testMap();
+
+describe("run_read_query guard (spec 11.6)", () => {
+  it("replaces every table read by its filtered version, parents' filters through their joins", () => {
+    const { sql } = guardReadQuery(
+      map,
+      "SELECT i.title, SUM(l.qty) AS sold FROM items i JOIN bill_lines l ON l.item_id = i.id GROUP BY i.title",
+    );
+    expect(sql.startsWith("WITH ")).toBe(true);
+    expect(sql).toContain(
+      '"bill_lines" AS (SELECT t.* FROM "bill_lines" AS t LEFT JOIN "bills" AS p0 ON t."bill_id" = p0."id" ' +
+        'WHERE (p0."id" IS NULL OR (p0."state" IS NULL OR p0."state" <> \'void\')))',
+    );
+    expect(sql).toContain(
+      '"items" AS (SELECT t.* FROM "items" AS t WHERE t."deleted_at" IS NULL AND t."is_active" IS TRUE)',
+    );
+    expect(sql).toMatch(/LIMIT 200$/);
+  });
+
+  it("caps a larger LIMIT and keeps a smaller one", () => {
+    expect(guardReadQuery(map, "SELECT title FROM items LIMIT 5000").sql).toMatch(/LIMIT 200$/);
+    expect(guardReadQuery(map, "SELECT title FROM items LIMIT 10").sql).toMatch(/LIMIT 10$/);
+  });
+
+  it("refuses anything but one plain SELECT over confirmed tables and columns", () => {
+    const refused = [
+      "SELECT title FROM items; DELETE FROM items",
+      "UPDATE items SET title = 'x'",
+      "DELETE FROM items",
+      "SELECT title INTO copy FROM items",
+      "SELECT title FROM items FOR UPDATE",
+      "SELECT title FROM public.items",
+      "SELECT name FROM users",
+      "SELECT password FROM items",
+      "SELECT * FROM items",
+      "SELECT pg_sleep(5)",
+      "SELECT title FROM items WHERE set_config('x', 'y', false) = 'y'",
+      "WITH x AS (SELECT title FROM items) SELECT title FROM x",
+      "not sql at all",
+    ];
+    for (const sql of refused) expect(() => guardReadQuery(map, sql), sql).toThrow(ReadQueryRejected);
+  });
+
+  it("gives result columns their lineage: mapped money and quantities scaled, COUNT a count, others unscaled", () => {
+    const { columns } = guardReadQuery(
+      map,
+      "SELECT c.name, c.due_paisa, SUM(l.qty) AS sold, COUNT(l.bill_id) AS lines, upper(c.name) AS loud " +
+        "FROM clients c JOIN bill_lines l ON l.bill_id = c.id GROUP BY c.name, c.due_paisa",
+    );
+    expect(columns).toEqual([
+      { key: "name", kind: "text", valueScale: 1 },
+      { key: "due_paisa", kind: "money", valueScale: 100 },
+      { key: "sold", kind: "quantity", valueScale: 1 },
+      { key: "lines", kind: "count", valueScale: 1 },
+      { key: "loud", kind: "unscaled", valueScale: 1 },
+    ]);
+  });
+
+  it("returns money in paisa, counts as numbers, and runs only the guarded SQL", async () => {
+    const seen: string[] = [];
+    const result = await runReadQuery(
+      map,
+      async ({ text }) => {
+        seen.push(text);
+        return [{ name: "Rahim Motors", due_paisa: "1920000", lines: "3" }];
+      },
+      "SELECT name, due_paisa, COUNT(id) AS lines FROM clients GROUP BY name, due_paisa",
+    );
+    expect(seen[0]).toMatch(/^WITH "clients" AS/);
+    expect(result.rows).toEqual([{ name: "Rahim Motors", due_paisa: 1920000n, lines: 3 }]);
+    expect(result.truncated).toBe(false);
+  });
+});

@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput } from "../src/host/find-parts";
 import { introspect } from "../src/host/introspect";
+import { runReadQuery } from "../src/host/read-query";
+import { stockValue } from "../src/host/reports";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { buildQuery } from "../src/host/sql";
 import { geargridMap } from "./geargrid-map";
@@ -153,5 +155,32 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
       }),
     );
     expect(Number(lines[0]?.lines)).toBe(Number(all[0]?.n));
+  });
+
+  it("answers other reads through the guard: a due, and low stock without inactive or deleted parts", async () => {
+    const due = await pools.readOnly(db, (run) =>
+      runReadQuery(geargridMap, run, "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'"),
+    );
+    expect(due.rows).toEqual([{ name: "Rahim Motors", due_balance: 1920000n }]);
+    const low = await pools.readOnly(db, (run) =>
+      runReadQuery(
+        geargridMap,
+        run,
+        "SELECT p.name_en, s.quantity FROM parts p JOIN stock_levels s ON s.part_id = p.id WHERE s.quantity <= p.reorder_level",
+      ),
+    );
+    expect(low.rows).toHaveLength(8);
+    expect(low.columns.find((column) => column.key === "quantity")).toMatchObject({ kind: "quantity" });
+  });
+
+  it("computes the stock value exactly, as a direct sum would", async () => {
+    const value = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
+    const [direct] = await pools.readOnly(db, (run) =>
+      run({
+        text: "SELECT SUM(ROUND(GREATEST(s.quantity, 0) * p.avg_cost)) AS paisa FROM stock_levels s JOIN parts p ON p.id = s.part_id WHERE p.avg_cost > 0",
+        values: [],
+      }),
+    );
+    expect(value).toBe(BigInt(String(direct?.paisa)));
   });
 });

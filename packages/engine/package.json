@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./crypto": "./src/crypto/index.ts",
+    "./host": "./src/host/index.ts",
     "./log": "./src/log/index.ts",
     "./providers": "./src/providers/index.ts"
   },
