@@ -1,7 +1,7 @@
 import { banglaDigits } from "./text";
 
-// Numbers in answers (spec 10.8). The grouping is the same algorithm as GearGrid's formatTaka, re-implemented here
-// (no dependency between the repositories).
+// Numbers in answers (spec 10.8). The grouping is the same algorithm as the first host app's taka formatter,
+// re-implemented here (no dependency between the repositories).
 
 /** Bangladeshi grouping: the last three digits, then groups of two (12,34,567). */
 function groupDigits(digits: string): string {

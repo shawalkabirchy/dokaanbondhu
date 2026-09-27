@@ -92,9 +92,11 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     );
     expect(result.kind).toBe("rows");
     if (result.kind !== "rows") return;
-    const genuine = result.rows.find(
-      (row) => row.hostPartId === byNumber("04465-10010") && row.quality === "genuine",
-    )!;
+    // 04465-10010 is also the aftermarket pad's cross-reference number, so the genuine row is found by its quality
+    const genuine = result.rows.find((row) => row.quality === "genuine")!;
+    expect(catalog.parts.find((part) => part.hostId === genuine.hostPartId)?.partNumbers).toContain(
+      "04465-10010",
+    );
     expect(genuine).toMatchObject({ retailPaisa: 450000n, stock: 3, rack: "B-3", fitmentVerified: true });
     expect(result.rows.map((row) => row.quality).sort()).toEqual(["aftermarket", "genuine"]);
     expect(separatingSlot(result.rows)?.slot).toBe("quality");

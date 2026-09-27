@@ -25,7 +25,8 @@ const PG_COLUMNS = `
   SELECT c.table_name AS table_name, c.column_name AS column_name, c.data_type AS data_type,
          c.is_nullable = 'YES' AS nullable
   FROM information_schema.columns c
-  WHERE c.table_schema = 'public' AND has_table_privilege(quote_ident(c.table_name), 'SELECT')
+  WHERE c.table_schema = 'public'
+    AND has_table_privilege(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name), 'SELECT')
   ORDER BY c.table_name, c.ordinal_position`;
 
 // pg_catalog, not information_schema: a read-only role does not see other owners' constraint columns there.
