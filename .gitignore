@@ -13,3 +13,7 @@ __pycache__/
 .venv/
 *.jks
 *.keystore
+
+# written again by every `next dev` (Next.js 16 notes for AI agents)
+apps/server/AGENTS.md
+apps/server/CLAUDE.md

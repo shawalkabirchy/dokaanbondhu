@@ -1,16 +1,20 @@
-import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
-import { AudioStudioModule, useAudioRecorder, type AudioDataEvent } from "@siteed/audio-studio";
-import { fetch } from "expo/fetch";
-import { useRef, useState } from "react";
+import {
+  AudioStudioModule,
+  useAudioRecorder,
+  type AudioDataEvent,
+  type RecordingConfig,
+} from "@siteed/audio-studio";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { useHealth } from "../../src/lib/health";
 import { base64ToBytes, RmsMeter } from "../../src/lib/pcm";
-import { useDeviceSettings } from "../../src/lib/settings-store";
-import { Button, colors, Heading, Note, Screen, styles } from "../../src/ui";
+import { colors, Heading, Note, Screen, styles } from "../../src/ui";
 
-// Until step 4 this page checks the recording (proof P5): 16 kHz mono 16-bit PCM chunks every 500 ms, the last
-// partial chunk on stop, and expo/fetch reading an NDJSON reply line by line.
+// Until step 4 this page checks the recording (proof P5, passed 27 Sep): 16 kHz mono 16-bit PCM chunks every
+// 500 ms and the last partial chunk on stop. The recorder is prepared before the
+// press (on opening the page and after every stop): unprepared, it takes about 1.4 s to start and loses the first
+// words (P5).
 
 interface ChunkInfo {
   bytes: number;
@@ -20,68 +24,72 @@ interface ChunkInfo {
 export default function Voice() {
   const { t } = useTranslation();
   const { micAllowed } = useHealth();
-  const serverUrl = useDeviceSettings((state) => state.serverUrl);
-  const recorder = useAudioRecorder();
+  const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
   const [recording, setRecording] = useState(false);
   const [chunks, setChunks] = useState<ChunkInfo[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
-  const [stream, setStream] = useState<string[]>([]);
-  const started = useRef(0);
+  const pressedAt = useRef(0);
+  const startedAt = useRef(0);
+  const micReady = useRef(false);
   const rms = useRef(new RmsMeter());
   const collected = useRef<ChunkInfo[]>([]);
+  // The settings of spec 15.3; the same object prepares and starts the recorder.
+  const config = useRef<RecordingConfig>({
+    sampleRate: 16000,
+    channels: 1,
+    encoding: "pcm_16bit",
+    interval: 500,
+    onAudioStream: async (event: AudioDataEvent) => {
+      if (typeof event.data !== "string") return;
+      const bytes = base64ToBytes(event.data); // exactly as recorded: no gain, no normalizing
+      rms.current.add(bytes);
+      collected.current.push({ bytes: bytes.byteLength, atMs: Date.now() - pressedAt.current });
+      setChunks([...collected.current]);
+    },
+  }).current;
+
+  useEffect(() => {
+    void (async () => {
+      const permission = await AudioStudioModule.getPermissionsAsync();
+      if (!permission?.granted) return; // asked on the first press instead
+      micReady.current = true;
+      await prepareRecording(config);
+    })();
+  }, [prepareRecording, config]);
 
   async function onPressIn() {
-    const permission = await AudioStudioModule.requestPermissionsAsync();
-    if (!permission?.granted) return;
+    pressedAt.current = Date.now();
+    if (!micReady.current) {
+      const permission = await AudioStudioModule.requestPermissionsAsync();
+      if (!permission?.granted) return;
+      micReady.current = true;
+    }
     collected.current = [];
     rms.current = new RmsMeter();
     setChunks([]);
     setSummary(null);
-    started.current = Date.now();
     setRecording(true);
-    await recorder.startRecording({
-      sampleRate: 16000,
-      channels: 1,
-      encoding: "pcm_16bit",
-      interval: 500,
-      onAudioStream: async (event: AudioDataEvent) => {
-        if (typeof event.data !== "string") return;
-        const bytes = base64ToBytes(event.data); // exactly as recorded: no gain, no normalizing
-        rms.current.add(bytes);
-        collected.current.push({ bytes: bytes.byteLength, atMs: Date.now() - started.current });
-        setChunks([...collected.current]);
-      },
-    });
+    await startRecording(config);
+    startedAt.current = Date.now();
   }
 
   async function onPressOut() {
     if (!recording) return;
-    const result = await recorder.stopRecording(); // flushes the last partial chunk
+    const releasedAt = Date.now();
+    const result = await stopRecording(); // flushes the last partial chunk
     setRecording(false);
+    void prepareRecording(config); // ready for the next press
     const all = collected.current;
     const gaps = all.slice(1).map((chunk, index) => chunk.atMs - (all[index]?.atMs ?? 0));
     const total = all.reduce((sum, chunk) => sum + chunk.bytes, 0);
     const text =
       `chunks ${all.length}; sizes ${all.map((chunk) => chunk.bytes).join(",")}; gaps ms ${gaps.join(",")}; ` +
       `total ${total} bytes (${(total / 32).toFixed(0)} ms of 16 kHz 16-bit mono); rms ${rms.current.value.toFixed(4)}; ` +
-      `held ${Date.now() - started.current} ms; file ${result?.sampleRate ?? "?"} Hz, ${result?.channels ?? "?"} ch, ` +
-      `${result?.bitDepth ?? "?"} bit, ${result?.size ?? "?"} bytes`;
+      `start ${startedAt.current - pressedAt.current} ms after the press; held ${releasedAt - pressedAt.current} ms; ` +
+      `file ${result?.sampleRate ?? "?"} Hz, ${result?.channels ?? "?"} ch, ${result?.bitDepth ?? "?"} bit, ` +
+      `${result?.size ?? "?"} bytes`;
     setSummary(text);
     console.warn(`P5 recording: ${text}`);
-  }
-
-  async function testStream() {
-    setStream([]);
-    const begin = Date.now();
-    const lines: string[] = [];
-    const response = await fetch(`${serverUrl}/api/v1/dev/stream-test`);
-    const reader = response.body?.getReader();
-    if (!reader) return;
-    await readReplyStream(reader, (event: ReplyEvent) => {
-      lines.push(`${Date.now() - begin} ms: ${event.type}${event.type === "text" ? ` ${event.text}` : ""}`);
-      setStream([...lines]);
-    });
-    console.warn(`P5 stream: ${lines.join(" | ")}`);
   }
 
   return (
@@ -113,14 +121,6 @@ export default function Voice() {
         </Note>
         {summary ? <Note>{summary}</Note> : null}
       </View>
-      {__DEV__ ? (
-        <>
-          <Button kind="plain" label={t("voice.stream_test")} onPress={testStream} />
-          {stream.map((line) => (
-            <Note key={line}>{line}</Note>
-          ))}
-        </>
-      ) : null}
     </Screen>
   );
 }

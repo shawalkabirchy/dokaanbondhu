@@ -61,8 +61,7 @@
     "check_title": "Recording check",
     "chunks": "Chunks",
     "last_chunk": "Last chunk",
-    "total": "Total",
-    "stream_test": "Test the reply stream"
+    "total": "Total"
   },
   "chat": {
     "coming": "Chat answers come in step 3."

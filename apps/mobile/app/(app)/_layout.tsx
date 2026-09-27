@@ -22,7 +22,11 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.green,
-        tabBarLabelStyle: { fontSize: 14 },
+        // Text labels only (D81): no icon package, and the navigator's placeholder glyph is not in every font.
+        tabBarIcon: () => null,
+        tabBarIconStyle: { display: "none" },
+        tabBarLabelStyle: { fontSize: 16 },
+        tabBarLabelPosition: "beside-icon",
         headerTitleStyle: { fontSize: 20 },
       }}
     >
