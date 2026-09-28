@@ -89,14 +89,6 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
     });
     expect(response.status).toBe(200);
-    if (!events.some((event) => event.type === "cards")) {
-      // Diagnostic: what the stub received and why the chain gave up (messages.meta.fallbacks).
-      const saved = await admin.withAdmin((tx) =>
-        tx.select().from(messages).where(eq(messages.conversationId, conversationId)),
-      );
-      console.warn("DIAG received", llm.received.length, "events", JSON.stringify(events).slice(0, 600));
-      console.warn("DIAG meta", JSON.stringify(saved.map((message) => message.meta)));
-    }
     expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
     expect(response.headers.get("x-accel-buffering")).toBe("no");
     expect(events[0]).toMatchObject({ type: "status", state: "UNDERSTANDING" });
