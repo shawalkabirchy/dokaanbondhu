@@ -10,14 +10,19 @@ function groupDigits(digits: string): string {
   return `${head},${digits.slice(-3)}`;
 }
 
-/** Paisa as taka: "4,500", "1,23,456.50"; with Bangla digits by default. Paisa show only when not zero. */
+/** Paisa as whole taka, rounded half away from zero (D92): "4,500", "1,23,457"; with Bangla digits by default. */
 export function formatTaka(paisa: bigint, options: { bangla?: boolean } = {}): string {
-  const sign = paisa < 0n ? "-" : "";
-  const absolute = paisa < 0n ? -paisa : paisa;
-  const fraction = absolute % 100n;
-  let text = `${sign}${groupDigits((absolute / 100n).toString())}`;
-  if (fraction !== 0n) text += `.${fraction.toString().padStart(2, "0")}`;
+  const taka = wholeTaka(paisa);
+  const sign = taka < 0n ? "-" : "";
+  const text = `${sign}${groupDigits((taka < 0n ? -taka : taka).toString())}`;
   return options.bangla === false ? text : banglaDigits(text);
+}
+
+/** Paisa to whole taka, half away from zero: paisa are never shown or said (D92). */
+export function wholeTaka(paisa: bigint): bigint {
+  const absolute = paisa < 0n ? -paisa : paisa;
+  const taka = (absolute + 50n) / 100n;
+  return paisa < 0n ? -taka : taka;
 }
 
 /** Money as spoken and shown: "৪,২০০ টাকা". */

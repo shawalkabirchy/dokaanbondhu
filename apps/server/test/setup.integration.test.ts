@@ -220,7 +220,7 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     expect(schema.entities.every((entity) => !entity.confirmed)).toBe(true);
     const price = schema.entities.find((entity) => entity.concept === "Price")!;
     const retail = price.fields.find((field) => field.concept_field === "retail_price")!;
-    expect(retail.value_scale).toBe(100);
+    expect(retail.value_scale).toBe(1); // GearGrid stores whole taka (D92)
     expect(retail.samples.length).toBeGreaterThan(0);
     expect(retail.samples.every((sample) => sample.endsWith("টাকা"))).toBe(true);
 

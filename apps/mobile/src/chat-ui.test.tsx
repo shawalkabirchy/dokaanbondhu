@@ -40,7 +40,7 @@ describe("reply content", () => {
         }}
       />,
     );
-    expect(screen.getByText("Tk 1,23,456.50")).toBeTruthy();
+    expect(screen.getByText("Tk 1,23,457")).toBeTruthy();
     expect(screen.getByText("chat.more_rows")).toBeTruthy();
   });
 

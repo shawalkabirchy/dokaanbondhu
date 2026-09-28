@@ -184,7 +184,8 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     const value = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
     const [direct] = await pools.readOnly(db, (run) =>
       run({
-        text: "SELECT SUM(ROUND(GREATEST(s.quantity, 0) * p.avg_cost)) AS paisa FROM stock_levels s JOIN parts p ON p.id = s.part_id WHERE p.avg_cost > 0",
+        // avg_cost is whole taka (D92): times 100 for paisa
+        text: "SELECT SUM(ROUND(GREATEST(s.quantity, 0) * p.avg_cost * 100)) AS paisa FROM stock_levels s JOIN parts p ON p.id = s.part_id WHERE p.avg_cost > 0",
         values: [],
       }),
     );

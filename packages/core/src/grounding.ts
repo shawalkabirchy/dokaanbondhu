@@ -1,4 +1,5 @@
 import { NUMBER_WORDS } from "./numbers";
+import { wholeTaka } from "./format";
 import { asciiDigits } from "./text";
 
 // The grounding check (spec 12.1; architecture, response builder): every number and rack label in a sentence must be
@@ -32,9 +33,7 @@ export class AllowedFacts {
     if (paisa === null || paisa === undefined) return this;
     const absolute = paisa < 0n ? -paisa : paisa;
     this.addNumber(absolute);
-    const taka = absolute / 100n;
-    const fraction = absolute % 100n;
-    this.addNumber(fraction === 0n ? taka : `${taka}.${fraction.toString().padStart(2, "0")}`);
+    this.addNumber(wholeTaka(absolute)); // said in whole taka only (D92)
     return this;
   }
 

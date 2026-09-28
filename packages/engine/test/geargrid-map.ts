@@ -1,7 +1,7 @@
 import type { EntityMap, FieldMap, SchemaMap } from "../src/host/schema-map";
 
 // GearGrid's schema map as the owner confirms it (spec 5.2), for integration tests against the CI copy of GearGrid.
-// Money is paisa (value scale 100); quantities are numeric (scale 1).
+// Money is whole taka (value scale 1, D92); quantities are numeric (scale 1).
 
 type Spec = string | [table: string, column: string, scale?: number];
 
@@ -98,10 +98,10 @@ export const geargridMap: SchemaMap = {
       rowFilters: [],
       fields: fields("parts", {
         part_id: "id",
-        retail_price: ["parts", "retail_price", 100],
-        garage_price: ["parts", "garage_price", 100],
-        wholesale_price: ["parts", "wholesale_price", 100],
-        cost: ["parts", "avg_cost", 100],
+        retail_price: ["parts", "retail_price"],
+        garage_price: ["parts", "garage_price"],
+        wholesale_price: ["parts", "wholesale_price"],
+        cost: ["parts", "avg_cost"],
       }),
     }),
     Customer: entity({
@@ -115,8 +115,8 @@ export const geargridMap: SchemaMap = {
         type: "type",
         price_tier: "price_tier",
         phone: "phone",
-        due_balance: ["customers", "due_balance", 100],
-        credit_limit: ["customers", "credit_limit", 100],
+        due_balance: ["customers", "due_balance"],
+        credit_limit: ["customers", "credit_limit"],
       }),
     }),
     Sale: entity({
@@ -128,9 +128,9 @@ export const geargridMap: SchemaMap = {
         id: "id",
         date_time: "sale_time",
         customer_id: "customer_id",
-        total: ["sales", "total", 100],
-        paid: ["sales", "paid", 100],
-        due: ["sales", "due", 100],
+        total: ["sales", "total"],
+        paid: ["sales", "paid"],
+        due: ["sales", "due"],
       }),
     }),
     SaleItem: entity({
@@ -142,7 +142,7 @@ export const geargridMap: SchemaMap = {
         sale_id: "sale_id",
         part_id: "part_id",
         quantity: "quantity",
-        unit_price: ["sale_items", "unit_price", 100],
+        unit_price: ["sale_items", "unit_price"],
       }),
     }),
     Payment: entity({
@@ -156,7 +156,7 @@ export const geargridMap: SchemaMap = {
       fields: fields("customer_payments", {
         id: "id",
         customer_id: "customer_id",
-        amount: ["customer_payments", "amount", 100],
+        amount: ["customer_payments", "amount"],
         date_time: "received_at",
         method: "method",
         trx_id: "trx_id",
@@ -171,7 +171,7 @@ export const geargridMap: SchemaMap = {
         id: "id",
         name: "name",
         phone: "phone",
-        payable_balance: ["suppliers", "payable_balance", 100],
+        payable_balance: ["suppliers", "payable_balance"],
       }),
     }),
   },

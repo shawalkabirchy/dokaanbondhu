@@ -94,10 +94,12 @@ describe("quantities (spec 10.6)", () => {
 });
 
 describe("numbers in answers (spec 10.8)", () => {
-  it("writes money with Bangla digits and Bangladeshi grouping", () => {
+  it("writes money in whole taka with Bangla digits and Bangladeshi grouping (D92)", () => {
     expect(money(420000n)).toBe("৪,২০০ টাকা");
-    expect(formatTaka(12345650n, { bangla: false })).toBe("1,23,456.50");
-    expect(formatTaka(-150000n, { bangla: false })).toBe("-1,500");
+    expect(formatTaka(12345650n, { bangla: false })).toBe("1,23,457"); // half a taka rounds up
+    expect(formatTaka(12345649n, { bangla: false })).toBe("1,23,456");
+    expect(formatTaka(-150050n, { bangla: false })).toBe("-1,501"); // away from zero
+    expect(formatTaka(49n, { bangla: false })).toBe("0");
   });
 
   it("writes years and quantities", () => {
