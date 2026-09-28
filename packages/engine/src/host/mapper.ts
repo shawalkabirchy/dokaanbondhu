@@ -2,6 +2,7 @@ import { formatTaka } from "@dokaanbondhu/core";
 import { z } from "zod";
 import { llmStream, type LlmProvider } from "../providers";
 import type { IntrospectedTable } from "./introspect";
+import { repairProposal } from "./repair";
 import { CONCEPT_FIELDS, CONCEPTS, type Concept, type EntityMap, type FieldMap } from "./schema-map";
 
 // Schema mapper, step 2 (spec 11.3): name heuristics, then one LLM call that returns the proposal JSON, validated
@@ -74,7 +75,8 @@ function schemaText(tables: IntrospectedTable[]): string {
           ...new Set(table.samples.map((row) => row[column.name]).filter((v) => v !== null)),
         ].slice(0, 3);
         const hint = columnHint(table, column);
-        return `  ${column.name} ${column.dataType}${hint ? ` [${hint}]` : ""}${samples.length ? ` e.g. ${samples.join(" | ")}` : ""}`;
+        const values = column.values?.length ? ` values: ${column.values.join(" | ")}` : "";
+        return `  ${column.name} ${column.dataType}${hint ? ` [${hint}]` : ""}${values || (samples.length ? ` e.g. ${samples.join(" | ")}` : "")}`;
       });
       return `${table.name}\n${columns.join("\n")}`;
     })
@@ -99,6 +101,12 @@ Rules:
 - A field may live in a joined table; list that table in joins, with "on" as "table.column" pairs.
 - row_filters leave out deleted, inactive, voided and reversed rows: is_null for a deleted_at column, is_true for an
   active flag, ne with the value for a status such as void. Filters may name the host_table or a joined table.
+  A sale line repeats its sale's filters (join the sale's table).
+- A text field such as category or brand is a name. When the table holds only a link (category_id), join the linked
+  table and use its name column.
+- A ..._id field (part_id, customer_id, sale_id, supplier_id, vehicle_id) is the column that links to that concept's
+  table, or that table's own key when the entity lives in the same table. Never map a field to an unrelated key.
+- part_number may live in a separate table of numbers per part, and rack_location on the part's table: join them.
 - value_scale for money: 100 when amounts are stored in paisa (4500 taka stored as 450000), 1 when stored in taka.
   For quantities: 1000 when stored in thousandths (3 sets stored as 3000), else 1. Other fields: 1.
 - Use only the tables and columns listed. Do not invent fields that are not in the concept list.`;
@@ -142,6 +150,25 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
     const dot = text.lastIndexOf(".");
     return dot > 0 ? column(text.slice(0, dot), text.slice(dot + 1)) : undefined;
   };
+  /** A join from the entity's table to a table a key links it with: parent when it points there, else child. */
+  const linkJoin = (host: string, table: string): EntityMap["joins"][number] | null => {
+    const up = byName.get(host)?.columns.find((c) => c.references?.table === table);
+    if (up)
+      return {
+        table,
+        on: [{ left: `${host}.${up.name}`, right: `${table}.${up.references!.column}` }],
+        kind: "parent",
+      };
+    const down = byName.get(table)?.columns.find((c) => c.references?.table === host);
+    if (down) {
+      return {
+        table,
+        on: [{ left: `${host}.${down.references!.column}`, right: `${table}.${down.name}` }],
+        kind: "child",
+      };
+    }
+    return null;
+  };
   const entities: EntityMap[] = [];
   const seen = new Set<Concept>();
   for (const entity of raw.entities) {
@@ -170,8 +197,20 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
         return parent || child ? { ...join, kind: parent ? ("parent" as const) : ("child" as const) } : join;
       });
     const tablesOfEntity = new Set([entity.host_table, ...joins.map((join) => join.table)]);
+    // A table the proposal uses but forgot to join is joined when a key links it with the entity's table.
+    const joinIfLinked = (table: string, what: string): boolean => {
+      if (tablesOfEntity.has(table)) return true;
+      const join = linkJoin(entity.host_table, table);
+      if (!join) return false;
+      joins.push(join);
+      tablesOfEntity.add(table);
+      warnings.push(`${entity.concept}: join to ${table} added for ${what}`);
+      return true;
+    };
     const rowFilters = entity.row_filters.filter((filter) => {
-      const ok = tablesOfEntity.has(filter.table) && column(filter.table, filter.column) !== undefined;
+      const ok =
+        column(filter.table, filter.column) !== undefined &&
+        joinIfLinked(filter.table, `the filter on ${filter.column}`);
       if (!ok) warnings.push(`${entity.concept}: row filter on ${filter.table}.${filter.column} dropped`);
       return ok;
     });
@@ -182,7 +221,7 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
         warnings.push(`${entity.concept}.${field.concept_field}: not a field of the concept`);
         continue;
       }
-      if (!found || !tablesOfEntity.has(field.host_table)) {
+      if (!found || !joinIfLinked(field.host_table, field.concept_field)) {
         warnings.push(
           `${entity.concept}.${field.concept_field}: ${field.host_table}.${field.host_column} dropped`,
         );
@@ -213,7 +252,7 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
   return { entities, warnings };
 }
 
-/** Introspected tables -> a checked proposal. One retry if the model's JSON does not validate. */
+/** Introspected tables -> a checked and repaired proposal. One retry if the model's JSON does not validate. */
 export async function proposeSchemaMap(
   providers: LlmProvider[],
   tables: IntrospectedTable[],
@@ -222,7 +261,10 @@ export async function proposeSchemaMap(
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return checkProposal(proposalSchema.parse(await askJson(providers, schema)), tables);
+      return repairProposal(
+        checkProposal(proposalSchema.parse(await askJson(providers, schema)), tables),
+        tables,
+      );
     } catch (error) {
       lastError = error;
     }

@@ -74,6 +74,13 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
       column: "id",
     });
     expect(tables.find((table) => table.name === "parts")!.samples.length).toBe(5);
+    // A status column's values come from the table's CHECK rule too, so "reversed" is known before any reversal.
+    const status = (table: string) =>
+      tables.find((candidate) => candidate.name === table)!.columns.find((column) => column.name === "status")
+        ?.values ?? [];
+    expect(status("customer_payments")).toContain("reversed");
+    expect(status("purchases")).toContain("reversed");
+    expect(status("sales")).toContain("void");
   });
 
   it("reads the catalog through the map: active parts with all their numbers, vehicles, customers, suppliers", () => {

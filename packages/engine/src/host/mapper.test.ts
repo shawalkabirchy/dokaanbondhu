@@ -119,6 +119,7 @@ describe("schema mapper (spec 11.3)", () => {
       "Part: row filter on items.no_such dropped",
       "Part.colour: not a field of the concept",
       "Customer: unknown table clients",
+      "Price: row filter items.deleted_at is_null added (deleted rows)",
     ]);
   });
 
