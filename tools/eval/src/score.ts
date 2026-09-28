@@ -2,7 +2,8 @@ import { asciiDigits, factsIn, SEE_IN_APP } from "@dokaanbondhu/core";
 import type { Item, LookupExpected, MustNotExpected, ReadExpected } from "./items";
 
 // The scorer (spec 18.4; architecture 11.2): correct action, exact part after clarification, questions per item, the
-// zero rules and latency medians, per channel and split. Pure functions over what the runner recorded, so a run can be
+// zero rules and latency medians, per channel and split, per kind, and per writing style of the chat items (D96).
+// Pure functions over what the runner recorded, so a run can be
 // scored again without the server.
 
 /** What the done event's trace carries in evaluation mode (the engine's TurnTrace). */
@@ -60,6 +61,8 @@ export interface ItemScore {
   channel: string;
   split: string;
   kind: string;
+  /** Chat items: "bangla" or "banglish"; voice items: null. */
+  style: string | null;
   scored: boolean;
   correct: boolean;
   exactPart: boolean | null;
@@ -164,6 +167,7 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     channel: item.channel,
     split: item.split,
     kind: item.kind,
+    style: item.script_style ?? null,
     questions: result.turns.filter((turn) => turn.state === "CLARIFYING").length,
     unnecessary: result.unscripted,
     firstTextMs: result.turns[0]?.firstTextMs ?? null,
@@ -286,6 +290,8 @@ export interface Report {
   runId: string;
   groups: Record<string, GroupReport>;
   byKind: Record<string, GroupReport>;
+  /** Chat items by how they are written, overall and per split: Bangla script against Banglish (D96). */
+  byStyle: Record<string, GroupReport>;
   zeroRules: { id: string; rule: string }[];
   notScored: { id: string; reason: string }[];
   failures: { id: string; kind: string; notes: string[] }[];
@@ -293,17 +299,22 @@ export interface Report {
 }
 
 export function buildReport(runId: string, scores: ItemScore[]): Report {
-  const groupBy = (key: (score: ItemScore) => string) => {
+  const groupBy = (key: (score: ItemScore) => string, among = scores) => {
     const groups = new Map<string, ItemScore[]>();
-    for (const score of scores) groups.set(key(score), [...(groups.get(key(score)) ?? []), score]);
+    for (const score of among) groups.set(key(score), [...(groups.get(key(score)) ?? []), score]);
     return Object.fromEntries(
       [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, groupReport(v)]),
     );
   };
+  const chat = scores.filter((score) => score.style);
   return {
     runId,
     groups: { ...groupBy((score) => `${score.channel} ${score.split}`), all: groupReport(scores) },
     byKind: groupBy((score) => score.kind),
+    byStyle: {
+      ...groupBy((score) => score.style!, chat),
+      ...groupBy((score) => `${score.style} ${score.split}`, chat),
+    },
     zeroRules: scores.flatMap((score) => score.zeroRules.map((rule) => ({ id: score.id, rule }))),
     notScored: scores
       .filter((score) => !score.scored)
@@ -341,6 +352,9 @@ export function renderMarkdown(report: Report): string {
     ...table(report.byKind),
     "",
   ];
+  if (Object.keys(report.byStyle).length) {
+    lines.push("## Chat by writing style (Bangla script, Banglish)", "", ...table(report.byStyle), "");
+  }
   if (report.zeroRules.length) {
     lines.push("## Zero rules", "", ...report.zeroRules.map((z) => `- ${z.id}: ${z.rule}`), "");
   }

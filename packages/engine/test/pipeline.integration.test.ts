@@ -143,212 +143,275 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     await pools.closeAll();
   });
 
-  const padsQuestion = {
-    part_type: "সামনের ব্রেক প্যাড",
-    vehicle: "এক্সিও",
-    year: "২০১৪",
-    position: "সামনের",
+  // Every conversation is tested as staff type it both ways, Bangla script and Banglish (D96); the LLM's tool
+  // arguments follow the request's script, as Gemma passes them. Replies are always in Bangla.
+  const a1Answer =
+    "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।";
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
+    },
+  ])(
+    "answers the architecture's A.1 with the template, part cards, and one LLM call (D95; $style)",
+    async ({ text, args }) => {
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+      const { outcome, events, reply } = await turn(text, fresh(), [llm]);
+      expect(reply).toBe(a1Answer);
+      expect(events.find((event) => event.type === "cards")).toMatchObject({ parts: [{}, {}] });
+      expect(events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
+      expect(outcome.meta).toMatchObject({ llm_calls: 1, grounding_failures: 0 });
+      expect(outcome.state.context.vehicle).toMatchObject({ model: "Toyota Axio", year: 2014 });
+    },
+  );
+
+  const rahimMotorsDue = {
+    name: "run_read_query",
+    arguments: {
+      sql: "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'",
+      purpose: "বাকি",
+    },
   };
-  it("answers the architecture's A.1 with the template, part cards, and one LLM call (D95)", async () => {
-    const llm = scripted([{ calls: [{ name: "find_parts", arguments: padsQuestion }] }]);
-    const { outcome, events, reply } = await turn("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?", fresh(), [llm]);
-    expect(reply).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।",
-    );
-    expect(events.find((event) => event.type === "cards")).toMatchObject({ parts: [{}, {}] });
-    expect(events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
-    expect(outcome.meta).toMatchObject({ llm_calls: 1, grounding_failures: 0 });
-    expect(outcome.state.context.vehicle).toMatchObject({ model: "Toyota Axio", year: 2014 });
-  });
 
-  it("drops an invented figure from the LLM's words and says the template answer instead", async () => {
-    const llm = scripted([
-      {
-        calls: [
-          {
-            name: "run_read_query",
-            arguments: {
-              sql: "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'",
-              purpose: "বাকি",
-            },
-          },
-        ],
-      },
-      { text: "রহিম মোটরসের বাকি ২৫,০০০ টাকা।" },
-    ]);
-    const { outcome, reply } = await turn("রহিম মোটরসের বাকি কত?", fresh(), [llm]);
-    expect(outcome.meta.grounding_failures).toBe(1);
-    expect(reply).toBe(SEE_ON_SCREEN);
-  });
+  it.each([
+    { style: "Bangla", text: "রহিম মোটরসের বাকি কত?" },
+    { style: "Banglish", text: "rahim motors er baki koto?" },
+  ])(
+    "drops an invented figure from the LLM's words and says the template answer instead ($style)",
+    async ({ text }) => {
+      const llm = scripted([{ calls: [rahimMotorsDue] }, { text: "রহিম মোটরসের বাকি ২৫,০০০ টাকা।" }]);
+      const { outcome, reply } = await turn(text, fresh(), [llm]);
+      expect(outcome.meta.grounding_failures).toBe(1);
+      expect(reply).toBe(SEE_ON_SCREEN);
+    },
+  );
 
-  it("asks the year for a Noah starter, then answers the year without the LLM", async () => {
-    const first = await turn("নোয়ার সেলফ আছে?", fresh(), [
-      scripted([{ calls: [{ name: "find_parts", arguments: { part_type: "সেলফ", vehicle: "নোয়া" } }] }]),
-    ]);
-    expect(first.reply).toBe("কোন বছরের নোয়া?");
-    expect(first.outcome.state).toMatchObject({ state: "CLARIFYING", frame: { asking: "year" } });
-    expect(first.events.find((event) => event.type === "choices")).toMatchObject({
-      slot: "year",
-      options: expect.arrayContaining([{ id: expect.any(String), label: "2014–2021" }]),
-    });
-    const second = await turn("২০১৬", first.outcome.state, [scripted([])]);
-    expect(second.outcome.meta.llm_calls).toBe(0);
-    expect(second.reply).toContain("নোয়া ২০১৬-এর");
-    expect(second.reply).toContain("জেনুইন");
-    expect(second.outcome.state.state).toBe("IDLE");
-  });
+  it.each([
+    {
+      style: "Bangla",
+      text: "নোয়ার সেলফ আছে?",
+      args: { part_type: "সেলফ", vehicle: "নোয়া" },
+      year: "২০১৬",
+    },
+    {
+      style: "Banglish",
+      text: "noah er self ache?",
+      args: { part_type: "self", vehicle: "noah" },
+      year: "2016",
+    },
+  ])(
+    "asks the year for a Noah starter, then answers the year without the LLM ($style)",
+    async ({ text, args, year }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(first.reply).toBe("কোন বছরের নোয়া?");
+      expect(first.outcome.state).toMatchObject({ state: "CLARIFYING", frame: { asking: "year" } });
+      expect(first.events.find((event) => event.type === "choices")).toMatchObject({
+        slot: "year",
+        options: expect.arrayContaining([{ id: expect.any(String), label: "2014–2021" }]),
+      });
+      const second = await turn(year, first.outcome.state, [scripted([])]);
+      expect(second.outcome.meta.llm_calls).toBe(0);
+      expect(second.reply).toContain("নোয়া ২০১৬-এর");
+      expect(second.reply).toContain("জেনুইন");
+      expect(second.outcome.state.state).toBe("IDLE");
+    },
+  );
 
-  it("asks which Rahim, then reads the chosen one's due through the guard", async () => {
-    const first = await turn("রহিমের বাকি কত?", fresh(), [
-      scripted([{ calls: [{ name: "resolve_customer", arguments: { name: "রহিম" } }] }]),
-    ]);
-    expect(first.reply).toMatch(/নাকি/);
-    const choices = first.events.find((event) => event.type === "choices") as {
-      options: { id: string; label: string }[];
-    };
-    const motors = choices.options.find((option) => option.label === "Rahim Motors")!;
-    const second = await turn(
-      undefined,
-      first.outcome.state,
-      [
+  it.each([
+    { style: "Bangla", text: "রহিমের বাকি কত?", name: "রহিম" },
+    { style: "Banglish", text: "rahim er baki koto?", name: "rahim" },
+  ])(
+    "asks which Rahim, then reads the chosen one's due through the guard ($style)",
+    async ({ text, name }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "resolve_customer", arguments: { name } }] }]),
+      ]);
+      expect(first.reply).toMatch(/নাকি/);
+      const choices = first.events.find((event) => event.type === "choices") as {
+        options: { id: string; label: string }[];
+      };
+      const motors = choices.options.find((option) => option.label === "Rahim Motors")!;
+      const second = await turn(
+        undefined,
+        first.outcome.state,
+        [scripted([{ calls: [rahimMotorsDue] }, { text: "রহিম মোটরসের বাকি ১৯,২০০ টাকা।" }])],
+        { slot: "customer", optionId: motors.id },
+      );
+      expect(second.reply).toBe("রহিম মোটরসের বাকি ১৯,২০০ টাকা।");
+      expect(second.events.find((event) => event.type === "table")).toMatchObject({
+        rows: [["Rahim Motors", 1920000]],
+      });
+      expect(second.outcome.state.context.customer).toMatchObject({ name: "Rahim Motors" });
+    },
+  );
+
+  it.each([
+    { style: "Bangla", profit: "এই মাসে লাভ কত?", pads: "এক্সিওর প্যাড আছে?" },
+    { style: "Banglish", profit: "ei mase lav koto?", pads: "axio r pad ache?" },
+  ])(
+    "sends profit to the app, and answers with the fixed message when every LLM is down ($style)",
+    async ({ profit, pads }) => {
+      const report = await turn(profit, fresh(), [
+        scripted([{ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] }]),
+      ]);
+      expect(report.reply).toBe(SEE_IN_APP);
+      const outage = await turn(pads, fresh(), [down]);
+      expect(outage.reply).toBe(CANNOT_ANSWER_NOW);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিওর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+      year: "২০১৪",
+    },
+    {
+      style: "Banglish",
+      text: "axio r front brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", position: "front" },
+      year: "2014",
+    },
+  ])(
+    "asks the year for an Axio front pad said without one, then lists both kinds for 2014 (A.6, the read half; $style)",
+    async ({ text, args, year }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(first.reply).toBe("কোন বছরের এক্সিও?");
+      expect(first.events.find((event) => event.type === "choices")).toMatchObject({
+        slot: "year",
+        options: [{ label: "2006–2011" }, { label: "2012–2017" }],
+      });
+      const second = await turn(year, first.outcome.state, [scripted([])]);
+      expect(second.outcome.meta.llm_calls).toBe(0);
+      expect(second.reply).toBe(a1Answer);
+      expect(second.outcome.trace.lookups.at(-1)).toMatchObject({
+        resolved: { vehicle: "Toyota Axio", year: 2014, position: "front" },
+        result: "rows",
+      });
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "আজকে ঢাকায় বৃষ্টি হবে?", own: "হ্যাঁ, আজ বিকেলে বৃষ্টি হতে পারে।" },
+    { style: "Banglish", text: "ajke dhakay bristi hobe?", own: "Ha, ajke bikele bristi hote pare." },
+  ])(
+    "answers a request it cannot handle with the fixed help answer, whatever the LLM says ($style)",
+    async ({ text, own }) => {
+      const { reply, outcome } = await turn(text, fresh(), [
+        scripted([{ text: own }, { calls: [{ name: "cannot_help", arguments: {} }] }]),
+      ]);
+      expect(reply).toBe(helpAnswer());
+      expect(outcome.trace.tool_calls.map((call) => call.name)).toEqual(["cannot_help"]);
+      expect(outcome.meta.llm_calls).toBe(2);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "প্রোবক্স ২০১৩-এর এয়ার ফিল্টার কোন র‍্যাকে?",
+      args: { part_type: "এয়ার ফিল্টার", vehicle: "প্রোবক্স", year: "২০১৩" },
+    },
+    {
+      style: "Banglish",
+      text: "probox 2013 er air filter kon rack e?",
+      args: { part_type: "air filter", vehicle: "probox", year: "2013" },
+    },
+  ])(
+    "asks once more, requiring a tool, when the LLM first answers in its own words (D95; $style)",
+    async ({ text, args }) => {
+      const llm = scripted([
+        { text: "দুঃখিত, আমি জানি না।" },
+        { calls: [{ name: "find_parts", arguments: args }] },
+        { text: "" },
+      ]);
+      const { reply, outcome } = await turn(text, fresh(), [llm]);
+      expect(reply).toContain("প্রোবক্স ২০১৩-এর");
+      expect(reply).toContain("তাকে");
+      expect(outcome.meta.llm_calls).toBe(2);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+      rear: "পেছনেরটা?",
+      genuine: "আর জেনুইনটা?",
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er front brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
+      rear: "pechoner ta?",
+      genuine: "genuine ta?",
+    },
+  ])(
+    "answers a short follow-up by changing the last search, without the LLM (spec 9.8, D95; $style)",
+    async ({ text, args, rear, genuine }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }, { text: "" }]),
+      ]);
+      expect(first.reply).toContain("B-3");
+      const second = await turn(rear, first.outcome.state, [scripted([])]);
+      expect(second.outcome.meta.llm_calls).toBe(0);
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর পেছনের");
+      expect(second.reply).toContain("B-4");
+      // Only non-genuine rear shoes exist: said plainly, then what there is (D95).
+      const third = await turn(genuine, second.outcome.state, [scripted([])]);
+      expect(third.outcome.meta.llm_calls).toBe(0);
+      expect(third.reply).toBe(
+        "এক্সিও ২০১৪-এর পেছনের লাইনিং জেনুইন নেই। এক্সিও ২০১৪-এর পেছনের নন-জেনুইন লাইনিং ২ সেট আছে, ১,৫০০ টাকা, B-4 তাকে।",
+      );
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "স্টকের মোট দাম কত?" },
+    { style: "Banglish", text: "stock er mot dam koto?" },
+  ])(
+    "says the stock value from the confirmed formula, in whole taka (spec 11.7, D92; $style)",
+    async ({ text }) => {
+      const expected = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
+      const { reply } = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "get_report", arguments: { name: "stock_value" } }] }, { text: "" }]),
+      ]);
+      expect(reply).toBe(`স্টকের মোট দাম ${formatTaka(expected)} টাকা।`);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "কোন কোন মাল অর্ডার দিতে হবে?" },
+    { style: "Banglish", text: "kon kon mal order dite hobe?" },
+  ])(
+    "shows a read query's rows as a table, money in paisa and quantities as numbers, and says to look at it ($style)",
+    async ({ text }) => {
+      const sql =
+        "SELECT p.name_en, s.quantity, p.retail_price FROM parts p JOIN stock_levels s ON s.part_id = p.id WHERE s.quantity <= p.reorder_level";
+      const { reply, events } = await turn(text, fresh(), [
         scripted([
-          {
-            calls: [
-              {
-                name: "run_read_query",
-                arguments: {
-                  sql: "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'",
-                  purpose: "বাকি",
-                },
-              },
-            ],
-          },
-          { text: "রহিম মোটরসের বাকি ১৯,২০০ টাকা।" },
+          { calls: [{ name: "run_read_query", arguments: { sql, purpose: "কম স্টক" } }] },
+          { text: "" },
         ]),
-      ],
-      { slot: "customer", optionId: motors.id },
-    );
-    expect(second.reply).toBe("রহিম মোটরসের বাকি ১৯,২০০ টাকা।");
-    expect(second.events.find((event) => event.type === "table")).toMatchObject({
-      rows: [["Rahim Motors", 1920000]],
-    });
-    expect(second.outcome.state.context.customer).toMatchObject({ name: "Rahim Motors" });
-  });
-
-  it("sends profit to the app, and answers with the fixed message when every LLM is down", async () => {
-    const profit = await turn("এই মাসে লাভ কত?", fresh(), [
-      scripted([{ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] }]),
-    ]);
-    expect(profit.reply).toBe(SEE_IN_APP);
-    const outage = await turn("এক্সিওর প্যাড আছে?", fresh(), [down]);
-    expect(outage.reply).toBe(CANNOT_ANSWER_NOW);
-  });
-
-  it("asks the year for an Axio front pad said without one, then lists both kinds for 2014 (A.6, the read half)", async () => {
-    const first = await turn("এক্সিওর সামনের ব্রেক প্যাড আছে?", fresh(), [
-      scripted([
-        {
-          calls: [
-            {
-              name: "find_parts",
-              arguments: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
-            },
-          ],
-        },
-      ]),
-    ]);
-    expect(first.reply).toBe("কোন বছরের এক্সিও?");
-    expect(first.events.find((event) => event.type === "choices")).toMatchObject({
-      slot: "year",
-      options: [{ label: "2006–2011" }, { label: "2012–2017" }],
-    });
-    const second = await turn("২০১৪", first.outcome.state, [scripted([])]);
-    expect(second.outcome.meta.llm_calls).toBe(0);
-    expect(second.reply).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।",
-    );
-    expect(second.outcome.trace.lookups.at(-1)).toMatchObject({
-      resolved: { vehicle: "Toyota Axio", year: 2014, position: "front" },
-      result: "rows",
-    });
-  });
-
-  it("answers a request it cannot handle with the fixed help answer, whatever the LLM says", async () => {
-    const { reply, outcome } = await turn("আজকে ঢাকায় বৃষ্টি হবে?", fresh(), [
-      scripted([
-        { text: "হ্যাঁ, আজ বিকেলে বৃষ্টি হতে পারে।" },
-        { calls: [{ name: "cannot_help", arguments: {} }] },
-      ]),
-    ]);
-    expect(reply).toBe(helpAnswer());
-    expect(outcome.trace.tool_calls.map((call) => call.name)).toEqual(["cannot_help"]);
-    expect(outcome.meta.llm_calls).toBe(2);
-  });
-
-  it("asks once more, requiring a tool, when the LLM first answers in its own words (D95)", async () => {
-    const llm = scripted([
-      { text: "দুঃখিত, আমি জানি না।" },
-      {
-        calls: [
-          { name: "find_parts", arguments: { part_type: "air filter", vehicle: "probox", year: "2013" } },
-        ],
-      },
-      { text: "" },
-    ]);
-    const { reply, outcome } = await turn("probox 2013 er air filter kon rack e?", fresh(), [llm]);
-    expect(reply).toContain("প্রোবক্স ২০১৩-এর");
-    expect(reply).toContain("তাকে");
-    expect(outcome.meta.llm_calls).toBe(2);
-  });
-
-  it("answers a short follow-up by changing the last search, without the LLM (spec 9.8, D95)", async () => {
-    const first = await turn("axio 2014 er front brake pad ache?", fresh(), [
-      scripted([
-        {
-          calls: [
-            {
-              name: "find_parts",
-              arguments: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
-            },
-          ],
-        },
-        { text: "" },
-      ]),
-    ]);
-    expect(first.reply).toContain("B-3");
-    const second = await turn("pechoner ta?", first.outcome.state, [scripted([])]);
-    expect(second.outcome.meta.llm_calls).toBe(0);
-    expect(second.reply).toContain("এক্সিও ২০১৪-এর পেছনের");
-    expect(second.reply).toContain("B-4");
-    // Only non-genuine rear shoes exist: said plainly, then what there is (D95).
-    const third = await turn("genuine ta?", second.outcome.state, [scripted([])]);
-    expect(third.outcome.meta.llm_calls).toBe(0);
-    expect(third.reply).toBe(
-      "এক্সিও ২০১৪-এর পেছনের লাইনিং জেনুইন নেই। এক্সিও ২০১৪-এর পেছনের নন-জেনুইন লাইনিং ২ সেট আছে, ১,৫০০ টাকা, B-4 তাকে।",
-    );
-  });
-
-  it("says the stock value from the confirmed formula, in whole taka (spec 11.7, D92)", async () => {
-    const expected = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
-    const { reply } = await turn("স্টকের মোট দাম কত?", fresh(), [
-      scripted([{ calls: [{ name: "get_report", arguments: { name: "stock_value" } }] }, { text: "" }]),
-    ]);
-    expect(reply).toBe(`স্টকের মোট দাম ${formatTaka(expected)} টাকা।`);
-  });
-
-  it("shows a read query's rows as a table, money in paisa and quantities as numbers, and says to look at it", async () => {
-    const sql =
-      "SELECT p.name_en, s.quantity, p.retail_price FROM parts p JOIN stock_levels s ON s.part_id = p.id WHERE s.quantity <= p.reorder_level";
-    const { reply, events } = await turn("কোন কোন মাল অর্ডার দিতে হবে?", fresh(), [
-      scripted([
-        { calls: [{ name: "run_read_query", arguments: { sql, purpose: "কম স্টক" } }] },
-        { text: "" },
-      ]),
-    ]);
-    expect(reply).toBe(SEE_ON_SCREEN);
-    const table = events.find((event) => event.type === "table") as Extract<ReplyEvent, { type: "table" }>;
-    expect(table.rows).toHaveLength(8);
-    expect(table.columns.map((column) => column.kind)).toEqual(["text", "number", "money"]);
-    for (const row of table.rows) expect(Number(row[2]) % 100).toBe(0); // whole taka, carried in paisa
-  });
+      ]);
+      expect(reply).toBe(SEE_ON_SCREEN);
+      const table = events.find((event) => event.type === "table") as Extract<ReplyEvent, { type: "table" }>;
+      expect(table.rows).toHaveLength(8);
+      expect(table.columns.map((column) => column.kind)).toEqual(["text", "number", "money"]);
+      for (const row of table.rows) expect(Number(row[2]) % 100).toBe(0); // whole taka, carried in paisa
+    },
+  );
 });

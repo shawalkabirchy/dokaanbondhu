@@ -8,8 +8,8 @@ import { runItems, type RunState } from "./run";
 import { buildReport, renderMarkdown, scoreItem } from "./score";
 import { Session, type EvalEnv } from "./session";
 
-// npm run eval -- run [--split open|held_out|all] [--channel chat|voice|all] [--kind <kinds>] [--ids <ids>]
-//                     [--limit <n>] [--built-actions <actions>]
+// npm run eval -- run [--split open|held_out|all] [--channel chat|voice|all] [--style bangla|banglish|all]
+//                     [--kind <kinds>] [--ids <ids>] [--limit <n>] [--built-actions <actions>]
 // npm run eval -- run --resume [--run <id>]
 // npm run eval -- score [--run <id>]
 // The held-out split is for the final run only (build step 9); the default is the open split.
@@ -59,6 +59,7 @@ async function main() {
     options: {
       split: { type: "string", default: "open" },
       channel: { type: "string", default: "all" },
+      style: { type: "string", default: "all" },
       kind: { type: "string" },
       ids: { type: "string" },
       limit: { type: "string" },
@@ -107,6 +108,7 @@ async function main() {
       (item) =>
         (values.split === "all" || item.split === values.split) &&
         (values.channel === "all" || item.channel === values.channel) &&
+        (values.style === "all" || item.script_style === values.style) &&
         (!kinds || kinds.includes(item.kind)) &&
         (!ids || ids.includes(item.id)),
     );

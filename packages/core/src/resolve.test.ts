@@ -131,8 +131,8 @@ describe("customer resolver (spec 10.7)", () => {
     { hostId: "c3", name: "Karim Auto", nameBn: null },
   ];
 
-  it("asks when the spoken name begins several names", () => {
-    const match = resolveCustomer("রহিম", [], customers, dictionary);
+  it.each(["রহিম", "rahim"])("asks when the spoken name begins several names (%s)", (name) => {
+    const match = resolveCustomer(name, [], customers, dictionary);
     expect(match.decision).toBe("ambiguous");
     expect(
       match.candidates

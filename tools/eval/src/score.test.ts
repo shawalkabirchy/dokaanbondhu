@@ -189,6 +189,22 @@ describe("scoring", () => {
     expect(report.notScored).toEqual([{ id: "c-111", reason: "action sale is not built" }]);
     expect(renderMarkdown(report)).toContain("No zero rule broken");
   });
+
+  it("reports chat items by writing style, so Bangla script and Banglish are measured alike (D96)", () => {
+    const found = done("x", [turn({ trace: trace({ lookups: [lookup(2014, [["04465-10010"]])] }) })]);
+    const missed = done("x", [turn({ trace: trace({ lookups: [lookup(2012, [])] }) })]);
+    const report = buildReport("r1", [
+      scoreItem({ ...pads, id: "c-001", script_style: "bangla" }, found),
+      scoreItem({ ...pads, id: "c-002", script_style: "banglish" }, missed),
+      scoreItem({ ...pads, id: "c-003", split: "held_out", script_style: "banglish" }, found),
+      scoreItem({ ...pads, id: "v-001", channel: "voice" }, found),
+    ]);
+    expect(report.byStyle.bangla).toMatchObject({ items: 1, correctRate: 100 });
+    expect(report.byStyle.banglish).toMatchObject({ items: 2, correctRate: 50 });
+    expect(report.byStyle["banglish open"]).toMatchObject({ items: 1, correctRate: 0 });
+    expect(Object.keys(report.byStyle)).not.toContain("null");
+    expect(renderMarkdown(report)).toContain("## Chat by writing style");
+  });
 });
 
 describe("runner", () => {

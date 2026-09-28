@@ -161,6 +161,36 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     expect(saved.messages.map((message) => message.text)).toContain("2014–2021");
   });
 
+  // Said both ways, Bangla script and Banglish (D96).
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+      rear: "পেছনেরটা?",
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
+      rear: "pechoner ta?",
+    },
+  ])(
+    "answers a short follow-up sent as a new request from the last finished search, without the LLM (D95; $style)",
+    async ({ text, args, rear }) => {
+      const conversationId = await newConversation();
+      llm.script.push({ calls: [{ name: "find_parts", arguments: args }] });
+      const first = await chat({ conversation_id: conversationId, text });
+      expect(first.reply).toContain("B-3");
+      expect(first.events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
+
+      const second = await chat({ conversation_id: conversationId, text: rear });
+      expect(llm.received).toHaveLength(1);
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর পেছনের");
+      expect(second.reply).toContain("B-4");
+    },
+  );
+
   it("sends profit to the app, gives the trace only with the evaluation key, and says so when the LLM is down", async () => {
     const conversationId = await newConversation();
     llm.script.push({ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] });

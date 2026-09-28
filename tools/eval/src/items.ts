@@ -47,6 +47,8 @@ export const itemSchema = z.object({
   subkind: z.string().optional(),
   as: z.enum(["staff", "owner"]).default("staff"),
   text: z.string().optional(),
+  /** How a chat item is written: Bangla script or Banglish (Latin letters); half of each, in every split (D96). */
+  script_style: z.enum(["bangla", "banglish"]).optional(),
   audio: z.string().optional(),
   reference_transcript: z.string().optional(),
   task_card: z.string(),
