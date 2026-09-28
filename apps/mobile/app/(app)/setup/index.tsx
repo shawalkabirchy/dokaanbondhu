@@ -271,7 +271,8 @@ function SchemaSection({ connectionId }: { connectionId: string }) {
         disabled={propose.isPending}
       />
       {view?.warnings.length ? (
-        <Note tone="danger">
+        // What the checks repaired (D90): information for the review, not an error.
+        <Note>
           {t("setup.warnings")} {view.warnings.join("; ")}
         </Note>
       ) : null}
