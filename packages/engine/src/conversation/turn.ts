@@ -6,9 +6,12 @@ import {
   helpAnswer,
   isGrounded,
   matchConcept,
+  money,
   noFitmentAnswer,
   normalize,
+  partPhrase,
   partsAnswer,
+  quantity,
   question,
   resolveCustomer,
   SEE_IN_APP,
@@ -217,10 +220,9 @@ function rowsForLlm(rows: PartRow[]) {
     name: row.nameBn ?? row.name,
     quality: row.quality ? banglaOf("quality", row.quality) : null,
     position: row.position ? banglaOf("position", row.position) : null,
-    stock: row.stock,
-    unit: row.unit,
-    retail_taka: row.retailPaisa === null ? null : formatTaka(row.retailPaisa, { bangla: false }),
-    garage_taka: row.garagePaisa === null ? null : formatTaka(row.garagePaisa, { bangla: false }),
+    stock: row.stock === null ? null : quantity(row.stock, row.unit ?? "piece"),
+    retail_price: row.retailPaisa === null ? null : money(row.retailPaisa),
+    garage_price: row.garagePaisa === null ? null : money(row.garagePaisa),
     rack: row.rack,
     fitment_recorded: row.fitmentVerified,
   }));
@@ -451,6 +453,7 @@ export async function runTurn(
         const result = facts.parts!.result;
         return result.kind === "rows"
           ? JSON.stringify({
+              asked_for: partPhrase(facts.parts!.context, result.pairUsed ?? undefined),
               kinds: result.rows.length,
               parts: rowsForLlm(result.rows),
               pair_used: result.pairUsed,
