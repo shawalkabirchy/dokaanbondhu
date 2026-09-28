@@ -208,15 +208,19 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
           {field.samples.length && field.kind !== "id" && field.kind !== "ref" ? (
             <Text style={{ fontSize: 17, color: colors.ink }}>{field.samples.join("  ·  ")}</Text>
           ) : null}
-          {field.kind === "money" ? (
-            <Chips
-              value={String(field.value_scale)}
-              options={[
-                { value: "1", label: `${t("setup.stored_as")}: ${t("setup.scale_1")}` },
-                { value: "100", label: `${t("setup.stored_as")}: ${t("setup.scale_100")}` },
-              ]}
-              onChange={(scale) => confirm.mutate({ [field.concept_field]: Number(scale) })}
-            />
+          {/* Money: the first sample read both ways; the owner picks the price that is right (the value scale). */}
+          {field.kind === "money" && field.readings?.["1"] && field.readings["100"] ? (
+            <>
+              <Note>{t("setup.which_price")}</Note>
+              <Chips
+                value={String(field.value_scale)}
+                options={[
+                  { value: "100", label: field.readings["100"] },
+                  { value: "1", label: field.readings["1"] },
+                ]}
+                onChange={(scale) => confirm.mutate({ [field.concept_field]: Number(scale) })}
+              />
+            </>
           ) : null}
         </View>
       ))}

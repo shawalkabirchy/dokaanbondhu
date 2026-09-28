@@ -250,5 +250,31 @@ export function repairProposal(proposal: Proposal, tables: IntrospectedTable[]):
     }
   }
 
+  // Money in the wrong unit: when a typical part would cost more than a lakh taka, whole-number money columns hold
+  // paisa. Spare parts sell for tens to tens of thousands of taka, so the median sample price tells the two apart.
+  const retail = entities.find((entity) => entity.concept === "Price")?.fields.retail_price;
+  const integer = (type: string | null) => /int/i.test(type ?? "");
+  if (retail && retail.valueScale === 1 && integer(retail.dataType)) {
+    const values = (byName.get(retail.hostTable)?.samples ?? [])
+      .map((row) => Number(row[retail.hostColumn]))
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .sort((a, b) => a - b);
+    const median = values[Math.floor(values.length / 2)];
+    if (median !== undefined && median > PAISA_MEDIAN) {
+      for (const entity of entities) {
+        for (const money of Object.values(entity.fields)) {
+          const kind = CONCEPT_FIELDS[entity.concept][money.conceptField];
+          if (kind === "money" && money.valueScale === 1 && integer(money.dataType)) money.valueScale = 100;
+        }
+      }
+      warnings.push(
+        `money: a typical part at ${median} taka is too dear, so money columns are read as paisa`,
+      );
+    }
+  }
+
   return { entities, warnings };
 }
+
+/** A median part price above this many taka means the host stores paisa. */
+const PAISA_MEDIAN = 100_000;

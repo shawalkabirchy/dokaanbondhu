@@ -122,6 +122,11 @@ const TOOL_ROUNDS = 3;
 const CALLS_PER_ROUND = 3;
 const LIST_KINDS = 4; // a read lists up to four kinds; more are separated by one question
 
+/** The last call's instruction: the answer the staff member needs, with its figures, from the results only. */
+const PHRASING = `Answer now, in Bangla, from the tool results only. For parts, name each kind with its quality, stock, \
+price in taka and rack, in this pattern: "<গাড়ি> <বছর>-এর <পার্ট> দুই রকম আছে: <মান> <স্টক>, <দাম> টাকা; <মান> <স্টক>, \
+<দাম> টাকা। দুটোই <তাক> তাকে।" For other results, give the figures asked for. Copy every number exactly.`;
+
 /** Collects one streamed LLM reply: its text and its tool calls (every call streams, spec 13.3). */
 async function collect(
   providers: LlmProvider[],
@@ -206,12 +211,12 @@ function cardsOf(rows: PartRow[]): ReplyEvent {
   };
 }
 
-/** What the LLM sees of the rows: taka as it will say them, never host IDs. */
+/** What the LLM sees of the rows: taka and the shop's Bangla words as they will be said, never host IDs. */
 function rowsForLlm(rows: PartRow[]) {
   return rows.map((row) => ({
     name: row.nameBn ?? row.name,
-    quality: row.quality,
-    position: row.position,
+    quality: row.quality ? banglaOf("quality", row.quality) : null,
+    position: row.position ? banglaOf("position", row.position) : null,
     stock: row.stock,
     unit: row.unit,
     retail_taka: row.retailPaisa === null ? null : formatTaka(row.retailPaisa, { bangla: false }),
@@ -723,7 +728,7 @@ export async function runTurn(
         !noFitment &&
         (facts.parts || facts.read || facts.report?.kind === "figure")
       ) {
-        messages.push({ role: "user", content: "Answer now, in Bangla, from the tool results only." });
+        messages.push({ role: "user", content: PHRASING });
         const phrasing = await collect(deps.llm, messages, [], note);
         trace.llm_calls++;
         llmText = phrasing.text;

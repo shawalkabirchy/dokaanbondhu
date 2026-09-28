@@ -78,6 +78,8 @@ export const entityViewSchema = z.object({
       confirmed: z.boolean(),
       /** Up to three sample values as they will be spoken (a price as "৪,২০০ টাকা"). */
       samples: z.array(z.string()),
+      /** Money only: the first sample read at each scale, so the owner picks the price that is right. */
+      readings: z.record(z.string(), z.string()).optional(),
     }),
   ),
 });

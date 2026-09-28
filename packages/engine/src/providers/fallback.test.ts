@@ -78,6 +78,14 @@ describe("LLM fallback", () => {
     expect(fallbacks).toEqual(["gemma:no-start"]);
   });
 
+  it("gives the last provider until the cap, since there is none to move on to", async () => {
+    const fallbacks: string[] = [];
+    const run = collect([stub("gemma", { delayMs: 5000 })], fallbacks);
+    await vi.advanceTimersByTimeAsync(5100);
+    expect(await run).toEqual(["gemma:gemma"]);
+    expect(fallbacks).toEqual([]);
+  });
+
   it("never switches once a provider has started", async () => {
     const second = stub("deepseek", {});
     const run = collect([stub("gemma", { fail: "after" }), second]);

@@ -3,8 +3,9 @@ import { recordProviderCall } from "./health";
 import type { LlmDelta, LlmProvider, LlmRequest } from "./llm";
 
 // The LLM fallback chain (spec 13.3; architecture: fallback rules). The providers are tried in priority order, only
-// the allowed ones. An attempt that has not started within 3 s is abandoned; the whole LLM step is capped at 8 s.
-// Connection errors, 429 and 5xx move on at once. Once a provider has started, it is never switched mid-answer.
+// the allowed ones. An attempt that has not started within 3 s is abandoned for the next provider; the last provider
+// has no next one, so it waits until the cap (D91). The whole LLM step is capped at 8 s. Connection errors, 429 and
+// 5xx move on at once. Once a provider has started, it is never switched mid-answer.
 
 export interface FallbackOptions {
   startTimeoutMs?: number; // default 3000
@@ -33,13 +34,14 @@ export async function* llmStream(
 ): AsyncIterable<LlmDelta & { providerId: string }> {
   const startTimeoutMs = options.startTimeoutMs ?? 3000;
   const deadline = Date.now() + (options.deadlineMs ?? 8000);
-  for (const provider of providers) {
+  for (const [index, provider] of providers.entries()) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     const control = new AbortController();
+    const last = index === providers.length - 1;
     const startTimer = setTimeout(
       () => control.abort(new Error("no-start")),
-      Math.min(startTimeoutMs, remaining),
+      last ? remaining : Math.min(startTimeoutMs, remaining),
     );
     const deadlineTimer = setTimeout(() => control.abort(new Error("deadline")), remaining);
     let started = false;
