@@ -142,6 +142,16 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     });
   });
 
+  it("checks a part number said with a car against that car's recorded fitment (D94)", async () => {
+    const fits = await findParts(input({ part_number: "04465-10010", vehicle: "axio", year: "2014" }));
+    expect(fits).toMatchObject({ kind: "rows", resolved: { vehicle: "Toyota Axio", year: 2014 } });
+    const notRecorded = await findParts(
+      input({ part_number: "AN-220WK", vehicle: "bluebird sylphy", year: "2011" }),
+    );
+    expect(notRecorded).toMatchObject({ kind: "none", resolved: { partType: "AN-220WK" } });
+    if (notRecorded.kind === "none") expect(notRecorded.mentioned.map((row) => row.name).length).toBe(1);
+  });
+
   it("never asserts a fitment it has no row for", async () => {
     const result = await findParts(input({ part_type: "horn", vehicle: "axio", year: "2014" }));
     expect(result.kind).toBe("none");

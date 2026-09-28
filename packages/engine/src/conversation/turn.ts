@@ -105,9 +105,11 @@ export interface TurnTrace {
       year: number | null;
       position: string | null;
       quality: string | null;
+      brand: string | null;
     };
     result: "rows" | "none" | "ask";
-    part_numbers: string[];
+    /** Each part found, as its part numbers (all of them, as the catalog has them). */
+    parts: string[][];
   }[];
   questions: string[];
   answer: string;
@@ -392,8 +394,8 @@ export async function runTurn(
       now,
     });
     timings.resolve = (timings.resolve ?? 0) + (Date.now() - resolveStart);
-    const partNumbers = (hostId: string) =>
-      deps.host.catalog.parts.find((part) => part.hostId === hostId)?.partNumbers[0] ?? hostId;
+    const numbersOf = (hostId: string) =>
+      deps.host.catalog.parts.find((part) => part.hostId === hostId)?.partNumbers ?? [hostId];
     trace.lookups.push({
       resolved: {
         part_type: result.resolved.partType,
@@ -401,9 +403,10 @@ export async function runTurn(
         year: result.resolved.year,
         position: result.resolved.position,
         quality: result.resolved.quality,
+        brand: result.resolved.brand,
       },
       result: result.kind,
-      part_numbers: result.kind === "rows" ? result.rows.map((row) => partNumbers(row.hostPartId)) : [],
+      parts: result.kind === "rows" ? result.rows.map((row) => numbersOf(row.hostPartId)) : [],
     });
     for (const [key, value] of Object.entries(query)) {
       frame.slots[key] = { value, status: "understood", source: "user" };

@@ -6,6 +6,8 @@ import { api } from "./lib/api";
 
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 jest.mock("./lib/session", () => ({ useMe: () => ({ data: { user: { role: "owner" } } }) }));
+// The offline banner checks the server on a timer; the page is tested without it.
+jest.mock("./lib/health", () => ({ useHealth: () => ({ online: true, checking: false }) }));
 jest.mock("./lib/api", () => ({
   api: jest.fn(),
   errorText: (_error: unknown, _language: string, fallback: string) => fallback,
@@ -82,7 +84,10 @@ function answer(connections: ConnectionView[]) {
 
 async function show() {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false, gcTime: Infinity },
+    },
   });
   await render(
     <QueryClientProvider client={client}>

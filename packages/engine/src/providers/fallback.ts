@@ -20,11 +20,15 @@ export class NothingLeftError extends AppError {
   }
 }
 
+/** Cloudflare's free plan ends its day with this error (code 4006); an evaluation run stops on it (D68). */
+const DAILY_LIMIT = /daily free allocation|\b4006\b/i;
+
 function reasonOf(error: unknown, signal: AbortSignal): string {
   if (signal.aborted) return signal.reason instanceof Error ? signal.reason.message : String(signal.reason);
   const status = (error as { status?: number }).status;
-  if (typeof status === "number") return `http ${status}`;
-  return error instanceof Error ? error.name : "error";
+  const daily = error instanceof Error && DAILY_LIMIT.test(error.message) ? " daily-limit" : "";
+  if (typeof status === "number") return `http ${status}${daily}`;
+  return error instanceof Error ? `${error.name}${daily}` : "error";
 }
 
 export async function* llmStream(

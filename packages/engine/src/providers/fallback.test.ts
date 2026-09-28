@@ -70,6 +70,27 @@ describe("LLM fallback", () => {
     expect(fallbacks).toEqual(["gemma:http 429"]);
   });
 
+  it("names Cloudflare's daily limit in the fallback reason, so an evaluation run can stop", async () => {
+    const fallbacks: string[] = [];
+    const limited: LlmProvider = {
+      id: "gemma",
+      external: false,
+      // eslint-disable-next-line require-yield
+      async *stream() {
+        throw Object.assign(
+          new Error("4006: you have used up your daily free allocation of 10,000 neurons"),
+          {
+            status: 429,
+          },
+        );
+      },
+    };
+    const run = collect([limited, stub("deepseek", {})], fallbacks);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await run).toEqual(["deepseek:deepseek"]);
+    expect(fallbacks).toEqual(["gemma:http 429 daily-limit"]);
+  });
+
   it("abandons a provider that has not started within 3 s", async () => {
     const fallbacks: string[] = [];
     const run = collect([stub("gemma", { delayMs: 5000 }), stub("deepseek", { delayMs: 100 })], fallbacks);

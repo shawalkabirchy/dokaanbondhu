@@ -21,3 +21,6 @@ apps/server/CLAUDE.md
 
 # TypeScript build caches
 *.tsbuildinfo
+
+# Evaluation runs (tools/eval): results and reports stay on the laptop
+tools/eval/runs/

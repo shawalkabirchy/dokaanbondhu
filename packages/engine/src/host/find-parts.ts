@@ -300,6 +300,36 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
     const ids = catalog.parts
       .filter((part) => part.partNumbers.includes(match.exact!))
       .map((part) => part.hostId);
+    // Said with a car ("will AN-220WK fit a 2011 Sylphy?"): only fitment recorded for that car counts; otherwise the
+    // answer is "not recorded for this car", never one that sounds like a fit (D94).
+    const car = query.vehicle ? understood("vehicle_model", query.vehicle, input, bold) : null;
+    if (car?.value) {
+      resolved.partType = match.exact;
+      resolved.vehicle = car.value;
+      resolved.year = query.year
+        ? parseYear(normalize(query.year).tokens, { now: input.now, bare: true })
+        : null;
+      resolved.engine = query.engine ? parseEngineCode(normalize(query.engine).tokens) : null;
+      const vehicles = matchVehicles(car.value, resolved.year, resolved.engine, catalog.vehicles);
+      if (vehicles.needsYear) {
+        return { kind: "ask", slot: "year", options: vehicles.vehicles.map(vehicleLabel), resolved };
+      }
+      const recorded = vehicles.vehicles.length
+        ? await queryRows(
+            input,
+            ids,
+            vehicles.vehicles.map((vehicle) => vehicle.hostId),
+          )
+        : [];
+      const extra = await extraRows(input, ids, car.value, resolved.year, resolved.engine);
+      const seen = new Set(recorded.map((row) => row.hostPartId));
+      const fitting = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
+      if (fitting.length) {
+        return { kind: "rows", rows: ordered(fitting).slice(0, ROW_LIMIT), resolved, pairUsed: null };
+      }
+      const itself = await queryRows(input, ids, null);
+      return { kind: "none", resolved, closeVehicle: [], mentioned: ordered(itself).slice(0, ROW_LIMIT) };
+    }
     const rows = await queryRows(input, ids, null);
     return { kind: "rows", rows: ordered(rows).slice(0, ROW_LIMIT), resolved, pairUsed: null };
   }
