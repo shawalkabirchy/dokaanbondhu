@@ -159,9 +159,10 @@ function ConnectionSummary(props: { connection: ConnectionView; onTested: (test:
 
 function filterText(filter: EntityView["row_filters"][number]): string {
   const value = filter.value === undefined ? "" : String(filter.value);
-  if (filter.op === "is_null") return `${filter.column} = NULL`;
-  if (filter.op === "is_true") return `${filter.column} = true`;
-  return `${filter.column} ${filter.op === "eq" ? "=" : "≠"} ${value}`;
+  const column = `${filter.table}.${filter.column}`;
+  if (filter.op === "is_null") return `${column} = NULL`;
+  if (filter.op === "is_true") return `${column} = true`;
+  return `${column} ${filter.op === "eq" ? "=" : "≠"} ${value}`;
 }
 
 function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) => void }) {
@@ -192,20 +193,19 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
   });
   return (
     <View style={styles.card}>
-      <View style={styles.row}>
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.ink, flex: 1 }}>
-          {t(`setup.concepts.${entity.concept}`, { defaultValue: entity.concept })} ({entity.host_table})
-        </Text>
-        <Note tone={entity.confirmed ? "ok" : "muted"}>
-          {t(entity.confirmed ? "setup.confirmed" : "setup.not_confirmed")}
-        </Note>
-      </View>
+      <Text style={{ fontSize: 18, fontWeight: "700", color: colors.ink }}>
+        {t(`setup.concepts.${entity.concept}`, { defaultValue: entity.concept })} ({entity.host_table})
+      </Text>
+      <Note tone={entity.confirmed ? "ok" : "muted"}>
+        {t(entity.confirmed ? "setup.confirmed" : "setup.not_confirmed")}
+      </Note>
       {entity.fields.map((field) => (
         <View key={field.concept_field} style={{ gap: 4 }}>
           <Text style={{ fontSize: 15, color: colors.muted }}>
             {field.concept_field} ← {field.host_table}.{field.host_column}
           </Text>
-          {field.samples.length ? (
+          {/* Keys and links are shown by column only: their sample values mean nothing to an owner. */}
+          {field.samples.length && field.kind !== "id" && field.kind !== "ref" ? (
             <Text style={{ fontSize: 17, color: colors.ink }}>{field.samples.join("  ·  ")}</Text>
           ) : null}
           {field.kind === "money" ? (

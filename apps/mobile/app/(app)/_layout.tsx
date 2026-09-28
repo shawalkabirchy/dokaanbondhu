@@ -20,6 +20,8 @@ export default function AppLayout() {
   const owner = me.data?.user.role === "owner";
   return (
     <Tabs
+      // Back returns to the page before (setup goes back to More), not to the first tab.
+      backBehavior="history"
       screenOptions={{
         tabBarActiveTintColor: colors.green,
         // Text labels only (D81): no icon package, and the navigator's placeholder glyph is not in every font.

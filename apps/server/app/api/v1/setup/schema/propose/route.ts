@@ -4,7 +4,12 @@ import { proposeSchemaMap, saveProposal, type Proposal } from "@dokaanbondhu/eng
 import { appError } from "../../../../../../src/server/errors";
 import { clearHostCache } from "../../../../../../src/server/host";
 import { readBody, route } from "../../../../../../src/server/route";
-import { dbConnection, introspected, schemaView } from "../../../../../../src/server/setup";
+import {
+  dbConnection,
+  introspected,
+  rememberProposalWarnings,
+  schemaView,
+} from "../../../../../../src/server/setup";
 import { shopLlm } from "../../../../../../src/server/shop";
 import { platform } from "../../../../../../src/server/singletons";
 
@@ -35,5 +40,6 @@ export const POST = route({ role: "owner", limit: "setup" }, async ({ request, c
   }
   await platform().withShop(caller.shopId, (tx) => saveProposal(tx, caller.shopId, connection.id, proposal));
   clearHostCache(caller.shopId);
-  return Response.json({ schema: await schemaView(caller.shopId, connection.id, proposal.warnings) });
+  rememberProposalWarnings(connection.id, proposal.warnings);
+  return Response.json({ schema: await schemaView(caller.shopId, connection.id) });
 });

@@ -27,8 +27,15 @@ type ConnectionRow = typeof connections.$inferSelect;
 const INTROSPECTION_MS = 10 * 60_000;
 const holder = globalThis as {
   __dokaanIntrospection?: Map<string, { tables: IntrospectedTable[]; at: number }>;
+  __dokaanProposalWarnings?: Map<string, string[]>;
 };
 const introspections = (holder.__dokaanIntrospection ??= new Map());
+// The last proposal's warnings (its repairs, D90), so the review shows them whenever it is opened again.
+const proposalWarnings = (holder.__dokaanProposalWarnings ??= new Map());
+
+export function rememberProposalWarnings(connectionId: string, warnings: string[]): void {
+  proposalWarnings.set(connectionId, warnings);
+}
 
 export function connectionView(row: ConnectionRow): ConnectionView {
   return {
@@ -109,7 +116,7 @@ export function entityView(id: string, entity: EntityMap, tables: IntrospectedTa
 export async function schemaView(
   shopId: string,
   connectionId: string,
-  warnings: string[] = [],
+  warnings: string[] = proposalWarnings.get(connectionId) ?? [],
 ): Promise<SchemaView> {
   const connection = await dbConnection(shopId, connectionId);
   const { map, ids } = await platform().withShop(shopId, async (tx) => ({
