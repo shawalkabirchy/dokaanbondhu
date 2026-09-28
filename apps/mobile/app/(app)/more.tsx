@@ -98,6 +98,7 @@ export default function More() {
           </View>
           {save.isSuccess ? <Note tone="ok">{t("settings.saved")}</Note> : null}
           {save.isError ? <Note tone="danger">{t("common.error")}</Note> : null}
+          <Button label={t("setup.open")} kind="plain" onPress={() => router.push("/setup")} />
         </>
       ) : null}
 

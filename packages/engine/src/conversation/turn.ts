@@ -714,7 +714,15 @@ export async function runTurn(
         if (stop || final) break;
         if (facts.parts || facts.read || (facts.report && facts.report.kind === "figure")) break; // the facts are here
       }
-      if (!final && llmText === null && (facts.parts || facts.read || facts.report?.kind === "figure")) {
+      // No recorded fitment is always said with the template, never phrased by the LLM, so no fit can be claimed
+      // (the grounding check sees numbers, not claims; D88).
+      const noFitment = facts.parts?.result.kind === "none";
+      if (
+        !final &&
+        llmText === null &&
+        !noFitment &&
+        (facts.parts || facts.read || facts.report?.kind === "figure")
+      ) {
         messages.push({ role: "user", content: "Answer now, in Bangla, from the tool results only." });
         const phrasing = await collect(deps.llm, messages, [], note);
         trace.llm_calls++;

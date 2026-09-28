@@ -1,6 +1,7 @@
 import type { ConnectionView, EntityView, SchemaView } from "@dokaanbondhu/contracts";
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
+  CONCEPT_FIELDS,
   CONCEPTS,
   introspect,
   loadHostDb,
@@ -93,6 +94,7 @@ export function entityView(id: string, entity: EntityMap, tables: IntrospectedTa
     confirmed: entity.confirmed,
     fields: Object.values(entity.fields).map((field) => ({
       concept_field: field.conceptField,
+      kind: CONCEPT_FIELDS[entity.concept][field.conceptField] ?? "text",
       host_table: field.hostTable,
       host_column: field.hostColumn,
       value_scale: field.valueScale,

@@ -69,6 +69,8 @@ export const entityViewSchema = z.object({
   fields: z.array(
     z.object({
       concept_field: z.string(),
+      /** What the field holds: money and quantity have a value scale; id, ref, text, number, boolean, time. */
+      kind: z.string(),
       host_table: z.string(),
       host_column: z.string(),
       value_scale: z.number().int(),

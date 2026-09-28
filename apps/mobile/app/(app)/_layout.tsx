@@ -35,6 +35,8 @@ export default function AppLayout() {
       <Tabs.Screen name="history" options={{ title: t("tabs.history") }} />
       <Tabs.Screen name="staff" options={{ title: t("tabs.staff"), href: owner ? undefined : null }} />
       <Tabs.Screen name="more" options={{ title: t("tabs.more") }} />
+      {/* Setup is opened from More (owner only), not from the tab bar. */}
+      <Tabs.Screen name="setup/index" options={{ title: t("setup.title"), href: null }} />
     </Tabs>
   );
 }

@@ -64,7 +64,25 @@
     "total": "Total"
   },
   "chat": {
-    "coming": "Chat answers come in step 3."
+    "placeholder": "Type a question…",
+    "send": "Send",
+    "new": "New chat",
+    "empty": "For example: Axio 2014 front brake pad ache?",
+    "stock": "Stock",
+    "rack": "Rack",
+    "out": "Out of stock",
+    "no_fitment": "Fitment for this car is not recorded",
+    "more_rows": "There are more rows; open the shop's app to see them all.",
+    "prices": {
+      "retail": "Retail",
+      "garage": "Garage",
+      "wholesale": "Wholesale"
+    },
+    "quality": {
+      "genuine": "Genuine",
+      "aftermarket": "Non-genuine",
+      "reconditioned": "Reconditioned"
+    }
   },
   "history": {
     "coming": "The action history comes in step 5."
@@ -103,5 +121,70 @@
     "disabled": "Off",
     "owner": "Owner",
     "none": "No staff logins yet."
+  },
+  "setup": {
+    "title": "Setup",
+    "open": "Connect the shop's database (setup)",
+    "step_connection": "1. Database connection",
+    "dialect": "Database type",
+    "host": "Host",
+    "port": "Port (optional)",
+    "database": "Database name",
+    "username": "User (with read-only rights)",
+    "password": "Password",
+    "ssl_mode": "Secure connection",
+    "ssl_verify": "Verified (recommended)",
+    "ssl_require": "Not verified",
+    "ssl_disable": "Off (localhost only)",
+    "ssl_require_warn": "The connection is encrypted, but the server is not checked to be the real one.",
+    "ssl_ca": "Certificate (PEM; needed for Supabase)",
+    "save_connection": "Save the connection",
+    "new_connection": "New connection",
+    "test": "Test the connection",
+    "test_ok": "Connected: {{count}} tables visible.",
+    "test_failed": "Could not connect:",
+    "status": {
+      "pending": "Not tested",
+      "active": "Active",
+      "error": "Problem",
+      "disabled": "Off"
+    },
+    "step_schema": "2. Data map",
+    "schema_note": "Each part shows sample values as they will be spoken. Confirm it when it is right.",
+    "propose": "Propose the map",
+    "proposing": "Proposing; this can take up to 3 minutes…",
+    "confirm": "Correct, confirm",
+    "confirmed": "Confirmed",
+    "not_confirmed": "Not confirmed yet",
+    "filters": "Rows left out",
+    "stored_as": "Stored as",
+    "scale_1": "taka",
+    "scale_100": "paisa",
+    "missing": "Not mapped (questions about these can't be answered):",
+    "warnings": "Warnings:",
+    "step_catalog": "3. Catalog sync",
+    "sync": "Sync now",
+    "synced": "Synced {{parts}} parts, {{vehicles}} vehicles, {{customers}} customers and {{suppliers}} suppliers.",
+    "step_reports": "4. Stock value",
+    "stock_value_now": "Stock value now (at cost):",
+    "stock_value_na": "Confirm stock and cost first to see this.",
+    "stock_value_confirm": "The figure is right",
+    "stock_value_confirmed": "Confirmed: the assistant will say this figure.",
+    "see_in_app": "Profit and cash book stay in the shop's app; the assistant will not say them.",
+    "unknown": "unknown",
+    "concepts": {
+      "Part": "Part",
+      "Vehicle": "Vehicle",
+      "Fitment": "Fitment",
+      "StockItem": "Stock",
+      "Price": "Price",
+      "Customer": "Customer",
+      "Sale": "Sale",
+      "SaleItem": "Sale line",
+      "Return": "Return",
+      "Payment": "Payment",
+      "Supplier": "Supplier",
+      "Purchase": "Purchase"
+    }
   }
 }

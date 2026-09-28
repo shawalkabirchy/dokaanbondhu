@@ -1,154 +1,51 @@
-import { randomBytes, randomUUID } from "node:crypto";
-import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
+import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
-import { encryptSecret } from "@dokaanbondhu/engine/crypto";
-import { confirmEntity, HostPools, syncConnection } from "@dokaanbondhu/engine/host";
 import {
-  aiProviders,
-  connections,
   conversations,
   createPlatform,
   messages,
   requestFrames,
-  shops,
-  users,
   type Platform,
 } from "@dokaanbondhu/platform-db";
 import { eq, sql } from "drizzle-orm";
-import { SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { geargridMap } from "../../../packages/engine/test/geargrid-map";
+import {
+  allLocal,
+  chatCall,
+  createHostShop,
+  disableConnection,
+  EVAL_KEY,
+  post,
+  urls,
+  useTestEnvironment,
+  type HostShop,
+} from "./harness";
 import { startStubLlm, type StubLlm } from "./stub-llm";
 
 // The chat endpoints end to end (spec 8.3, 8.5): the server, the platform DB and the CI copy of GearGrid, with an
 // OpenAI-compatible stub LLM on a local port, so the adapter, the NDJSON stream and what is saved are all real.
 
-const SUPABASE_URL = "http://localhost:54321";
-const JWT_SECRET = "server-test-secret-0123456789";
-const EVAL_KEY = "eval-key-for-integration-tests";
-const urls = {
-  api: process.env.PLATFORM_DATABASE_URL ?? "",
-  admin: process.env.PLATFORM_ADMIN_DATABASE_URL ?? "",
-  host: process.env.MIGRATION_DATABASE_URL ?? "",
-};
-const isLocal = (url: string) => {
-  try {
-    return ["localhost", "127.0.0.1"].includes(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-};
-const allLocal = isLocal(urls.api) && isLocal(urls.admin) && isLocal(urls.host);
-if (process.env.CI === "true" && !allLocal)
-  throw new Error("chat integration tests need the local CI databases");
-
-const aesKey = randomBytes(32);
-Object.assign(process.env, {
-  SUPABASE_URL,
-  SUPABASE_SECRET_KEY: "sb_secret_fake_for_integration_tests",
-  AES_KEY: aesKey.toString("base64"),
-  JWT_TEST_SECRET: JWT_SECRET,
-  EVAL_MODE_SECRET: EVAL_KEY,
-});
-
-const token = (authUserId: string) =>
-  new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setSubject(authUserId)
-    .setIssuer(`${SUPABASE_URL}/auth/v1`)
-    .setAudience("authenticated")
-    .setExpirationTime("10m")
-    .sign(new TextEncoder().encode(JWT_SECRET));
-
-type Handler = (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>;
+const aesKey = useTestEnvironment();
 
 describe.skipIf(!allLocal)("chat endpoints", () => {
   let admin: Platform;
   let llm: StubLlm;
+  let shop: HostShop;
   let routes: { conversations: { POST: unknown }; chat: { POST: unknown } };
-  const shopId = randomUUID();
-  const owner = { id: randomUUID(), auth: randomUUID() };
-  const staff = { id: randomUUID(), auth: randomUUID() };
-  const connectionId = randomUUID();
 
-  async function post(handler: unknown, auth: string, body: unknown, headers: Record<string, string> = {}) {
-    const request = new Request("http://localhost:3100/api/v1/test", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${await token(auth)}`,
-        ...headers,
-      },
-      body: JSON.stringify(body),
-    });
-    return (handler as Handler)(request, { params: Promise.resolve({}) });
-  }
-
-  async function newConversation(auth = owner.auth): Promise<string> {
+  async function newConversation(auth = shop.owner.auth): Promise<string> {
     const response = await post(routes.conversations.POST, auth, { channel: "chat" });
     expect(response.status).toBe(201);
     return ((await response.json()) as { conversation: { id: string } }).conversation.id;
   }
 
-  async function chat(body: Record<string, unknown>, headers: Record<string, string> = {}) {
-    const response = await post(routes.chat.POST, owner.auth, body, headers);
-    const events: ReplyEvent[] = [];
-    if (response.headers.get("content-type")?.startsWith("application/x-ndjson")) {
-      await readReplyStream(response.body!.getReader(), (event) => events.push(event));
-    }
-    const reply = events
-      .filter((event): event is Extract<ReplyEvent, { type: "text" }> => event.type === "text")
-      .map((event) => event.text)
-      .join(" ");
-    return { response, events, reply };
-  }
+  const chat = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    chatCall(routes.chat.POST, shop.owner.auth, body, headers);
 
   beforeAll(async () => {
     llm = await startStubLlm();
     admin = createPlatform(urls.admin, { max: 1 });
-    const host = new URL(urls.host);
-    await admin.withAdmin(async (tx) => {
-      await tx.insert(shops).values({ id: shopId, name: "Chat shop", ownerUserId: owner.id });
-      await tx.insert(users).values([
-        { id: owner.id, shopId, authUserId: owner.auth, name: "Owner", email: "chat-owner@t", role: "owner" },
-        { id: staff.id, shopId, authUserId: staff.auth, name: "Staff", email: "chat-staff@t", role: "staff" },
-      ]);
-      await tx.insert(aiProviders).values({
-        shopId,
-        job: "llm",
-        provider: "vllm",
-        model: "stub",
-        baseUrl: llm.baseUrl,
-        priority: 1,
-        external: false,
-      });
-      await tx.insert(connections).values({
-        id: connectionId,
-        shopId,
-        kind: "db",
-        dialect: "postgres",
-        host: host.hostname,
-        port: Number(host.port || 5432),
-        database: host.pathname.slice(1),
-        username: "dokaanbondhu_ro",
-        sslMode: "disable",
-        status: "active",
-        secretEncrypted: encryptSecret(
-          aesKey,
-          { table: "connections", rowId: connectionId, column: "secret_encrypted" },
-          process.env.DOKAAN_RO_PASSWORD ?? "",
-        ),
-      });
-    });
-    for (const entity of Object.values(geargridMap.entities)) {
-      if (entity) await admin.withAdmin((tx) => confirmEntity(tx, shopId, connectionId, entity, owner.id));
-    }
-    const pools = new HostPools();
-    try {
-      await syncConnection((fn) => admin.withAdmin(fn), pools, aesKey, shopId, connectionId);
-    } finally {
-      await pools.closeAll();
-    }
+    shop = await createHostShop(admin, aesKey, llm.baseUrl, "Chat shop");
     routes = {
       conversations: await import("../app/api/v1/conversations/route"),
       chat: await import("../app/api/v1/chat/messages/route"),
@@ -161,11 +58,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   });
 
   afterAll(async () => {
-    // The CI database is thrown away after the job; the connection is only switched off, so a catalog sync running
-    // in another test file at the same time never meets a half-deleted shop.
-    await admin.withAdmin((tx) =>
-      tx.update(connections).set({ status: "disabled" }).where(eq(connections.id, connectionId)),
-    );
+    await disableConnection(admin, shop.connectionId);
     const { hostPools } = await import("../src/server/host");
     await hostPools().closeAll();
     await llm.close();
@@ -286,7 +179,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   });
 
   it("refuses another user's conversation and a message with neither text nor choice", async () => {
-    const staffConversation = await newConversation(staff.auth);
+    const staffConversation = await newConversation(shop.staff.auth);
     const other = await chat({ conversation_id: staffConversation, text: "হ্যালো" });
     expect(other.response.status).toBe(404);
     expect(await other.response.json()).toMatchObject({ error: { code: "CONVERSATION_NOT_FOUND" } });
