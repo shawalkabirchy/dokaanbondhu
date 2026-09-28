@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
 import {
   runTurn,
@@ -9,17 +9,14 @@ import {
   type TurnInput,
   type TurnState,
 } from "@dokaanbondhu/engine/conversation";
-import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
-import { llmChain } from "@dokaanbondhu/engine/providers";
 import { conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { serverEnv } from "../env";
 import { appError } from "./errors";
 import { shopHost } from "./host";
 import type { Caller } from "./route";
-import { loadShop, providerRows, settingsOf } from "./shop";
+import { shopLlm } from "./shop";
 import { logger, platform } from "./singletons";
 
 // A chat turn on the server (spec 8.3, 8.5, 9.1): load the conversation, its open frame and the last messages; run
@@ -181,18 +178,7 @@ export async function chatTurn(input: ChatTurnInput, emit: (event: ReplyEvent) =
   const { caller, conversation } = input;
   let held: ReplyEvent | null = null;
   try {
-    const [shop, rows, shopHostValue] = await Promise.all([
-      platform().withShop(caller.shopId, (tx) => loadShop(tx, caller.shopId)),
-      providerRows(caller.shopId),
-      shopHost(caller.shopId),
-    ]);
-    const settings = settingsOf(shop);
-    const llm = llmChain(
-      rows,
-      caller.shopId,
-      settings.external_providers_allowed,
-      parseAesKey(serverEnv().AES_KEY),
-    );
+    const [llm, shopHostValue] = await Promise.all([shopLlm(caller.shopId), shopHost(caller.shopId)]);
     // Read before the turn, which changes the frame in place: the chip's label (what the user "said") and when the
     // open frame would have expired.
     const opened = conversation.state.frame;

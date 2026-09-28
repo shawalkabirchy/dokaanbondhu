@@ -5,9 +5,16 @@ import {
   type ShopSettingsView,
   type UserView,
 } from "@dokaanbondhu/contracts";
-import { selectProviders, type ProviderJob } from "@dokaanbondhu/engine/providers";
+import { parseAesKey } from "@dokaanbondhu/engine/crypto";
+import {
+  llmChain,
+  selectProviders,
+  type LlmProvider,
+  type ProviderJob,
+} from "@dokaanbondhu/engine/providers";
 import { aiProviders, shops, type Tx, type users } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
+import { serverEnv } from "../env";
 import { appError } from "./errors";
 import { platform } from "./singletons";
 
@@ -80,4 +87,18 @@ export function providersInUse(
     stt: used.stt ? providerView(used.stt) : null,
     tts: used.tts ? providerView(used.tts) : null,
   };
+}
+
+/** The shop's LLM chain in priority order (spec 13.2, 13.3): its own rows or the global ones, external only if allowed. */
+export async function shopLlm(shopId: string): Promise<LlmProvider[]> {
+  const [shop, rows] = await Promise.all([
+    platform().withShop(shopId, (tx) => loadShop(tx, shopId)),
+    providerRows(shopId),
+  ]);
+  return llmChain(
+    rows,
+    shopId,
+    settingsOf(shop).external_providers_allowed,
+    parseAesKey(serverEnv().AES_KEY),
+  );
 }

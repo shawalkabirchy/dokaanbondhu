@@ -9,6 +9,7 @@ import type { TurnHost } from "@dokaanbondhu/engine/conversation";
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
   catalogVersion,
+  HostConnectionError,
   HostPools,
   loadCatalog,
   loadHostDb,
@@ -111,7 +112,16 @@ async function load(shopId: string): Promise<Entry> {
     const pools = hostPools();
     const host: TurnHost = {
       map,
-      run: (query) => pools.readOnly(db, (run) => run(query)),
+      // A failure of the host's database (unreachable, timed out) is a host error, not the server's own.
+      run: async (query) => {
+        try {
+          return await pools.readOnly(db, (run) => run(query));
+        } catch (error) {
+          throw new HostConnectionError(error instanceof Error ? error.message : "host query failed", {
+            cause: error,
+          });
+        }
+      },
       catalog,
       fitmentExtra: fitments.map((row) => ({
         hostPartId: row.hostPartId,

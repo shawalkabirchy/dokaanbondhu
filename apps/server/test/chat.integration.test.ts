@@ -1,6 +1,4 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
 import { CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
 import { encryptSecret } from "@dokaanbondhu/engine/crypto";
@@ -20,6 +18,7 @@ import { eq, sql } from "drizzle-orm";
 import { SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { geargridMap } from "../../../packages/engine/test/geargrid-map";
+import { startStubLlm, type StubLlm } from "./stub-llm";
 
 // The chat endpoints end to end (spec 8.3, 8.5): the server, the platform DB and the CI copy of GearGrid, with an
 // OpenAI-compatible stub LLM on a local port, so the adapter, the NDJSON stream and what is saved are all real.
@@ -61,61 +60,11 @@ const token = (authUserId: string) =>
     .setExpirationTime("10m")
     .sign(new TextEncoder().encode(JWT_SECRET));
 
-// The stub LLM answers each request with the next scripted step as a streamed chat completion; with no step left it
-// answers 500, which the fallback chain treats as a failed provider.
-interface Step {
-  text?: string;
-  calls?: { name: string; arguments: Record<string, unknown> }[];
-}
-const script: Step[] = [];
-const received: { tools?: { function: { name: string } }[]; stream?: boolean; messages: unknown[] }[] = [];
-
-function stubLlm(): Server {
-  return createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk: Buffer) => (body += chunk.toString()));
-    request.on("end", () => {
-      received.push(JSON.parse(body) as (typeof received)[number]);
-      const step = script.shift();
-      if (!step) {
-        response.writeHead(500, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: { message: "no scripted step" } }));
-        return;
-      }
-      const base = { id: "stub", object: "chat.completion.chunk", created: 0, model: "stub" };
-      const chunk = (delta: object, finish: string | null = null) => ({
-        ...base,
-        choices: [{ index: 0, delta, finish_reason: finish }],
-      });
-      const chunks = [chunk({ role: "assistant" })];
-      if (step.text) chunks.push(chunk({ content: step.text }));
-      step.calls?.forEach((call, index) =>
-        chunks.push(
-          chunk({
-            tool_calls: [
-              {
-                index,
-                id: `call_${index}`,
-                type: "function",
-                function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-              },
-            ],
-          }),
-        ),
-      );
-      chunks.push(chunk({}, step.calls?.length ? "tool_calls" : "stop"));
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      for (const item of chunks) response.write(`data: ${JSON.stringify(item)}\n\n`);
-      response.end("data: [DONE]\n\n");
-    });
-  });
-}
-
 type Handler = (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
 describe.skipIf(!allLocal)("chat endpoints", () => {
   let admin: Platform;
-  let llm: Server;
+  let llm: StubLlm;
   let routes: { conversations: { POST: unknown }; chat: { POST: unknown } };
   const shopId = randomUUID();
   const owner = { id: randomUUID(), auth: randomUUID() };
@@ -155,9 +104,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   }
 
   beforeAll(async () => {
-    llm = stubLlm();
-    await new Promise<void>((resolve) => llm.listen(0, "127.0.0.1", resolve));
-    const port = (llm.address() as AddressInfo).port;
+    llm = await startStubLlm();
     admin = createPlatform(urls.admin, { max: 1 });
     const host = new URL(urls.host);
     await admin.withAdmin(async (tx) => {
@@ -171,7 +118,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
         job: "llm",
         provider: "vllm",
         model: "stub",
-        baseUrl: `http://127.0.0.1:${port}/v1`,
+        baseUrl: llm.baseUrl,
         priority: 1,
         external: false,
       });
@@ -209,8 +156,8 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   });
 
   beforeEach(() => {
-    script.length = 0;
-    received.length = 0;
+    llm.script.length = 0;
+    llm.received.length = 0;
   });
 
   afterAll(async () => {
@@ -221,14 +168,14 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     );
     const { hostPools } = await import("../src/server/host");
     await hostPools().closeAll();
-    await new Promise((resolve) => llm.close(resolve));
+    await llm.close();
   });
 
   it("answers a parts question as an NDJSON stream, with the tools offered, and saves the turn", async () => {
     const conversationId = await newConversation();
     const phrased =
       "এক্সিও ২০১৪-এর সামনের প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।";
-    script.push(
+    llm.script.push(
       {
         calls: [
           {
@@ -258,8 +205,8 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     expect(done).toMatchObject({ type: "done", state: "IDLE" });
     expect(done).not.toHaveProperty("trace"); // only with the evaluation key
 
-    expect(received[0]?.stream).toBe(true);
-    expect(received[0]?.tools?.map((tool) => tool.function.name)).toEqual([
+    expect(llm.received[0]?.stream).toBe(true);
+    expect(llm.received[0]?.tools?.map((tool) => tool.function.name)).toEqual([
       "find_parts",
       "run_read_query",
       "get_report",
@@ -285,7 +232,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
 
   it("asks the year with chips, keeps the question across requests, and answers the tapped chip without the LLM", async () => {
     const conversationId = await newConversation();
-    script.push({ calls: [{ name: "find_parts", arguments: { part_type: "সেলফ", vehicle: "নোয়া" } }] });
+    llm.script.push({ calls: [{ name: "find_parts", arguments: { part_type: "সেলফ", vehicle: "নোয়া" } }] });
     const first = await chat({ conversation_id: conversationId, text: "নোয়ার সেলফ আছে?" });
     expect(first.reply).toBe("কোন বছরের নোয়া?");
     const choices = first.events.find((event) => event.type === "choices") as Extract<
@@ -299,7 +246,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       conversation_id: conversationId,
       choice: { slot: "year", option_id: newest.id },
     });
-    expect(received).toHaveLength(1); // the tap was answered without a second LLM call
+    expect(llm.received).toHaveLength(1); // the tap was answered without a second LLM call
     expect(second.reply).toContain("নোয়া ২০১৪-এর");
     expect(second.events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
 
@@ -322,7 +269,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
 
   it("sends profit to the app, gives the trace only with the evaluation key, and says so when the LLM is down", async () => {
     const conversationId = await newConversation();
-    script.push({ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] });
+    llm.script.push({ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] });
     const profit = await chat(
       { conversation_id: conversationId, text: "এই মাসে লাভ কত?" },
       { "x-eval-key": EVAL_KEY },

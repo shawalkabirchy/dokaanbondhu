@@ -18,7 +18,7 @@ export {
   type Resolved,
 } from "./find-parts";
 export { introspect, type IntrospectedTable } from "./introspect";
-export { checkProposal, proposeSchemaMap, spokenSamples, type Proposal } from "./mapper";
+export { checkProposal, proposalSchema, proposeSchemaMap, spokenSamples, type Proposal } from "./mapper";
 export { HostConnectionError, HostPools, tlsOptions, type HostDb, type Row, type RunQuery } from "./pool";
 export {
   guardReadQuery,
