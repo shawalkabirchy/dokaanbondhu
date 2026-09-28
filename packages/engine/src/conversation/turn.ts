@@ -37,6 +37,7 @@ import {
   answerFrame,
   asking,
   correctedSlot,
+  followUpSlot,
   isOpen,
   newFrame,
   renew,
@@ -45,7 +46,7 @@ import {
 } from "./frame";
 import { systemPrompt } from "./prompt";
 import type { ConversationState } from "./state";
-import { readTools } from "./tools";
+import { CANNOT_HELP, readTools } from "./tools";
 
 // One chat turn (spec 9.1): normalize, candidates, frame answer, the LLM tool loop (at most 4 calls, D15),
 // resolution, decide, respond sentence by sentence with the grounding check (spec 12), and what to persist.
@@ -141,6 +142,11 @@ const TOOL_ROUNDS = 3;
 const CALLS_PER_ROUND = 3;
 const LIST_KINDS = 4; // a read lists up to four kinds; more are separated by one question
 
+/** The nudge of the forced retry, when the model answered without a tool (D95). */
+const USE_A_TOOL =
+  "Answer by calling one of the tools. The shop's own customers, suppliers, parts and sales are in its database. " +
+  "If the request is not about this shop, call cannot_help.";
+
 /** The last call's instruction: the answer the staff member needs, with its figures, from the results only. */
 const PHRASING = `Answer now, in Bangla, from the tool results only. For parts, name each kind with its quality, stock, \
 price in taka and rack, in this pattern: "<গাড়ি> <বছর>-এর <পার্ট> দুই রকম আছে: <মান> <স্টক>, <দাম> টাকা; <মান> <স্টক>, \
@@ -152,6 +158,7 @@ async function collect(
   messages: ChatMessage[],
   tools: ReturnType<typeof readTools> | [],
   note: (provider: string, fallback?: string) => void,
+  choice: "auto" | "required" = "auto",
 ): Promise<{ text: string; calls: ToolCall[] }> {
   let text = "";
   const calls: ToolCall[] = [];
@@ -159,7 +166,7 @@ async function collect(
     providers,
     {
       messages,
-      ...(tools.length ? { tools, toolChoice: "auto" as const } : { toolChoice: "none" as const }),
+      ...(tools.length ? { tools, toolChoice: choice } : { toolChoice: "none" as const }),
       temperature: 0.2,
       maxTokens: tools.length ? 400 : 300,
     },
@@ -236,6 +243,7 @@ function rowsForLlm(rows: PartRow[]) {
     name: row.nameBn ?? row.name,
     quality: row.quality ? banglaOf("quality", row.quality) : null,
     position: row.position ? banglaOf("position", row.position) : null,
+    brand: row.brand,
     stock: row.stock === null ? null : quantity(row.stock, row.unit ?? "piece"),
     retail_price: row.retailPaisa === null ? null : money(row.retailPaisa),
     garage_price: row.garagePaisa === null ? null : money(row.garagePaisa),
@@ -345,6 +353,27 @@ export async function runTurn(
       return best && best.score >= 0.7 ? `${concept} ${best.value} (${best.score.toFixed(2)})` : null;
     })
     .filter(Boolean) as string[];
+  // The shop's own customers and suppliers named in the request, so the LLM knows "Eastern Lubricants" is one of
+  // them and not an outside company (D95).
+  const said = ` ${normalize(text, deps.dictionary.variants).tokens.join(" ")} `;
+  const named = (kind: string, names: string[]) =>
+    names
+      .filter((name) => {
+        const tokens = normalize(name, deps.dictionary.variants).tokens;
+        return tokens.length > 0 && said.includes(` ${tokens.join(" ")} `);
+      })
+      .slice(0, 3)
+      .map((name) => `${kind} ${name}`);
+  candidates.push(
+    ...named(
+      "customer",
+      deps.host.catalog.customers.map((customer) => customer.name),
+    ),
+    ...named(
+      "supplier",
+      deps.host.catalog.suppliers.map((supplier) => supplier.name),
+    ),
+  );
   mark("candidates", since);
 
   const facts: Facts = { allowed: new AllowedFacts() };
@@ -642,6 +671,12 @@ export async function runTurn(
         record("question");
         return "stop";
       }
+      case "cannot_help": {
+        // The model says the request is not about the shop: the fixed help answer (spec 12.2).
+        record("cannot_help");
+        final = { kind: "answer", text: helpAnswer() };
+        return "stop";
+      }
       default:
         record("unknown_tool");
         return JSON.stringify({ error: `no tool ${call.name}` });
@@ -694,6 +729,33 @@ export async function runTurn(
       request = `${frame.request ?? ""} ${text}`.trim();
     }
   }
+  // A short follow-up to the last part search ("pechoner ta?", "genuine ta?"): that search again with one detail
+  // changed, without the LLM (spec 9.8, D95).
+  const last = state.frame;
+  const recent =
+    !frameOpen &&
+    !input.choice &&
+    last?.intent === "find_parts" &&
+    last.status === "done" &&
+    state.context.updatedAt !== undefined &&
+    now.getTime() - Date.parse(state.context.updatedAt) <= CONTEXT_TTL_MS;
+  const followUp = recent && text ? followUpSlot(text, deps.dictionary, now) : null;
+  if (followUp && last && deps.host.map && deps.host.run) {
+    const frame = newFrame(deps.newId(), "find_parts", now, text);
+    frame.slots = {
+      ...last.slots,
+      [followUp.slot]: { value: followUp.value, status: "understood", source: "user" },
+    };
+    const query = partQueryOf(
+      Object.fromEntries(Object.entries(frame.slots).map(([key, slot]) => [key, slot.value])),
+    );
+    const outcome = await findAndDecide(query, frame);
+    trace.tool_calls.push({
+      name: "find_parts",
+      arguments: query,
+      result: outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"),
+    });
+  }
   mark("frame", since);
 
   // Stage 5: the LLM tool loop, unless the frame already has the reply or the facts.
@@ -728,9 +790,27 @@ export async function runTurn(
     ];
     const tools = readTools(deps.host.map);
     try {
+      let forced = false;
       for (let round = 0; round < TOOL_ROUNDS && trace.llm_calls < LLM_CALLS - 1 && !final; round++) {
-        const reply = await collect(deps.llm, messages, tools, note);
+        let reply = await collect(deps.llm, messages, tools, note);
         trace.llm_calls++;
+        if (
+          !reply.calls.length &&
+          !forced &&
+          trace.tool_calls.length === 0 &&
+          trace.llm_calls < LLM_CALLS - 1
+        ) {
+          // The model answered in its own words: once more, it must choose a tool, or cannot_help (D95).
+          forced = true;
+          reply = await collect(
+            deps.llm,
+            [...messages, { role: "user", content: USE_A_TOOL }],
+            [...tools, CANNOT_HELP],
+            note,
+            "required",
+          );
+          trace.llm_calls++;
+        }
         if (!reply.calls.length) {
           llmText = reply.text;
           break;

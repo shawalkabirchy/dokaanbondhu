@@ -64,6 +64,14 @@ export const ASK_USER = fn("ask_user", "Ask the user for one missing thing only.
   additionalProperties: false,
 });
 
+/** Offered only in the forced retry, when the model first answered in its own words: the request is not about the shop,
+ * and the fixed help answer is given (D95). */
+export const CANNOT_HELP = fn(
+  "cannot_help",
+  "The request is not about this shop's parts, stock, prices, customers, suppliers, sales or reports.",
+  { type: "object", properties: {}, additionalProperties: false },
+);
+
 /** run_read_query, described with the confirmed tables and columns the SQL may use. */
 export function readQueryTool(map: SchemaMap): ToolDef {
   const tables = new Map<string, Set<string>>();
@@ -97,7 +105,7 @@ export function readQueryTool(map: SchemaMap): ToolDef {
     .join("; ");
   return fn(
     "run_read_query",
-    `Answer other reads (dues, sales, low stock, which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you.`,
+    `Answer any other question about this shop's own records (its customers and suppliers with their phones, dues, payables and limits; sales, payments, purchases, stock and low stock; which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you.`,
     {
       type: "object",
       properties: { sql: { type: "string" }, purpose: { type: "string" } },

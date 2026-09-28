@@ -267,10 +267,51 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
 
   it("answers a request it cannot handle with the fixed help answer, whatever the LLM says", async () => {
     const { reply, outcome } = await turn("আজকে ঢাকায় বৃষ্টি হবে?", fresh(), [
-      scripted([{ text: "হ্যাঁ, আজ বিকেলে বৃষ্টি হতে পারে।" }]),
+      scripted([
+        { text: "হ্যাঁ, আজ বিকেলে বৃষ্টি হতে পারে।" },
+        { calls: [{ name: "cannot_help", arguments: {} }] },
+      ]),
     ]);
     expect(reply).toBe(helpAnswer());
-    expect(outcome.trace.tool_calls).toEqual([]);
+    expect(outcome.trace.tool_calls.map((call) => call.name)).toEqual(["cannot_help"]);
+    expect(outcome.meta.llm_calls).toBe(2);
+  });
+
+  it("asks once more, requiring a tool, when the LLM first answers in its own words (D95)", async () => {
+    const llm = scripted([
+      { text: "দুঃখিত, আমি জানি না।" },
+      {
+        calls: [
+          { name: "find_parts", arguments: { part_type: "air filter", vehicle: "probox", year: "2013" } },
+        ],
+      },
+      { text: "" },
+    ]);
+    const { reply, outcome } = await turn("probox 2013 er air filter kon rack e?", fresh(), [llm]);
+    expect(reply).toContain("প্রোবক্স ২০১৩-এর");
+    expect(reply).toContain("তাকে");
+    expect(outcome.meta.llm_calls).toBe(3);
+  });
+
+  it("answers a short follow-up by changing the last search, without the LLM (spec 9.8, D95)", async () => {
+    const first = await turn("axio 2014 er front brake pad ache?", fresh(), [
+      scripted([
+        {
+          calls: [
+            {
+              name: "find_parts",
+              arguments: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
+            },
+          ],
+        },
+        { text: "" },
+      ]),
+    ]);
+    expect(first.reply).toContain("B-3");
+    const second = await turn("pechoner ta?", first.outcome.state, [scripted([])]);
+    expect(second.outcome.meta.llm_calls).toBe(0);
+    expect(second.reply).toContain("এক্সিও ২০১৪-এর পেছনের");
+    expect(second.reply).toContain("B-4");
   });
 
   it("says the stock value from the confirmed formula, in whole taka (spec 11.7, D92)", async () => {

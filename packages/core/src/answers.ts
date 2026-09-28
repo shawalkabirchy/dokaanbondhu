@@ -83,11 +83,14 @@ function stockText(row: PartRow): string {
   return quantityText(row.stock, row.unit ?? "piece");
 }
 
-/** One kind: "জেনুইন ৩ সেট, ৪,৫০০ টাকা" (rack added by the caller when it differs). */
-function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean): string {
+/** One kind: "জেনুইন ৩ সেট, ৪,৫০০ টাকা" (rack added by the caller when it differs); the brand when two kinds share
+ * a quality, "নন-জেনুইন (Denso) ১০টা", so they can be told apart. */
+function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, withBrand = false): string {
   const bits: string[] = [];
   const stock = stockText(row);
-  const head = [row.quality ? banglaOf("quality", row.quality) : null, stock].filter(Boolean).join(" ");
+  const quality = row.quality ? banglaOf("quality", row.quality) : null;
+  const brand = withBrand && row.brand ? `(${row.brand})` : null;
+  const head = [quality, brand, stock].filter(Boolean).join(" ");
   if (head) bits.push(head);
   const price = priceOf(row, tier);
   if (price !== null && (row.stock ?? 1) > 0) bits.push(money(price));
@@ -112,7 +115,9 @@ export function partsAnswer(rows: PartRow[], context: PartsContext, pairUsed: st
   }
   const racks = new Set(inStock.map((row) => row.rack));
   const sharedRack = racks.size === 1 ? [...racks][0] : null;
-  const kinds = rows.map((row) => kindText(row, context.tier, !sharedRack)).join("; ");
+  const qualities = rows.map((row) => row.quality ?? "");
+  const shared = (row: PartRow) => qualities.filter((quality) => quality === (row.quality ?? "")).length > 1;
+  const kinds = rows.map((row) => kindText(row, context.tier, !sharedRack, shared(row))).join("; ");
   const both = rows.length === 2 ? "দুটোই" : "সবগুলো";
   const rack = sharedRack ? ` ${both} ${sharedRack} তাকে।` : "";
   return `${subject} ${kindsCount(rows.length)} আছে: ${kinds}।${rack}`;

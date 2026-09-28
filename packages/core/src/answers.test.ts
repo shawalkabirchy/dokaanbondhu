@@ -47,6 +47,23 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
+  it("names the brand when two kinds share a quality, so they can be told apart", () => {
+    const filters = [
+      row({ quality: "aftermarket", brand: "Denso", stock: 10, retailPaisa: 42000n, rack: "A-2" }),
+      row({
+        hostPartId: "z",
+        quality: "aftermarket",
+        brand: "Sakura",
+        stock: 10,
+        retailPaisa: 39000n,
+        rack: "A-2",
+      }),
+    ];
+    expect(partsAnswer(filters, { ...axio, partType: "Air Filter", position: null })).toBe(
+      "এক্সিও ২০১৪-এর এয়ার ফিল্টার দুই রকম আছে: নন-জেনুইন (Denso) ১০ সেট, ৪২০ টাকা; নন-জেনুইন (Sakura) ১০ সেট, ৩৯০ টাকা। দুটোই A-2 তাকে।",
+    );
+  });
+
   it("answers one kind in one sentence, naming the pair it used", () => {
     const shoe = row({
       quality: "aftermarket",

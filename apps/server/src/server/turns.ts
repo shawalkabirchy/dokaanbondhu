@@ -108,7 +108,7 @@ export async function loadConversation(caller: Caller, conversationId: string): 
       .from(conversations)
       .where(and(eq(conversations.id, conversationId), eq(conversations.userId, caller.userId)));
     if (!conversation) throw appError("CONVERSATION_NOT_FOUND", 404);
-    const [frame] = await tx
+    const [open] = await tx
       .select()
       .from(requestFrames)
       .where(
@@ -117,6 +117,16 @@ export async function loadConversation(caller: Caller, conversationId: string): 
           inArray(requestFrames.status, ["active", "confirming"]),
         ),
       );
+    // No open question: the latest finished request, so a short follow-up ("pechoner ta?") can change it (D95).
+    const [latest] = open
+      ? [open]
+      : await tx
+          .select()
+          .from(requestFrames)
+          .where(and(eq(requestFrames.conversationId, conversationId), eq(requestFrames.status, "done")))
+          .orderBy(desc(requestFrames.updatedAt))
+          .limit(1);
+    const frame = latest;
     const last = await tx
       .select({ role: messages.role, text: messages.text })
       .from(messages)

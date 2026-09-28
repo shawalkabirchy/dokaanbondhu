@@ -201,6 +201,49 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   return slot;
 }
 
+/** Words that carry no value in a short follow-up: "pechoner ta?", "আর জেনুইনটা?". */
+const FOLLOW_UP_FILLER = new Set([
+  "ta",
+  "ti",
+  "টা",
+  "টি",
+  "ar",
+  "আর",
+  "ki",
+  "কি",
+  "ota",
+  "ওটা",
+  "tahole",
+  "তাহলে",
+]);
+
+/**
+ * A short follow-up to the last part search that changes one detail: "পেছনেরটা?", "genuine ta?", "2016?". It names
+ * no part and no car (that is a new request), in at most three words besides filler (spec 9.8, D95).
+ */
+export function followUpSlot(
+  text: string,
+  dictionary: Dictionary,
+  now: Date,
+): { slot: "year" | "position" | "quality" | "brand"; value: string } | null {
+  const kept = normalize(text, dictionary.variants).tokens.filter((token) => !FOLLOW_UP_FILLER.has(token));
+  if (!kept.length || kept.length > 3) return null;
+  const rest = kept.join(" ");
+  // A part or car matched surely (0.85 or more) makes it a new request; a weak match ("pechoner" is also in "pechoner
+  // light", a tail light) does not.
+  const named = (["part_type", "vehicle_model"] as const).some(
+    (concept) => matchConcept(concept, rest, [], dictionary).decision === "understood",
+  );
+  if (named) return null;
+  const year = parseYear(kept, { now, bare: kept.length <= 2 });
+  if (year !== null) return { slot: "year", value: String(year) };
+  for (const slot of ["position", "quality", "brand"] as const) {
+    const match = matchConcept(slot, rest, [], dictionary);
+    if (match.candidates[0] && match.decision !== "unclear") return { slot, value: rest };
+  }
+  return null;
+}
+
 /** The slot a corrected value belongs to (rule 3: "No, X" changes that slot). */
 export function correctedSlot(
   text: string,

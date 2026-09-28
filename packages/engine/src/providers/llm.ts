@@ -10,7 +10,7 @@ export type ToolDef = OpenAI.Chat.Completions.ChatCompletionFunctionTool;
 export interface LlmRequest {
   messages: ChatMessage[];
   tools?: ToolDef[];
-  toolChoice?: "auto" | "none";
+  toolChoice?: "auto" | "none" | "required"; // required: the model must call a tool (D95)
   temperature: number;
   maxTokens: number;
 }
