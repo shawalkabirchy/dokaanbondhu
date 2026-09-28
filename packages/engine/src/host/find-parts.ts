@@ -79,6 +79,20 @@ export type FindPartsResult =
   | { kind: "none"; resolved: Resolved; closeVehicle: PartRow[]; mentioned: PartRow[] };
 
 const ROW_LIMIT = 20;
+
+const QUALITY_ORDER = ["genuine", "aftermarket", "reconditioned"];
+
+/** Kinds in a fixed order, so an answer never changes with the host's row order: genuine, non-genuine, reconditioned,
+ * then the rest, each by name (D94). */
+function ordered(rows: PartRow[]): PartRow[] {
+  const rank = (row: PartRow) => {
+    const index = QUALITY_ORDER.indexOf((row.quality ?? "").toLowerCase());
+    return index < 0 ? QUALITY_ORDER.length : index;
+  };
+  return [...rows].sort(
+    (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name) || a.hostPartId.localeCompare(b.hostPartId),
+  );
+}
 const FETCH_LIMIT = 200;
 
 /** A host money value (text, exact) to paisa, using the field's value scale; half away from zero. */
@@ -287,7 +301,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
       .filter((part) => part.partNumbers.includes(match.exact!))
       .map((part) => part.hostId);
     const rows = await queryRows(input, ids, null);
-    return { kind: "rows", rows: rows.slice(0, ROW_LIMIT), resolved, pairUsed: null };
+    return { kind: "rows", rows: ordered(rows).slice(0, ROW_LIMIT), resolved, pairUsed: null };
   }
 
   const type = understood("part_type", query.part_type, input, bold);
@@ -339,7 +353,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
       if (rows.length) pairUsed = pair;
     }
   }
-  if (rows.length) return { kind: "rows", rows: rows.slice(0, ROW_LIMIT), resolved, pairUsed };
+  if (rows.length) return { kind: "rows", rows: ordered(rows).slice(0, ROW_LIMIT), resolved, pairUsed };
 
   // None: recorded fitment for a close vehicle (the same model's other generations), and items whose notes
   // mention the vehicle, both marked unverified (architecture, resolution algorithm, step 5).
