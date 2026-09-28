@@ -149,28 +149,36 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     year: "২০১৪",
     position: "সামনের",
   };
-  const phrased =
-    "এক্সিও ২০১৪-এর সামনের প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।";
-
-  it("answers the architecture's A.1 with grounded LLM text, part cards, and two LLM calls", async () => {
-    const llm = scripted([{ calls: [{ name: "find_parts", arguments: padsQuestion }] }, { text: phrased }]);
+  it("answers the architecture's A.1 with the template, part cards, and one LLM call (D95)", async () => {
+    const llm = scripted([{ calls: [{ name: "find_parts", arguments: padsQuestion }] }]);
     const { outcome, events, reply } = await turn("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?", fresh(), [llm]);
-    expect(reply).toBe(phrased);
+    expect(reply).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।",
+    );
     expect(events.find((event) => event.type === "cards")).toMatchObject({ parts: [{}, {}] });
     expect(events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
-    expect(outcome.meta).toMatchObject({ llm_calls: 2, grounding_failures: 0 });
+    expect(outcome.meta).toMatchObject({ llm_calls: 1, grounding_failures: 0 });
     expect(outcome.state.context.vehicle).toMatchObject({ model: "Toyota Axio", year: 2014 });
   });
 
-  it("drops an invented price and says the template answer instead", async () => {
+  it("drops an invented figure from the LLM's words and says the template answer instead", async () => {
     const llm = scripted([
-      { calls: [{ name: "find_parts", arguments: padsQuestion }] },
-      { text: "এক্সিও ২০১৪-এর জেনুইন প্যাড ৫,০০০ টাকা।" },
+      {
+        calls: [
+          {
+            name: "run_read_query",
+            arguments: {
+              sql: "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'",
+              purpose: "বাকি",
+            },
+          },
+        ],
+      },
+      { text: "রহিম মোটরসের বাকি ২৫,০০০ টাকা।" },
     ]);
-    const { outcome, reply } = await turn("এক্সিও ২০১৪-এর সামনের প্যাড আছে?", fresh(), [llm]);
+    const { outcome, reply } = await turn("রহিম মোটরসের বাকি কত?", fresh(), [llm]);
     expect(outcome.meta.grounding_failures).toBe(1);
-    expect(reply).toContain("দুই রকম আছে");
-    expect(reply).not.toContain("৫,০০০");
+    expect(reply).toBe(SEE_ON_SCREEN);
   });
 
   it("asks the year for a Noah starter, then answers the year without the LLM", async () => {
@@ -290,7 +298,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     const { reply, outcome } = await turn("probox 2013 er air filter kon rack e?", fresh(), [llm]);
     expect(reply).toContain("প্রোবক্স ২০১৩-এর");
     expect(reply).toContain("তাকে");
-    expect(outcome.meta.llm_calls).toBe(3);
+    expect(outcome.meta.llm_calls).toBe(2);
   });
 
   it("answers a short follow-up by changing the last search, without the LLM (spec 9.8, D95)", async () => {
@@ -312,6 +320,12 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     expect(second.outcome.meta.llm_calls).toBe(0);
     expect(second.reply).toContain("এক্সিও ২০১৪-এর পেছনের");
     expect(second.reply).toContain("B-4");
+    // Only non-genuine rear shoes exist: said plainly, then what there is (D95).
+    const third = await turn("genuine ta?", second.outcome.state, [scripted([])]);
+    expect(third.outcome.meta.llm_calls).toBe(0);
+    expect(third.reply).toBe(
+      "এক্সিও ২০১৪-এর পেছনের লাইনিং জেনুইন নেই। এক্সিও ২০১৪-এর পেছনের নন-জেনুইন লাইনিং ২ সেট আছে, ১,৫০০ টাকা, B-4 তাকে।",
+    );
   });
 
   it("says the stock value from the confirmed formula, in whole taka (spec 11.7, D92)", async () => {

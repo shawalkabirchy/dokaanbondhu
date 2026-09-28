@@ -98,6 +98,15 @@ function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, w
   return bits.join(", ");
 }
 
+/** "এক্সিও ২০১৪-এর পেছনের লাইনিং জেনুইন নেই।": the asked quality or brand is missing (D95). */
+export function missingAnswer(
+  context: PartsContext,
+  missing: string,
+  pairUsed: string | null = null,
+): string {
+  return `${partPhrase(context, pairUsed ?? context.partType)} ${missing} নেই।`;
+}
+
 /** The parts answer (architecture, A.1): one kind in one sentence, several with "দুই রকম" and a shared rack. */
 export function partsAnswer(rows: PartRow[], context: PartsContext, pairUsed: string | null = null): string {
   const subject = partPhrase(context, pairUsed ?? context.partType);

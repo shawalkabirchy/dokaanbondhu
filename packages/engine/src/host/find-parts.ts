@@ -69,7 +69,14 @@ export interface Resolved {
 }
 
 export type FindPartsResult =
-  | { kind: "rows"; rows: PartRow[]; resolved: Resolved; pairUsed: string | null }
+  | {
+      kind: "rows";
+      rows: PartRow[];
+      resolved: Resolved;
+      pairUsed: string | null;
+      /** The asked quality or brand that none of these rows has: the answer says so, then lists them (D95). */
+      unmet?: "quality" | "brand";
+    }
   | {
       kind: "ask";
       slot: "part_type" | "vehicle" | "year" | "part_number";
@@ -355,7 +362,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
 
   const tryType = async (partType: string) => {
     const ids = partsOfType(partType, catalog.parts, dictionary).map((part) => part.hostId);
-    if (!ids.length) return [];
+    if (!ids.length) return { exact: [] as PartRow[], placed: [] as PartRow[] };
     const recorded = vehicles.vehicles.length
       ? await queryRows(
           input,
@@ -366,24 +373,33 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
     const extra = await extraRows(input, ids, model.value!, resolved.year, resolved.engine);
     const seen = new Set(recorded.map((row) => row.hostPartId));
     const merged = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
-    return merged.filter(
+    const placed = merged.filter(
+      (row) => !resolved.position || sameValue("position", row.position, resolved.position, dictionary),
+    );
+    const exact = placed.filter(
       (row) =>
-        (!resolved.position || sameValue("position", row.position, resolved.position, dictionary)) &&
         (!resolved.quality || sameValue("quality", row.quality, resolved.quality, dictionary)) &&
         (!resolved.brand || sameValue("brand", row.brand, resolved.brand, dictionary)),
     );
+    return { exact, placed };
   };
 
-  let rows = await tryType(type.value);
+  let found = await tryType(type.value);
   let pairUsed: string | null = null;
-  if (!rows.length) {
+  if (!found.placed.length) {
     const pair = pairedType(type.value);
     if (pair) {
-      rows = await tryType(pair);
-      if (rows.length) pairUsed = pair;
+      found = await tryType(pair);
+      if (found.placed.length) pairUsed = pair;
     }
   }
+  const rows = found.exact;
   if (rows.length) return { kind: "rows", rows: ordered(rows).slice(0, ROW_LIMIT), resolved, pairUsed };
+  // The part is there for this car, but not in the asked quality or brand: say that, then list what there is.
+  if (found.placed.length && (resolved.quality || resolved.brand)) {
+    const unmet = resolved.quality ? ("quality" as const) : ("brand" as const);
+    return { kind: "rows", rows: ordered(found.placed).slice(0, ROW_LIMIT), resolved, pairUsed, unmet };
+  }
 
   // None: recorded fitment for a close vehicle (the same model's other generations), and items whose notes
   // mention the vehicle, both marked unverified (architecture, resolution algorithm, step 5).

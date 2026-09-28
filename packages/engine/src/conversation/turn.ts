@@ -4,6 +4,7 @@ import {
   ASK_AGAIN,
   CANNOT_ANSWER_NOW,
   helpAnswer,
+  missingAnswer,
   isGrounded,
   matchConcept,
   money,
@@ -147,10 +148,10 @@ const USE_A_TOOL =
   "Answer by calling one of the tools. The shop's own customers, suppliers, parts and sales are in its database. " +
   "If the request is not about this shop, call cannot_help.";
 
-/** The last call's instruction: the answer the staff member needs, with its figures, from the results only. */
-const PHRASING = `Answer now, in Bangla, from the tool results only. For parts, name each kind with its quality, stock, \
-price in taka and rack, in this pattern: "<গাড়ি> <বছর>-এর <পার্ট> দুই রকম আছে: <মান> <স্টক>, <দাম> টাকা; <মান> <স্টক>, \
-<দাম> টাকা। দুটোই <তাক> তাকে।" For other results, give the figures asked for. Copy every number exactly.`;
+/** The last call's instruction, for reads other than parts and for report figures (parts use the template, D95). */
+const PHRASING =
+  "Answer now, in Bangla, from the tool results only, in one or two short sentences: give the figures asked " +
+  "for, and copy every number exactly.";
 
 /** Collects one streamed LLM reply: its text and its tool calls (every call streams, spec 13.3). */
 async function collect(
@@ -295,7 +296,15 @@ function templateAnswer(facts: Facts): string {
   }
   if (facts.parts) {
     const { result, context } = facts.parts;
-    if (result.kind === "rows") return partsAnswer(result.rows, context, result.pairUsed);
+    if (result.kind === "rows") {
+      const answer = partsAnswer(result.rows, context, result.pairUsed);
+      if (!result.unmet) return answer;
+      const asked =
+        result.unmet === "quality"
+          ? banglaOf("quality", result.resolved.quality ?? "")
+          : result.resolved.brand;
+      return `${missingAnswer(context, asked ?? "", result.pairUsed)} ${answer}`;
+    }
     return noFitmentAnswer(context, [...result.closeVehicle, ...result.mentioned]);
   }
   if (facts.read) return SEE_ON_SCREEN;
@@ -840,15 +849,9 @@ export async function runTurn(
         if (stop || final) break;
         if (facts.parts || facts.read || (facts.report && facts.report.kind === "figure")) break; // the facts are here
       }
-      // No recorded fitment is always said with the template, never phrased by the LLM, so no fit can be claimed
-      // (the grounding check sees numbers, not claims; D88).
-      const noFitment = facts.parts?.result.kind === "none";
-      if (
-        !final &&
-        llmText === null &&
-        !noFitment &&
-        (facts.parts || facts.read || facts.report?.kind === "figure")
-      ) {
+      // Parts are always said with the template: it is complete (every kind, stock, price, rack), in the shop's
+      // Bangla words, and never claims a fit (D88, D95). The LLM phrases the other reads and report figures.
+      if (!final && llmText === null && !facts.parts && (facts.read || facts.report?.kind === "figure")) {
         messages.push({ role: "user", content: PHRASING });
         const phrasing = await collect(deps.llm, messages, [], note);
         trace.llm_calls++;

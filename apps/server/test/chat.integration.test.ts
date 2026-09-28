@@ -66,24 +66,22 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
 
   it("answers a parts question as an NDJSON stream, with the tools offered, and saves the turn", async () => {
     const conversationId = await newConversation();
-    const phrased =
-      "এক্সিও ২০১৪-এর সামনের প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।";
-    llm.script.push(
-      {
-        calls: [
-          {
-            name: "find_parts",
-            arguments: {
-              part_type: "সামনের ব্রেক প্যাড",
-              vehicle: "এক্সিও",
-              year: "২০১৪",
-              position: "সামনের",
-            },
+    // Parts are said with the template (D95).
+    const template =
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।";
+    llm.script.push({
+      calls: [
+        {
+          name: "find_parts",
+          arguments: {
+            part_type: "সামনের ব্রেক প্যাড",
+            vehicle: "এক্সিও",
+            year: "২০১৪",
+            position: "সামনের",
           },
-        ],
-      },
-      { text: phrased },
-    );
+        },
+      ],
+    });
     const { response, events, reply } = await chat({
       conversation_id: conversationId,
       text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
@@ -93,7 +91,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     expect(response.headers.get("x-accel-buffering")).toBe("no");
     expect(events[0]).toMatchObject({ type: "status", state: "UNDERSTANDING" });
     expect(events.find((event) => event.type === "cards")).toMatchObject({ parts: [{}, {}] });
-    expect(reply).toBe(phrased);
+    expect(reply).toBe(template);
     const done = events.at(-1)!;
     expect(done).toMatchObject({ type: "done", state: "IDLE" });
     expect(done).not.toHaveProperty("trace"); // only with the evaluation key
@@ -116,7 +114,10 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       conversation: (await tx.select().from(conversations).where(eq(conversations.id, conversationId)))[0],
     }));
     expect(saved.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(saved.messages[1]).toMatchObject({ text: phrased, meta: { llm_calls: 2, grounding_failures: 0 } });
+    expect(saved.messages[1]).toMatchObject({
+      text: template,
+      meta: { llm_calls: 1, grounding_failures: 0 },
+    });
     expect(saved.conversation).toMatchObject({
       state: "IDLE",
       context: { vehicle: { model: "Toyota Axio", year: 2014 } },
