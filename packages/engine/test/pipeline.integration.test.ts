@@ -1,10 +1,18 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { buildDictionary, CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
+import {
+  buildDictionary,
+  CANNOT_ANSWER_NOW,
+  formatTaka,
+  helpAnswer,
+  SEE_IN_APP,
+  SEE_ON_SCREEN,
+} from "@dokaanbondhu/core";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runTurn, type TurnDeps, type TurnState } from "../src/conversation/turn";
 import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { HostPools, type HostDb } from "../src/host/pool";
+import { stockValue } from "../src/host/reports";
 import type { LlmDelta, LlmProvider } from "../src/providers";
 import { geargridMap } from "./geargrid-map";
 
@@ -78,7 +86,14 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       catalog,
       fitmentExtra: [],
       rackExtra: new Map(),
-      formulas: [],
+      // The stock-value formula as the owner confirms it in setup (spec 11.7).
+      formulas: [
+        {
+          name: "stock_value",
+          definition: { sum_of_product: ["StockItem.quantity", "Price.cost"] },
+          confirmed: true,
+        },
+      ],
       hostReports: [],
     },
     now: () => new Date(),
@@ -219,5 +234,66 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     expect(profit.reply).toBe(SEE_IN_APP);
     const outage = await turn("এক্সিওর প্যাড আছে?", fresh(), [down]);
     expect(outage.reply).toBe(CANNOT_ANSWER_NOW);
+  });
+
+  it("asks the year for an Axio front pad said without one, then lists both kinds for 2014 (A.6, the read half)", async () => {
+    const first = await turn("এক্সিওর সামনের ব্রেক প্যাড আছে?", fresh(), [
+      scripted([
+        {
+          calls: [
+            {
+              name: "find_parts",
+              arguments: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+            },
+          ],
+        },
+      ]),
+    ]);
+    expect(first.reply).toBe("কোন বছরের এক্সিও?");
+    expect(first.events.find((event) => event.type === "choices")).toMatchObject({
+      slot: "year",
+      options: [{ label: "2006–2011" }, { label: "2012–2017" }],
+    });
+    const second = await turn("২০১৪", first.outcome.state, [scripted([])]);
+    expect(second.outcome.meta.llm_calls).toBe(0);
+    expect(second.reply).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।",
+    );
+    expect(second.outcome.trace.lookups.at(-1)).toMatchObject({
+      resolved: { vehicle: "Toyota Axio", year: 2014, position: "front" },
+      result: "rows",
+    });
+  });
+
+  it("answers a request it cannot handle with the fixed help answer, whatever the LLM says", async () => {
+    const { reply, outcome } = await turn("আজকে ঢাকায় বৃষ্টি হবে?", fresh(), [
+      scripted([{ text: "হ্যাঁ, আজ বিকেলে বৃষ্টি হতে পারে।" }]),
+    ]);
+    expect(reply).toBe(helpAnswer());
+    expect(outcome.trace.tool_calls).toEqual([]);
+  });
+
+  it("says the stock value from the confirmed formula, in whole taka (spec 11.7, D92)", async () => {
+    const expected = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
+    const { reply } = await turn("স্টকের মোট দাম কত?", fresh(), [
+      scripted([{ calls: [{ name: "get_report", arguments: { name: "stock_value" } }] }, { text: "" }]),
+    ]);
+    expect(reply).toBe(`স্টকের মোট দাম ${formatTaka(expected)} টাকা।`);
+  });
+
+  it("shows a read query's rows as a table, money in paisa and quantities as numbers, and says to look at it", async () => {
+    const sql =
+      "SELECT p.name_en, s.quantity, p.retail_price FROM parts p JOIN stock_levels s ON s.part_id = p.id WHERE s.quantity <= p.reorder_level";
+    const { reply, events } = await turn("কোন কোন মাল অর্ডার দিতে হবে?", fresh(), [
+      scripted([
+        { calls: [{ name: "run_read_query", arguments: { sql, purpose: "কম স্টক" } }] },
+        { text: "" },
+      ]),
+    ]);
+    expect(reply).toBe(SEE_ON_SCREEN);
+    const table = events.find((event) => event.type === "table") as Extract<ReplyEvent, { type: "table" }>;
+    expect(table.rows).toHaveLength(8);
+    expect(table.columns.map((column) => column.kind)).toEqual(["text", "number", "money"]);
+    for (const row of table.rows) expect(Number(row[2]) % 100).toBe(0); // whole taka, carried in paisa
   });
 });

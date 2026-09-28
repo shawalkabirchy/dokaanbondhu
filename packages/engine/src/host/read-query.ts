@@ -175,6 +175,29 @@ function filteredTable(map: SchemaMap, table: string): string {
         conditions.push(`(${presence} IS NULL OR ${filterSql(map.dialect, alias, filter)})`);
     }
   }
+  // A child table (a part's numbers, a purchase's lines) leaves out the rows whose entity row is filtered out, so the
+  // lines of a reversed purchase are never counted either (D94).
+  for (const entity of entities) {
+    if (entity.hostTable === table) continue;
+    for (const join of entity.joins) {
+      if (join.table !== table || joinShape(entity, join).kind !== "child") continue;
+      const hostFilters = entity.rowFilters.filter((filter) => filter.table === entity.hostTable);
+      const pair = join.on[0];
+      if (!hostFilters.length || !pair) continue;
+      const alias = `p${index++}`;
+      const side = (qualified: string) => {
+        const dot = qualified.lastIndexOf(".");
+        return `${qualified.slice(0, dot) === table ? "t" : alias}.${q(qualified.slice(dot + 1))}`;
+      };
+      joins.push(
+        `LEFT JOIN ${q(entity.hostTable)} AS ${alias} ON ${join.on.map((on) => `${side(on.left)} = ${side(on.right)}`).join(" AND ")}`,
+      );
+      const hostSide = [pair.left, pair.right].find((column) => column.startsWith(`${entity.hostTable}.`));
+      const presence = side(hostSide ?? pair.left);
+      for (const filter of hostFilters)
+        conditions.push(`(${presence} IS NULL OR ${filterSql(map.dialect, alias, filter)})`);
+    }
+  }
   const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
   return `${q(table)} AS (SELECT t.* FROM ${q(table)} AS t${joins.length ? ` ${joins.join(" ")}` : ""}${where})`;
 }

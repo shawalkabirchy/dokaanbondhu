@@ -97,10 +97,24 @@ export interface TurnDeps {
 
 export interface TurnTrace {
   tool_calls: { name: string; arguments: unknown; result: string }[];
+  /** Every part lookup: what was understood, and the main part numbers found (for the scorer, spec 18.4). */
+  lookups: {
+    resolved: {
+      part_type: string | null;
+      vehicle: string | null;
+      year: number | null;
+      position: string | null;
+      quality: string | null;
+    };
+    result: "rows" | "none" | "ask";
+    part_numbers: string[];
+  }[];
   questions: string[];
   answer: string;
   grounding_failures: number;
   llm_calls: number;
+  /** LLM providers given up on, with the reason ("<id>: http 429"), so a run can stop at a daily limit. */
+  fallbacks: string[];
 }
 
 export interface TurnOutcome {
@@ -293,7 +307,15 @@ export async function runTurn(
   const fallbacks: string[] = [];
   const note = (provider: string, fallback?: string) =>
     fallback ? fallbacks.push(`${provider}: ${fallback}`) : providers.push(provider);
-  const trace: TurnTrace = { tool_calls: [], questions: [], answer: "", grounding_failures: 0, llm_calls: 0 };
+  const trace: TurnTrace = {
+    tool_calls: [],
+    lookups: [],
+    questions: [],
+    answer: "",
+    grounding_failures: 0,
+    llm_calls: 0,
+    fallbacks: [],
+  };
   const state: TurnState = { ...current, history: [...current.history] };
   const text = input.text?.trim() ?? "";
   const hypotheses = input.hypotheses?.length ? input.hypotheses : text ? [text] : [];
@@ -370,6 +392,19 @@ export async function runTurn(
       now,
     });
     timings.resolve = (timings.resolve ?? 0) + (Date.now() - resolveStart);
+    const partNumbers = (hostId: string) =>
+      deps.host.catalog.parts.find((part) => part.hostId === hostId)?.partNumbers[0] ?? hostId;
+    trace.lookups.push({
+      resolved: {
+        part_type: result.resolved.partType,
+        vehicle: result.resolved.vehicle,
+        year: result.resolved.year,
+        position: result.resolved.position,
+        quality: result.resolved.quality,
+      },
+      result: result.kind,
+      part_numbers: result.kind === "rows" ? result.rows.map((row) => partNumbers(row.hostPartId)) : [],
+    });
     for (const [key, value] of Object.entries(query)) {
       frame.slots[key] = { value, status: "understood", source: "user" };
     }
@@ -759,7 +794,11 @@ export async function runTurn(
   } else {
     state.state = "RESPONDING";
     const template = templateAnswer(facts);
-    if (llmText) {
+    if (llmText && trace.tool_calls.length === 0) {
+      // The LLM answered without any tool: a request the assistant cannot handle gets the fixed help answer, and
+      // questions are templates, never the LLM's own words (spec 9.4, 12.2).
+      reply = helpAnswer();
+    } else if (llmText) {
       // Stage 8: sentence by sentence, each grounded; a failing one ends the LLM text for this turn.
       const kept: string[] = [];
       let failed = false;
@@ -783,6 +822,7 @@ export async function runTurn(
     emit({ type: "text", seq, text: sentence, final: seq === sentences.length - 1 }),
   );
   trace.answer = reply;
+  trace.fallbacks = fallbacks;
   const finalState: ConversationState = state.state === "CLARIFYING" ? "CLARIFYING" : "IDLE";
   state.state = finalState;
   state.context.updatedAt = now.toISOString();

@@ -162,6 +162,30 @@ export const geargridMap: SchemaMap = {
         trx_id: "trx_id",
       }),
     }),
+    Purchase: entity({
+      concept: "Purchase",
+      hostTable: "purchases",
+      joins: [
+        {
+          table: "purchase_items",
+          on: [{ left: "purchases.id", right: "purchase_items.purchase_id" }],
+          kind: "child",
+        },
+      ],
+      rowFilters: [
+        deleted("purchases"),
+        { table: "purchases", column: "status", op: "ne", value: "reversed" },
+        deleted("purchase_items"),
+      ],
+      fields: fields("purchases", {
+        id: "id",
+        supplier_id: "supplier_id",
+        date_time: "purchase_time",
+        part_id: ["purchase_items", "part_id"],
+        quantity: ["purchase_items", "quantity"],
+        cost: ["purchase_items", "unit_cost"],
+      }),
+    }),
     Supplier: entity({
       concept: "Supplier",
       hostTable: "suppliers",

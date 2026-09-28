@@ -1,4 +1,5 @@
 import { buildDictionary, separatingSlot } from "@dokaanbondhu/core";
+import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput } from "../src/host/find-parts";
@@ -162,6 +163,32 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
       }),
     );
     expect(Number(lines[0]?.lines)).toBe(Number(all[0]?.n));
+  });
+
+  it("never counts a reversed payment, a reversed purchase or its lines, whatever SQL the LLM writes (D17, D94)", async () => {
+    // The seed has no reversal, so one payment and one purchase are marked reversed for this test and put back after.
+    const owner = new pg.Client({ connectionString: migrationUrl });
+    await owner.connect();
+    const [payment] = (await owner.query("SELECT id FROM customer_payments ORDER BY id LIMIT 1")).rows;
+    const [purchase] = (await owner.query("SELECT id FROM purchases ORDER BY id LIMIT 1")).rows;
+    const read = (sql: string) => pools.readOnly(db, (run) => runReadQuery(geargridMap, run, sql));
+    const paymentSql = `SELECT COUNT(*) AS n FROM customer_payments WHERE id = '${payment.id}'`;
+    const purchaseSql = `SELECT COUNT(*) AS n FROM purchases WHERE id = '${purchase.id}'`;
+    const linesSql = `SELECT COUNT(*) AS n FROM purchase_items WHERE purchase_id = '${purchase.id}'`;
+    try {
+      expect((await read(paymentSql)).rows[0]?.n).toBe(1);
+      expect((await read(purchaseSql)).rows[0]?.n).toBe(1);
+      expect(Number((await read(linesSql)).rows[0]?.n)).toBeGreaterThan(0);
+      await owner.query("UPDATE customer_payments SET status = 'reversed' WHERE id = $1", [payment.id]);
+      await owner.query("UPDATE purchases SET status = 'reversed' WHERE id = $1", [purchase.id]);
+      expect((await read(paymentSql)).rows[0]?.n).toBe(0);
+      expect((await read(purchaseSql)).rows[0]?.n).toBe(0);
+      expect((await read(linesSql)).rows[0]?.n).toBe(0); // the lines of a reversed purchase, read on their own
+    } finally {
+      await owner.query("UPDATE customer_payments SET status = 'completed' WHERE id = $1", [payment.id]);
+      await owner.query("UPDATE purchases SET status = 'completed' WHERE id = $1", [purchase.id]);
+      await owner.end();
+    }
   });
 
   it("answers other reads through the guard: a due, and low stock without inactive or deleted parts", async () => {

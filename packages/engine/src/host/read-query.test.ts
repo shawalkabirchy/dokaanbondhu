@@ -21,6 +21,15 @@ describe("run_read_query guard (spec 11.6)", () => {
     expect(sql).toMatch(/LIMIT 200$/);
   });
 
+  it("gives a child table its entity's filters through the link: numbers of an inactive part are left out", () => {
+    const { sql } = guardReadQuery(map, "SELECT code FROM item_codes");
+    expect(sql).toContain(
+      '"item_codes" AS (SELECT t.* FROM "item_codes" AS t LEFT JOIN "items" AS p0 ON p0."id" = t."item_id" ' +
+        'WHERE t."deleted_at" IS NULL AND (p0."id" IS NULL OR p0."deleted_at" IS NULL) ' +
+        'AND (p0."id" IS NULL OR p0."is_active" IS TRUE))',
+    );
+  });
+
   it("caps a larger LIMIT and keeps a smaller one", () => {
     expect(guardReadQuery(map, "SELECT title FROM items LIMIT 5000").sql).toMatch(/LIMIT 200$/);
     expect(guardReadQuery(map, "SELECT title FROM items LIMIT 10").sql).toMatch(/LIMIT 10$/);
