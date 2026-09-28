@@ -94,8 +94,8 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       const saved = await admin.withAdmin((tx) =>
         tx.select().from(messages).where(eq(messages.conversationId, conversationId)),
       );
-      console.log("DIAG received", llm.received.length, "events", JSON.stringify(events).slice(0, 600));
-      console.log("DIAG meta", JSON.stringify(saved.map((message) => message.meta)));
+      console.warn("DIAG received", llm.received.length, "events", JSON.stringify(events).slice(0, 600));
+      console.warn("DIAG meta", JSON.stringify(saved.map((message) => message.meta)));
     }
     expect(response.headers.get("cache-control")).toBe("no-cache, no-transform");
     expect(response.headers.get("x-accel-buffering")).toBe("no");
