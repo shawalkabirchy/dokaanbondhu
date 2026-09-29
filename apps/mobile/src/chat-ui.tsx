@@ -117,19 +117,10 @@ export function ChoiceChips(props: {
   );
 }
 
-/**
- * Android measures Bangla text a little narrower than it draws it with its default ("highQuality") line breaking, so
- * the last word of a short bubble ("দুই হাজার ষোল") wrapped onto a line the bubble did not show; simple breaking
- * measures what it draws (D103).
- */
-const BANGLA_BREAKS = "simple" as const;
-
 export function UserBubble({ text }: { text: string }) {
   return (
     <View style={[styles.bubble, styles.userBubble]}>
-      <Text style={[styles.bubbleText, styles.userText]} textBreakStrategy={BANGLA_BREAKS}>
-        {text}
-      </Text>
+      <Text style={[styles.bubbleText, styles.userText]}>{text}</Text>
     </View>
   );
 }
@@ -148,9 +139,7 @@ export function AssistantBubble(props: {
     <View style={styles.reply}>
       {text ? (
         <View style={[styles.bubble, styles.assistantBubble]}>
-          <Text style={styles.bubbleText} textBreakStrategy={BANGLA_BREAKS}>
-            {text}
-          </Text>
+          <Text style={styles.bubbleText}>{text}</Text>
         </View>
       ) : null}
       {/* The spinner shows only until the answer's text arrives; its audio may still be on the way (D101). */}
@@ -181,7 +170,9 @@ const styles = StyleSheet.create({
   bubble: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, maxWidth: "88%" },
   userBubble: { backgroundColor: colors.green, alignSelf: "flex-end" },
   assistantBubble: { backgroundColor: colors.greenLight, alignSelf: "flex-start" },
-  bubbleText: { fontSize: 18, lineHeight: 26, color: colors.ink },
+  // No fixed lineHeight: with one, Android sized a short Bangla bubble ("দুই হাজার ষোল") for one line and drew its
+  // last word on a second line the bubble did not show (D103).
+  bubbleText: { fontSize: 18, color: colors.ink },
   userText: { color: colors.white },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   muted: { fontSize: 15, color: colors.muted },
