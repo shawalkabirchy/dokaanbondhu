@@ -101,8 +101,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Against the module list of the pinned Expo, not the newest release: a later Expo patch keeps CI green (D106).
       - name: Expo SDK 57 versions (typescript is pinned on purpose, spec 3.4)
         working-directory: apps/mobile
+        env:
+          EXPO_OFFLINE: "1"
         run: npx expo install --check
       - name: App tests (Jest)
         working-directory: apps/mobile
