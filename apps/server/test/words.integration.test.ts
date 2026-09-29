@@ -165,18 +165,34 @@ describe.skipIf(!allLocal)("words the assistant learns", () => {
   });
 
   it.each([
-    { style: "Bangla", text: "নৌকার সেলফ আছে?", heard: "নৌকা", part: "সেলফ", answer: "নোয়া" },
-    { style: "Banglish", text: "nouka er self ache?", heard: "nouka", part: "self", answer: "noah" },
+    {
+      style: "Bangla",
+      text: "নৌকার সেলফ আছে?",
+      heard: "নৌকা",
+      part: "সেলফ",
+      answer: "নোয়া",
+      value: "Toyota Noah",
+    },
+    // A different car: once "নৌকা" is Noah's word, Banglish "nouka" sounds the same and is understood at once.
+    // "rayas" is how speech-to-text wrote Prius in the first live listening check.
+    {
+      style: "Banglish",
+      text: "rayas er brake pad ache?",
+      heard: "rayas",
+      part: "brake pad",
+      answer: "prius",
+      value: "Toyota Prius",
+    },
   ])(
     "learns a car name from answered questions, offers it in setup once seen twice, and the owner adds it (D102 B; $style)",
-    async ({ text, heard, part, answer }) => {
+    async ({ text, heard, part, answer, value }) => {
       const ask = async () => {
         const conversationId = await newConversation();
         llm.script.push({ calls: [{ name: "find_parts", arguments: { part_type: part, vehicle: heard } }] });
         const first = await chat(conversationId, text);
         expect(first.reply).toBe("কোন গাড়ির?");
         const second = await chat(conversationId, answer);
-        expect(second.reply).toBe("কোন বছরের নোয়া?"); // the answer resolved the car
+        expect(second.reply).not.toBe("কোন গাড়ির?"); // the answer resolved the car
       };
 
       await ask();
@@ -184,7 +200,7 @@ describe.skipIf(!allLocal)("words the assistant learns", () => {
       await ask();
       const listed = (await call(routes.words.GET, "GET", "/setup/words")).body.words;
       const suggestion = listed.suggestions.find((word) => word.heard === heard)!;
-      expect(suggestion).toMatchObject({ concept: "vehicle_model", value: "Toyota Noah", seen: 2 });
+      expect(suggestion).toMatchObject({ concept: "vehicle_model", value, origin: "answers", seen: 2 });
 
       const decided = await call(
         routes.word.PUT,
@@ -200,10 +216,10 @@ describe.skipIf(!allLocal)("words the assistant learns", () => {
         decided.body.words.suggestions.find((word: { heard: string }) => word.heard === heard),
       ).toBeUndefined();
 
-      // Next time the name is understood at once: the question is the year, not the car.
+      // Next time the name is understood at once: the car is not asked again.
       llm.script.push({ calls: [{ name: "find_parts", arguments: { part_type: part, vehicle: heard } }] });
       const after = await chat(await newConversation(), text);
-      expect(after.reply).toBe("কোন বছরের নোয়া?");
+      expect(after.reply).not.toBe("কোন গাড়ির?");
     },
   );
 

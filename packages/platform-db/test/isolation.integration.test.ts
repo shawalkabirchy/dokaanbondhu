@@ -107,7 +107,7 @@ describe.skipIf(!allLocal)("platform database", () => {
              and not has_table_privilege('authenticated', c.oid, 'SELECT') as ok
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind = 'r'`);
-    expect(rows.length).toBe(18);
+    expect(rows.length).toBe(20); // with alias_suggestions and speech_checks (D102)
     expect(rows.filter((row) => !row.ok)).toEqual([]);
   });
 
