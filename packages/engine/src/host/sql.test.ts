@@ -35,7 +35,7 @@ describe("buildQuery (spec 11.2)", () => {
   it("renders PostgreSQL with quoted names, $n parameters and every row filter", () => {
     const built = buildQuery(testMap("postgres"), partsWithStock);
     expect(built.text).toBe(
-      'SELECT "p"."id" AS "part_id", "p"."title" AS "name", "s"."qty_milli" AS "stock", "s__items"."shelf" AS "rack" ' +
+      'SELECT "p"."id" AS "part_id", "p"."title" AS "name", "s"."qty" AS "stock", "s__items"."shelf" AS "rack" ' +
         'FROM "items" AS "p" ' +
         'JOIN "item_cars" AS "f" ON "f"."item_id" = "p"."id" ' +
         'LEFT JOIN "stock" AS "s" ON "s"."item_id" = "p"."id" ' +
@@ -45,10 +45,7 @@ describe("buildQuery (spec 11.2)", () => {
         'AND "p"."id" = ANY($2) AND "f"."car_id" = ANY($3) AND "p"."grade" = $4 LIMIT 20',
     );
     expect(built.values).toEqual(["removed", ["a", "b"], ["v1"], "genuine"]);
-    expect(built.columns.find((column) => column.as === "stock")).toMatchObject({
-      kind: "quantity",
-      valueScale: 1000,
-    });
+    expect(built.columns.find((column) => column.as === "stock")).toMatchObject({ kind: "quantity" });
   });
 
   it("renders MySQL with backticks and ? parameters in text order", () => {
@@ -101,7 +98,6 @@ describe("buildQuery (spec 11.2)", () => {
       hostColumn: "name",
       dataType: null,
       idType: null,
-      valueScale: 1,
       confirmed: true,
     };
     const built = buildQuery(map, {

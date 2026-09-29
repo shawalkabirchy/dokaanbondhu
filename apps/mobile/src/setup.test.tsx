@@ -51,11 +51,9 @@ const schema: SchemaView = {
           kind: "money",
           host_table: "parts",
           host_column: "retail_price",
-          value_scale: 100,
           id_type: null,
           confirmed: false,
           samples: ["৪,৫০০ টাকা"],
-          readings: { "1": "৪,৫০,০০০ টাকা", "100": "৪,৫০০ টাকা" },
         },
       ],
     },
@@ -72,7 +70,7 @@ function answer(connections: ConnectionView[]) {
       return {
         reports: {
           connection_id: connection.id,
-          stock_value: { available: false, confirmed: false, current_paisa: null },
+          stock_value: { available: false, confirmed: false, current_taka: null },
           see_in_app: ["profit_loss", "cash_book"],
         },
       } as never;
@@ -106,29 +104,16 @@ describe("setup page", () => {
     expect(screen.getByText("setup.save_connection")).toBeTruthy();
   });
 
-  it("offers a money field's two readings, and a tap sends that value scale", async () => {
+  it("shows money in whole taka with no second reading, and confirms the concept as proposed (D110)", async () => {
     answer([connection]);
     await show();
-    expect(await screen.findByText("setup.which_price", {}, { timeout: 5000 })).toBeTruthy();
-    fireEvent.press(screen.getByText("৪,৫০,০০০ টাকা"));
+    expect(await screen.findByText("৪,৫০০ টাকা", {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.queryByText("৪,৫০,০০০ টাকা")).toBeNull();
+    fireEvent.press(screen.getByText("setup.confirm"));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(`/setup/schema/${schema.entities[0]!.id}`, {
         method: "PUT",
-        body: {
-          entity: {
-            host_table: "parts",
-            joins: [],
-            row_filters: [],
-            fields: [
-              {
-                concept_field: "retail_price",
-                host_table: "parts",
-                host_column: "retail_price",
-                value_scale: 1,
-              },
-            ],
-          },
-        },
+        body: {},
       }),
     );
   });

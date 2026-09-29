@@ -9,7 +9,6 @@ import {
   spokenSamples,
   type Dialect,
   type EntityMap,
-  type FieldMap,
   type HostDb,
   type IntrospectedTable,
 } from "@dokaanbondhu/engine/host";
@@ -92,16 +91,6 @@ export function forgetIntrospection(connectionId: string): void {
   introspections.delete(connectionId);
 }
 
-/** A money field's first sample read in taka (scale 1) and in paisa (scale 100); empty without a sample. */
-function readings(entity: EntityMap, field: FieldMap, tables: IntrospectedTable[]): Record<string, string> {
-  return Object.fromEntries(
-    [1, 100].flatMap((scale) => {
-      const first = spokenSamples(entity, { ...field, valueScale: scale }, tables)[0];
-      return first ? [[String(scale), first]] : [];
-    }),
-  );
-}
-
 export function entityView(id: string, entity: EntityMap, tables: IntrospectedTable[]): EntityView {
   return {
     id,
@@ -115,13 +104,9 @@ export function entityView(id: string, entity: EntityMap, tables: IntrospectedTa
       kind: CONCEPT_FIELDS[entity.concept][field.conceptField] ?? "text",
       host_table: field.hostTable,
       host_column: field.hostColumn,
-      value_scale: field.valueScale,
       id_type: field.idType,
       confirmed: field.confirmed,
       samples: spokenSamples(entity, field, tables),
-      ...(CONCEPT_FIELDS[entity.concept][field.conceptField] === "money"
-        ? { readings: readings(entity, field, tables) }
-        : {}),
     })),
   };
 }

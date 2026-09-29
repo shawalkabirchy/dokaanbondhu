@@ -1,11 +1,11 @@
 import { banglaDigits, formatTaka, quantity } from "@dokaanbondhu/core";
 import type { Language } from "./settings-store";
 
-// Numbers on screen (spec 10.8): money arrives in paisa and is shown in taka with Bangladeshi grouping; Bangla digits
-// when the app is in Bangla.
+// Numbers on screen (spec 10.8): money arrives in whole taka (D110) and is shown with Bangladeshi grouping; Bangla
+// digits when the app is in Bangla.
 
-export function takaText(paisa: number, language: Language): string {
-  const value = BigInt(Math.round(paisa));
+export function takaText(taka: number, language: Language): string {
+  const value = BigInt(Math.round(taka));
   return language === "bn" ? `${formatTaka(value)} টাকা` : `Tk ${formatTaka(value, { bangla: false })}`;
 }
 

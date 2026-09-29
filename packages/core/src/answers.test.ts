@@ -22,9 +22,9 @@ function row(overrides: Partial<PartRow>): PartRow {
     brand: null,
     unit: "set",
     stock: 3,
-    retailPaisa: 450000n,
-    garagePaisa: 420000n,
-    wholesalePaisa: null,
+    retailTaka: 4500n,
+    garageTaka: 4200n,
+    wholesaleTaka: null,
     rack: "B-3",
     fitmentVerified: true,
     ...overrides,
@@ -38,7 +38,7 @@ const axio: PartsContext = {
   position: "front",
   tier: "retail",
 };
-const pads = [row({}), row({ hostPartId: "y", quality: "aftermarket", stock: 6, retailPaisa: 180000n })];
+const pads = [row({}), row({ hostPartId: "y", quality: "aftermarket", stock: 6, retailTaka: 1800n })];
 
 describe("template answers (spec 12.2, architecture A.1)", () => {
   it("answers several kinds with their count, and a shared rack once", () => {
@@ -49,13 +49,13 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
 
   it("names the brand when two kinds share a quality, so they can be told apart", () => {
     const filters = [
-      row({ quality: "aftermarket", brand: "Denso", stock: 10, retailPaisa: 42000n, rack: "A-2" }),
+      row({ quality: "aftermarket", brand: "Denso", stock: 10, retailTaka: 420n, rack: "A-2" }),
       row({
         hostPartId: "z",
         quality: "aftermarket",
         brand: "Sakura",
         stock: 10,
-        retailPaisa: 39000n,
+        retailTaka: 390n,
         rack: "A-2",
       }),
     ];
@@ -69,7 +69,7 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
       quality: "aftermarket",
       position: "rear",
       stock: 2,
-      retailPaisa: 150000n,
+      retailTaka: 1500n,
       rack: "B-4",
     });
     expect(partsAnswer([shoe], { ...axio, position: "rear" }, "Brake Shoe")).toBe(
@@ -97,7 +97,7 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
   });
 
   it("writes dues, the help answer and the possessive", () => {
-    expect(dueAnswer("রহিম মোটরস", 1920000n)).toBe("রহিম মোটরসের বাকি ১৯,২০০ টাকা।");
+    expect(dueAnswer("রহিম মোটরস", 19200n)).toBe("রহিম মোটরসের বাকি ১৯,২০০ টাকা।");
     expect(possessive("এক্সিও")).toBe("এক্সিওর");
     expect(helpAnswer()).toContain("পার্ট খুঁজতে পারি");
   });
@@ -115,8 +115,8 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
   it("offers chips with price and stock", () => {
     expect(
       slotChips("quality", [
-        { value: "genuine", rows: [pads[0]!], pricePaisa: 450000n, stock: 3 },
-        { value: "aftermarket", rows: [pads[1]!], pricePaisa: 180000n, stock: 6 },
+        { value: "genuine", rows: [pads[0]!], priceTaka: 4500n, stock: 3 },
+        { value: "aftermarket", rows: [pads[1]!], priceTaka: 1800n, stock: 6 },
       ]),
     ).toEqual([
       { id: "opt-1", label: "জেনুইন", sublabel: "৪,৫০০ টাকা, ৩ সেট আছে" },

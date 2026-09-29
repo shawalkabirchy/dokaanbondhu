@@ -54,9 +54,9 @@ const tables: IntrospectedTable[] = [
 ];
 
 const on = (left: string, right: string) => [{ left, right }];
-const field = (concept_field: string, host: string, value_scale = 1) => {
+const field = (concept_field: string, host: string) => {
   const [host_table, host_column] = host.split(".");
-  return { concept_field, host_table: host_table!, host_column: host_column!, value_scale };
+  return { concept_field, host_table: host_table!, host_column: host_column! };
 };
 
 const llmAnswer = proposalSchema.parse({
@@ -185,33 +185,30 @@ describe("schema mapper repairs (spec 11.3)", () => {
     expect(forgot.warnings).toEqual(["Part: join to goods_codes added for part_number"]);
   });
 
-  it("reads whole-number money as paisa when a typical part would cost over a lakh taka", () => {
+  it("never reads money as paisa, however large: every connected app keeps taka (D110)", () => {
     const priced = [
       table("items", [key(), col("price", "bigint"), col("cost", "bigint")]),
       table("people", [key(), col("owed", "bigint")]),
     ];
     priced[0]!.samples = [{ price: "450000" }, { price: "180000" }, { price: "65000" }];
-    const scaled = (samples: string[]) => {
-      priced[0]!.samples = samples.map((price) => ({ price }));
-      const raw = proposalSchema.parse({
-        entities: [
-          {
-            concept: "Price",
-            host_table: "items",
-            fields: [
-              field("part_id", "items.id"),
-              field("retail_price", "items.price"),
-              field("cost", "items.cost"),
-            ],
-          },
-          { concept: "Customer", host_table: "people", fields: [field("due_balance", "people.owed")] },
-        ],
-      });
-      const result = repairProposal(checkProposal(raw, priced), priced);
-      return result.entities.flatMap((entity) => Object.values(entity.fields).map((f) => f.valueScale));
-    };
-    expect(scaled(["450000", "180000", "65000"])).toEqual([1, 100, 100, 100]); // part_id keeps 1
-    expect(scaled(["4500", "1800", "650"])).toEqual([1, 1, 1, 1]); // taka: left as the LLM said
+    const raw = proposalSchema.parse({
+      entities: [
+        {
+          concept: "Price",
+          host_table: "items",
+          fields: [
+            field("part_id", "items.id"),
+            field("retail_price", "items.price"),
+            field("cost", "items.cost"),
+          ],
+        },
+        { concept: "Customer", host_table: "people", fields: [field("due_balance", "people.owed")] },
+      ],
+    });
+    const result = repairProposal(checkProposal(raw, priced), priced);
+    expect(result.warnings.filter((warning) => warning.startsWith("money"))).toEqual([]);
+    for (const entity of result.entities)
+      for (const mapped of Object.values(entity.fields)) expect(mapped).not.toHaveProperty("valueScale");
   });
 
   it("reads a status column's allowed values from a CHECK rule or an enum type", () => {

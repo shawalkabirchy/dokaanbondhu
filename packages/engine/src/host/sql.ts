@@ -55,7 +55,6 @@ export interface OutputColumn {
   concept: Concept;
   field: string;
   kind: FieldKind;
-  valueScale: number;
   aggregate?: SelectItem["aggregate"];
 }
 
@@ -278,7 +277,7 @@ export function buildQuery(map: SchemaMap, spec: QuerySpec): BuiltQuery {
 
   const columns = spec.select.map((item) => {
     const concept = uses.find((entry) => entry.alias === item.ref.alias)?.concept as Concept;
-    const field = confirmedField(map, concept, item.ref.field);
+    confirmedField(map, concept, item.ref.field);
     return {
       as: item.as,
       concept,
@@ -287,7 +286,6 @@ export function buildQuery(map: SchemaMap, spec: QuerySpec): BuiltQuery {
         item.aggregate === "count"
           ? ("number" as const)
           : (CONCEPT_FIELDS[concept][item.ref.field] ?? "text"),
-      valueScale: item.aggregate === "count" ? 1 : field.valueScale,
       ...(item.aggregate ? { aggregate: item.aggregate } : {}),
     };
   });

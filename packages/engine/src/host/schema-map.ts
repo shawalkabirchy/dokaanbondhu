@@ -17,7 +17,7 @@ export const CONCEPTS = [
 ] as const;
 export type Concept = (typeof CONCEPTS)[number];
 
-/** How a concept field's values are read: money takes a value scale to paisa, quantity to units. */
+/** How a concept field's values are read: money as whole taka (D110), quantity as units. */
 export type FieldKind = "id" | "ref" | "text" | "money" | "quantity" | "number" | "boolean" | "time";
 
 /** The fields each concept can have (architecture, standard spare parts concepts), with their kind. */
@@ -144,7 +144,6 @@ export interface FieldMap {
   hostColumn: string;
   dataType: string | null;
   idType: "integer" | "uuid" | "text" | null;
-  valueScale: number;
   confirmed: boolean;
 }
 

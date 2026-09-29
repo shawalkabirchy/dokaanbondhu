@@ -36,6 +36,13 @@
       "when": 1790691793355,
       "tag": "0004_suggestion_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790711006658,
+      "tag": "0005_no_money_scale",
+      "breakpoints": true
     }
   ]
 }

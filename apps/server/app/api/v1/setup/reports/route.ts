@@ -46,7 +46,7 @@ async function view(shopId: string, connectionId: string): Promise<ReportsView> 
     stock_value: {
       available: proposed !== null,
       confirmed: Boolean(stored[0]?.confirmedAt),
-      current_paisa: current === null ? null : Number(current),
+      current_taka: current === null ? null : Number(current),
     },
     see_in_app: ["profit_loss", "cash_book"],
   };

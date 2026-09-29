@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTaka, money, quantity, year } from "./format";
+import { formatTaka, money, quantity, roundTaka, year } from "./format";
 import { expandYear, matchPartNumber, normalizePartNumber, parseEngineCode, parseYear } from "./numbers";
 import { checkQuantity, parseQuantity } from "./quantity";
 import { normalize } from "./text";
@@ -109,12 +109,19 @@ describe("quantities (spec 10.6)", () => {
 });
 
 describe("numbers in answers (spec 10.8)", () => {
-  it("writes money in whole taka with Bangla digits and Bangladeshi grouping (D92)", () => {
-    expect(money(420000n)).toBe("৪,২০০ টাকা");
-    expect(formatTaka(12345650n, { bangla: false })).toBe("1,23,457"); // half a taka rounds up
-    expect(formatTaka(12345649n, { bangla: false })).toBe("1,23,456");
-    expect(formatTaka(-150050n, { bangla: false })).toBe("-1,501"); // away from zero
-    expect(formatTaka(49n, { bangla: false })).toBe("0");
+  it("writes money in whole taka with Bangla digits and Bangladeshi grouping (D92, D110)", () => {
+    expect(money(4200n)).toBe("৪,২০০ টাকা");
+    expect(formatTaka(123457n, { bangla: false })).toBe("1,23,457");
+    expect(formatTaka(-1501n, { bangla: false })).toBe("-1,501");
+    expect(formatTaka(0n, { bangla: false })).toBe("0");
+  });
+
+  it("rounds a fraction of taka once, half away from zero (D110)", () => {
+    expect(roundTaka(3n * 4500n, 2n)).toBe(6750n); // 1.5 litres at 4,500 taka
+    expect(roundTaka(2469n, 2n)).toBe(1235n); // half a taka rounds up
+    expect(roundTaka(2467n, 2n)).toBe(1234n);
+    expect(roundTaka(-3001n, 2n)).toBe(-1501n); // away from zero
+    expect(roundTaka(1n, 3n)).toBe(0n);
   });
 
   it("writes years and quantities", () => {

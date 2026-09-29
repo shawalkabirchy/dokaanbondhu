@@ -66,9 +66,9 @@ function row(overrides: Partial<PartRow>): PartRow {
     brand: "Toyota",
     unit: "set",
     stock: 3,
-    retailPaisa: 450000n,
-    garagePaisa: 420000n,
-    wholesalePaisa: null,
+    retailTaka: 4500n,
+    garageTaka: 4200n,
+    wholesaleTaka: null,
     rack: "B-3",
     fitmentVerified: true,
     ...overrides,
@@ -101,24 +101,24 @@ describe("part resolver (spec 10.7)", () => {
         hostPartId: "a",
         quality: "genuine",
         brand: "Toyota",
-        retailPaisa: 450000n,
-        garagePaisa: 420000n,
+        retailTaka: 4500n,
+        garageTaka: 4200n,
         stock: 3,
       }),
       row({
         hostPartId: "b",
         quality: "aftermarket",
         brand: "Akebono",
-        retailPaisa: 280000n,
-        garagePaisa: 260000n,
+        retailTaka: 2800n,
+        garageTaka: 2600n,
         stock: 6,
       }),
     ];
     const separated = separatingSlot(rows, "garage");
     expect(separated?.slot).toBe("quality"); // quality and brand tie; quality comes first
     expect(separated?.options).toMatchObject([
-      { value: "genuine", pricePaisa: 420000n, stock: 3 },
-      { value: "aftermarket", pricePaisa: 260000n, stock: 6 },
+      { value: "genuine", priceTaka: 4200n, stock: 3 },
+      { value: "aftermarket", priceTaka: 2600n, stock: 6 },
     ]);
     expect(separatingSlot([rows[0]!, row({ hostPartId: "c" })])).toBeNull();
   });

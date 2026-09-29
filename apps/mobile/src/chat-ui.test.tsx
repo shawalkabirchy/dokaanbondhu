@@ -4,7 +4,7 @@ import type { AssistantMessage } from "./lib/chat-store";
 
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 
-// What a reply shows (spec 15.8): a table event's money cells arrive in paisa and are shown in taka; a part card
+// What a reply shows (spec 15.8): a table event's money cells arrive in whole taka (D110); a part card
 // shows stock, price and rack, and says when fitment is not recorded.
 
 describe("reply content", () => {
@@ -19,7 +19,7 @@ describe("reply content", () => {
             { key: "name", label: "name", kind: "text" },
             { key: "due_balance", label: "due_balance", kind: "money" },
           ],
-          rows: [["Rahim Motors", 1920000]],
+          rows: [["Rahim Motors", 19200]],
           truncated: false,
         }}
       />,
@@ -36,7 +36,7 @@ describe("reply content", () => {
           type: "table",
           title: "",
           columns: [{ key: "total", label: "total", kind: "money" }],
-          rows: [[12345650]],
+          rows: [[123457]],
           truncated: true,
         }}
       />,
@@ -56,7 +56,7 @@ describe("reply content", () => {
             quality: "genuine",
             unit: "set",
             stock: 3,
-            price_paisa: { retail: 450000 },
+            price_taka: { retail: 4500 },
             rack: "B-3",
             fitment_verified: false,
           },

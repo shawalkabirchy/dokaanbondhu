@@ -8,10 +8,9 @@ function withCost() {
   const cost: FieldMap = {
     conceptField: "cost",
     hostTable: "items",
-    hostColumn: "cost_paisa",
+    hostColumn: "avg_cost",
     dataType: null,
     idType: null,
-    valueScale: 100,
     confirmed: true,
   };
   map.entities.Price!.fields.cost = cost;
@@ -24,9 +23,10 @@ const base = (overrides: Partial<ReportInput>): ReportInput => ({
   to: null,
   map: withCost(),
   run: async () => [
-    { quantity: "3000", cost: "360000" }, // 3 sets at 3,600 taka (quantity in thousandths)
-    { quantity: "1500", cost: "10000" }, // 1.5 at 100 taka
-    { quantity: "-2000", cost: "50000" }, // negative stock counts as zero
+    { quantity: "3", cost: "3600" }, // 3 sets at 3,600 taka
+    { quantity: "1.5", cost: "101" }, // 1.5 litres at 101 taka: 151.5, rounded once at the end
+    { quantity: "2.5", cost: "99.60" }, // a price with a fraction is read as 100 taka (D110)
+    { quantity: "-2", cost: "500" }, // negative stock counts as zero
   ],
   formulas: [],
   hostReports: [],
@@ -39,12 +39,12 @@ describe("reports (spec 11.7)", () => {
     expect(proposeStockValue(withCost())).toMatchObject({ name: "stock_value", confirmed: false });
   });
 
-  it("uses a confirmed formula: quantity times average cost, negative stock as zero, exact paisa", async () => {
+  it("uses a confirmed formula: quantity times average cost, negative stock as zero, in whole taka", async () => {
     const formula = { ...proposeStockValue(withCost())!, confirmed: true };
     expect(await getReport(base({ formulas: [formula] }))).toEqual({
       kind: "figure",
       name: "stock_value",
-      paisa: 3n * 360000n + 15000n,
+      taka: 11202n, // 10,800 + 151.5 + 250 = 11,201.5, rounded once
       from: null,
       to: null,
       source: "formula",
@@ -66,9 +66,9 @@ describe("reports (spec 11.7)", () => {
         from: "2026-09-01",
         to: "2026-09-30",
         hostReports: ["profit_loss"],
-        callHost: async () => 1234500n,
+        callHost: async () => 12345n,
       }),
     );
-    expect(result).toMatchObject({ kind: "figure", paisa: 1234500n, source: "host" });
+    expect(result).toMatchObject({ kind: "figure", taka: 12345n, source: "host" });
   });
 });

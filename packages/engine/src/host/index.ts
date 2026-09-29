@@ -10,7 +10,7 @@ export {
 } from "./catalog";
 export {
   findParts,
-  toPaisa,
+  toTaka,
   toUnits,
   type FindPartsInput,
   type FindPartsResult,

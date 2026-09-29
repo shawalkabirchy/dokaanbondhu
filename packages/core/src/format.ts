@@ -11,24 +11,29 @@ function groupDigits(digits: string): string {
   return `${head},${digits.slice(-3)}`;
 }
 
-/** Paisa as whole taka, rounded half away from zero (D92): "4,500", "1,23,457"; with Bangla digits by default. */
-export function formatTaka(paisa: bigint, options: { bangla?: boolean } = {}): string {
-  const taka = wholeTaka(paisa);
+/** Whole taka with Bangladeshi grouping: "4,500", "1,23,457"; with Bangla digits by default. */
+export function formatTaka(taka: bigint, options: { bangla?: boolean } = {}): string {
   const sign = taka < 0n ? "-" : "";
   const text = `${sign}${groupDigits((taka < 0n ? -taka : taka).toString())}`;
   return options.bangla === false ? text : banglaDigits(text);
 }
 
-/** Paisa to whole taka, half away from zero: paisa are never shown or said (D92). */
-export function wholeTaka(paisa: bigint): bigint {
-  const absolute = paisa < 0n ? -paisa : paisa;
-  const taka = (absolute + 50n) / 100n;
-  return paisa < 0n ? -taka : taka;
+/**
+ * Money is whole taka everywhere, never paisa (D92, D110): an amount that comes out as a fraction (an average, a
+ * quantity of 1.5 times a price) is numerator / denominator rounded once to the taka, half away from zero.
+ */
+export function roundTaka(numerator: bigint, denominator: bigint): bigint {
+  const negative = numerator < 0n !== denominator < 0n;
+  const top = numerator < 0n ? -numerator : numerator;
+  const bottom = denominator < 0n ? -denominator : denominator;
+  let taka = top / bottom;
+  if ((top % bottom) * 2n >= bottom) taka += 1n;
+  return negative ? -taka : taka;
 }
 
 /** Money as spoken and shown: "৪,২০০ টাকা". */
-export function money(paisa: bigint): string {
-  return `${formatTaka(paisa)} টাকা`;
+export function money(taka: bigint): string {
+  return `${formatTaka(taka)} টাকা`;
 }
 
 /** A year as plain digits: "২০১৪". */

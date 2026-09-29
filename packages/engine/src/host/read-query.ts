@@ -1,5 +1,5 @@
 import pkg from "node-sql-parser";
-import { toPaisa, toUnits } from "./find-parts";
+import { toTaka, toUnits } from "./find-parts";
 import type { Row, RunQuery } from "./pool";
 import {
   CONCEPT_FIELDS,
@@ -16,7 +16,7 @@ import { quoteName } from "./sql";
 // SELECT over confirmed tables and columns with allowed functions. Every table it reads is replaced by its filtered
 // version: one WITH clause defines, under each table's own name, (SELECT t.* FROM t WHERE <row filters>), with a
 // parent's filters through its confirmed join, so deleted, voided and reversed rows can never be counted (D17). The
-// LIMIT is added or capped at 200; lineage gives each result column its value scale (D18).
+// LIMIT is added or capped at 200; lineage tells each result column's kind: money (whole taka, D110), quantity (D18).
 
 const { Parser } = pkg;
 const parser = new Parser();
@@ -70,30 +70,29 @@ const ALLOWED_FUNCTIONS = new Set([
 
 export class ReadQueryRejected extends Error {}
 
-type ResultKind = "money" | "quantity" | "count" | "number" | "text" | "date" | "unscaled";
+type ResultKind = "money" | "quantity" | "count" | "number" | "text" | "date" | "unmapped";
 
 export interface ResultColumn {
   key: string;
   kind: ResultKind;
-  valueScale: number;
 }
 
 export interface ReadQueryResult {
   sql: string;
   columns: ResultColumn[];
-  /** Rows with money in paisa and quantities in units (unscaled values as the host gave them). */
+  /** Rows with money in whole taka and quantities in units (unmapped values as the host gave them). */
   rows: Row[];
   truncated: boolean;
 }
 
 interface Allowed {
   tables: Map<string, Set<string>>; // host table -> readable columns
-  fields: Map<string, { kind: FieldKind; valueScale: number }>; // "table.column" -> mapped field
+  fields: Map<string, { kind: FieldKind }>; // "table.column" -> mapped field
 }
 
 function allowedOf(map: SchemaMap): Allowed {
   const tables = new Map<string, Set<string>>();
-  const fields = new Map<string, { kind: FieldKind; valueScale: number }>();
+  const fields = new Map<string, { kind: FieldKind }>();
   const add = (table: string, column: string) =>
     tables.set(table, (tables.get(table) ?? new Set()).add(column));
   for (const entity of Object.values(map.entities)) {
@@ -103,7 +102,7 @@ function allowedOf(map: SchemaMap): Allowed {
       add(field.hostTable, field.hostColumn);
       const kind = CONCEPT_FIELDS[entity.concept][field.conceptField] ?? "text";
       if (!fields.has(`${field.hostTable}.${field.hostColumn}`) || kind === "money" || kind === "quantity") {
-        fields.set(`${field.hostTable}.${field.hostColumn}`, { kind, valueScale: field.valueScale });
+        fields.set(`${field.hostTable}.${field.hostColumn}`, { kind });
       }
     }
     for (const join of entity.joins) {
@@ -288,7 +287,7 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
     part = part._next as Record<string, unknown> | undefined;
   }
 
-  // Lineage (D18): a mapped column, or SUM/MIN/MAX/AVG of one, takes its value scale; COUNT is a count.
+  // Lineage (D18): a mapped column, or SUM/MIN/MAX/AVG of one, takes its kind; COUNT is a count.
   const aliases = new Map<string, string>();
   walk(select.from, (node) => {
     if (typeof node.table === "string" && used.has(node.table))
@@ -308,8 +307,7 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
     (column, position): ResultColumn => {
       const expr = column.expr as Record<string, unknown>;
       let key = typeof column.as === "string" ? column.as : `column_${position + 1}`;
-      let kind: ResultKind = "unscaled";
-      let valueScale = 1;
+      let kind: ResultKind = "unmapped";
       const lineage = (ref: Record<string, unknown>) => {
         const { name, field } = resolve(ref);
         if (typeof column.as !== "string") key = name || key;
@@ -322,7 +320,6 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
                 : field.kind === "number"
                   ? "number"
                   : "text";
-          valueScale = field.valueScale;
         }
       };
       if (expr?.type === "column_ref") lineage(expr);
@@ -334,7 +331,7 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
           if (inner?.type === "column_ref") lineage(inner);
         }
       }
-      return { key, kind, valueScale };
+      return { key, kind };
     },
   );
 
@@ -342,7 +339,7 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
   return { sql: `WITH ${ctes.join(", ")} ${parser.sqlify(select as never, options)}`, columns };
 }
 
-/** Runs a guarded query read-only (the caller's transaction has the 5 s limit) and scales its values. */
+/** Runs a guarded query read-only (the caller's transaction has the 5 s limit) and reads its money as taka. */
 export async function runReadQuery(map: SchemaMap, run: RunQuery, sql: string): Promise<ReadQueryResult> {
   const guarded = guardReadQuery(map, sql);
   const raw = await run({ text: guarded.sql, values: [] });
@@ -351,8 +348,8 @@ export async function runReadQuery(map: SchemaMap, run: RunQuery, sql: string): 
     return Object.fromEntries(
       guarded.columns.map((column, index) => {
         const value = row[column.key] ?? values[index];
-        if (column.kind === "money") return [column.key, toPaisa(value, column.valueScale)];
-        if (column.kind === "quantity") return [column.key, toUnits(value, column.valueScale)];
+        if (column.kind === "money") return [column.key, toTaka(value)];
+        if (column.kind === "quantity") return [column.key, toUnits(value)];
         if (column.kind === "count") return [column.key, value === null ? null : Number(value)];
         return [column.key, value];
       }),

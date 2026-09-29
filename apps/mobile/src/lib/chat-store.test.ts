@@ -37,7 +37,7 @@ describe("chat store", () => {
               host_part_id: "p1",
               name: "Front brake pad set",
               stock: 3,
-              price_paisa: { retail: 450000 },
+              price_taka: { retail: 4500 },
               rack: "B-3",
               fitment_verified: true,
             },

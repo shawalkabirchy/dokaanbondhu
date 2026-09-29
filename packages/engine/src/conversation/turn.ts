@@ -228,16 +228,16 @@ function cardsOf(rows: PartRow[]): ReplyEvent {
       position: row.position,
       unit: row.unit,
       stock: row.stock,
-      price_paisa: Object.fromEntries(
+      price_taka: Object.fromEntries(
         (
           [
-            ["retail", row.retailPaisa],
-            ["garage", row.garagePaisa],
-            ["wholesale", row.wholesalePaisa],
+            ["retail", row.retailTaka],
+            ["garage", row.garageTaka],
+            ["wholesale", row.wholesaleTaka],
           ] as const
         )
-          .filter(([, paisa]) => paisa !== null)
-          .map(([tier, paisa]) => [tier, Number(paisa)]),
+          .filter(([, taka]) => taka !== null)
+          .map(([tier, taka]) => [tier, Number(taka)]),
       ),
       rack: row.rack,
       fitment_verified: row.fitmentVerified,
@@ -254,8 +254,8 @@ function rowsForLlm(rows: PartRow[]) {
     position: row.position ? banglaOf("position", row.position) : null,
     brand: row.brand,
     stock: row.stock === null ? null : quantity(row.stock, row.unit ?? "piece"),
-    retail_price: row.retailPaisa === null ? null : money(row.retailPaisa),
-    garage_price: row.garagePaisa === null ? null : money(row.garagePaisa),
+    retail_price: row.retailTaka === null ? null : money(row.retailTaka),
+    garage_price: row.garageTaka === null ? null : money(row.garageTaka),
     rack: row.rack,
     fitment_recorded: row.fitmentVerified,
   }));
@@ -300,7 +300,7 @@ interface Facts {
 function templateAnswer(facts: Facts): string {
   if (facts.report) {
     if (facts.report.kind === "see_in_app") return SEE_IN_APP;
-    return `স্টকের মোট দাম ${formatTaka(facts.report.paisa)} টাকা।`;
+    return `স্টকের মোট দাম ${formatTaka(facts.report.taka)} টাকা।`;
   }
   if (facts.parts) {
     const { result, context } = facts.parts;
@@ -568,7 +568,7 @@ export async function runTurn(
               ),
             );
           const spoken = result.columns
-            .filter((column) => column.kind !== "unscaled")
+            .filter((column) => column.kind !== "unmapped")
             .map((column) => column.key);
           return JSON.stringify({
             rows: forLlm,
@@ -601,10 +601,10 @@ export async function runTurn(
         facts.report = result;
         record(result.kind);
         if (result.kind === "see_in_app") return "stop";
-        facts.allowed.addMoney(result.paisa);
+        facts.allowed.addMoney(result.taka);
         return JSON.stringify({
           report: name,
-          taka: formatTaka(result.paisa, { bangla: false }),
+          taka: formatTaka(result.taka, { bangla: false }),
           from: result.from,
           to: result.to,
         });

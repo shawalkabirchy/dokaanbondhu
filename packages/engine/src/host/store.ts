@@ -63,7 +63,6 @@ export async function loadSchemaMap(tx: Tx, connectionId: string, dialect: Diale
             hostColumn: field.hostColumn,
             dataType: field.dataType,
             idType: field.idType as FieldMap["idType"],
-            valueScale: field.valueScale,
             confirmed: field.confirmed,
           },
         ]),
@@ -115,7 +114,6 @@ async function writeEntity(
         hostColumn: field.hostColumn,
         dataType: field.dataType,
         idType: field.idType,
-        valueScale: field.valueScale,
         confirmed: entity.confirmed && field.confirmed,
       })),
     );

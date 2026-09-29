@@ -73,8 +73,8 @@ export function partPhrase(context: PartsContext, partType = context.partType): 
 }
 
 function priceOf(row: PartRow, tier: PartsContext["tier"]): bigint | null {
-  const tierPrice = tier === "garage" ? row.garagePaisa : tier === "wholesale" ? row.wholesalePaisa : null;
-  return tierPrice ?? row.retailPaisa;
+  const tierPrice = tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : null;
+  return tierPrice ?? row.retailTaka;
 }
 
 function stockText(row: PartRow): string {
@@ -143,9 +143,9 @@ export function noFitmentAnswer(context: PartsContext, offers: PartRow[]): strin
   return `${base} কাছাকাছি: ${names}; এই গাড়িতে লাগে কি না রেকর্ডে নেই।`;
 }
 
-export function dueAnswer(customer: string, paisa: bigint): string {
-  return paisa > 0n
-    ? `${possessive(customer)} বাকি ${money(paisa)}।`
+export function dueAnswer(customer: string, taka: bigint): string {
+  return taka > 0n
+    ? `${possessive(customer)} বাকি ${money(taka)}।`
     : `${possessive(customer)} কোনো বাকি নেই।`;
 }
 
@@ -276,7 +276,7 @@ export function slotChips(
           : option.value;
     const unit = option.rows[0]?.unit ?? "piece";
     const bits = [
-      option.pricePaisa !== null ? money(option.pricePaisa) : null,
+      option.priceTaka !== null ? money(option.priceTaka) : null,
       option.stock > 0 ? `${quantityText(option.stock, unit)} আছে` : "নেই",
     ];
     return { id: `opt-${index + 1}`, label, sublabel: bits.filter(Boolean).join(", ") };

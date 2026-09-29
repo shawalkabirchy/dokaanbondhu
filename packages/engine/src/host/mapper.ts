@@ -1,7 +1,8 @@
-import { formatTaka } from "@dokaanbondhu/core";
+import { banglaDigits, formatTaka } from "@dokaanbondhu/core";
 import { z } from "zod";
 import { llmStream, type LlmProvider } from "../providers";
 import type { IntrospectedTable } from "./introspect";
+import { toTaka, toUnits } from "./find-parts";
 import { repairProposal } from "./repair";
 import { CONCEPT_FIELDS, CONCEPTS, type Concept, type EntityMap, type FieldMap } from "./schema-map";
 
@@ -35,7 +36,6 @@ export const proposalSchema = z.object({
           concept_field: z.string(),
           host_table: z.string(),
           host_column: z.string(),
-          value_scale: z.number().int().positive().default(1),
         }),
       ),
     }),
@@ -62,7 +62,7 @@ export function columnHint(
   if (name === "status" && table.samples.some((row) => /void|cancel|revers/i.test(row[column.name] ?? ""))) {
     return "status with void or reversed rows";
   }
-  if (numeric && /(price|cost|total|paid|due|amount|balance|paisa|limit|payable)/.test(name)) return "money";
+  if (numeric && /(price|cost|total|paid|due|amount|balance|limit|payable)/.test(name)) return "money";
   if (numeric && /(qty|quantity|stock|reorder)/.test(name)) return "quantity";
   return null;
 }
@@ -91,7 +91,7 @@ const CONCEPT_TEXT = CONCEPTS.map(
 ).join("\n");
 
 export const MAPPER_PROMPT = `You map a car spare parts shop's database to standard concepts. Reply with JSON only, no prose:
-{"entities":[{"concept":"Part","host_table":"...","joins":[{"table":"...","on":[{"left":"table.column","right":"table.column"}]}],"row_filters":[{"table":"...","column":"...","op":"is_null|eq|ne|is_true","value":"..."}],"fields":[{"concept_field":"...","host_table":"...","host_column":"...","value_scale":1}]}]}
+{"entities":[{"concept":"Part","host_table":"...","joins":[{"table":"...","on":[{"left":"table.column","right":"table.column"}]}],"row_filters":[{"table":"...","column":"...","op":"is_null|eq|ne|is_true","value":"..."}],"fields":[{"concept_field":"...","host_table":"...","host_column":"..."}]}]}
 
 Concepts and their fields (kind in brackets):
 ${CONCEPT_TEXT}
@@ -107,8 +107,6 @@ Rules:
 - A ..._id field (part_id, customer_id, sale_id, supplier_id, vehicle_id) is the column that links to that concept's
   table, or that table's own key when the entity lives in the same table. Never map a field to an unrelated key.
 - part_number may live in a separate table of numbers per part, and rack_location on the part's table: join them.
-- value_scale for money: 100 when amounts are stored in paisa (4500 taka stored as 450000), 1 when stored in taka.
-  For quantities: 1000 when stored in thousandths (3 sets stored as 3000), else 1. Other fields: 1.
 - Use only the tables and columns listed. Do not invent fields that are not in the concept list.`;
 
 /** Collects the LLM's text and parses the JSON object in it. */
@@ -235,7 +233,6 @@ export function checkProposal(raw: z.infer<typeof proposalSchema>, tables: Intro
         idType: ["id", "ref"].includes(CONCEPT_FIELDS[entity.concept][field.concept_field] ?? "")
           ? idType(found.dataType)
           : null,
-        valueScale: field.value_scale,
         confirmed: false,
       };
     }
@@ -272,7 +269,7 @@ export async function proposeSchemaMap(
   throw lastError;
 }
 
-/** A field's sample values as they will be spoken (a price as "৪,২০০ টাকা"), so a wrong scale shows at once. */
+/** A field's sample values as they will be spoken (a price as "৪,২০০ টাকা"), so a wrong column shows at once. */
 export function spokenSamples(entity: EntityMap, field: FieldMap, tables: IntrospectedTable[]): string[] {
   const table = tables.find((candidate) => candidate.name === field.hostTable);
   const kind = CONCEPT_FIELDS[entity.concept][field.conceptField];
@@ -280,13 +277,11 @@ export function spokenSamples(entity: EntityMap, field: FieldMap, tables: Intros
     .map((row) => row[field.hostColumn])
     .filter((v): v is string => v !== null);
   return [...new Set(values)].slice(0, 3).map((value) => {
-    if ((kind === "money" || kind === "quantity") && /^-?\d+(\.\d+)?$/.test(value)) {
-      const [whole = "0", fraction = ""] = value.split(".");
-      // the host value times 100, divided by the field's scale: paisa for money, hundredths of a unit otherwise
-      const hundredths =
-        (BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2))) / BigInt(field.valueScale);
-      return kind === "money" ? `${formatTaka(hundredths)} টাকা` : formatTaka(hundredths);
-    }
+    // Money is whole taka (D110); a quantity is the number of units.
+    const taka = kind === "money" ? toTaka(value) : null;
+    if (taka !== null) return `${formatTaka(taka)} টাকা`;
+    const units = kind === "quantity" ? toUnits(value) : null;
+    if (units !== null) return banglaDigits(String(units));
     return value;
   });
 }

@@ -40,7 +40,7 @@ export const replyEventSchema = z.discriminatedUnion("type", [
         position: z.string().nullable().optional(),
         unit: z.string().nullable().optional(),
         stock: z.number().nullable(),
-        price_paisa: z.record(z.string(), z.number()),
+        price_taka: z.record(z.string(), z.number()),
         rack: z.string().nullable(),
         fitment_verified: z.boolean(),
         photo_url: z.string().nullable().optional(),
@@ -57,7 +57,7 @@ export const replyEventSchema = z.discriminatedUnion("type", [
         kind: z.enum(["text", "money", "count", "number", "date"]),
       }),
     ),
-    rows: z.array(z.array(z.union([z.string(), z.number(), z.null()]))), // money cells in paisa
+    rows: z.array(z.array(z.union([z.string(), z.number(), z.null()]))), // money cells in whole taka
     truncated: z.boolean().default(false),
   }),
   z.object({

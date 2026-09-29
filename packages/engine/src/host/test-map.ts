@@ -2,17 +2,13 @@ import type { Dialect, EntityMap, FieldMap, SchemaMap } from "./schema-map";
 
 // A confirmed schema map shaped like a typical host (tables and columns invented for tests), used by unit tests.
 
-function fields(
-  table: string,
-  pairs: Record<string, string | [string, string, number?]>,
-): Record<string, FieldMap> {
+function fields(table: string, pairs: Record<string, string | [string, string]>): Record<string, FieldMap> {
   return Object.fromEntries(
     Object.entries(pairs).map(([conceptField, spec]) => {
-      const [hostTable, hostColumn, valueScale] =
-        typeof spec === "string" ? [table, spec, 1] : [spec[0], spec[1], spec[2] ?? 1];
+      const [hostTable, hostColumn] = typeof spec === "string" ? [table, spec] : spec;
       return [
         conceptField,
-        { conceptField, hostTable, hostColumn, dataType: null, idType: null, valueScale, confirmed: true },
+        { conceptField, hostTable, hostColumn, dataType: null, idType: null, confirmed: true },
       ];
     }),
   );
@@ -70,7 +66,7 @@ export function testMap(dialect: Dialect = "postgres"): SchemaMap {
         rowFilters: [],
         fields: fields("stock", {
           part_id: "item_id",
-          quantity: ["stock", "qty_milli", 1000],
+          quantity: ["stock", "qty"],
           rack_location: ["items", "shelf"],
         }),
       }),
@@ -81,8 +77,8 @@ export function testMap(dialect: Dialect = "postgres"): SchemaMap {
         rowFilters: [],
         fields: fields("items", {
           part_id: "id",
-          retail_price: ["items", "price_retail", 100],
-          garage_price: ["items", "price_garage", 100],
+          retail_price: ["items", "price_retail"],
+          garage_price: ["items", "price_garage"],
         }),
       }),
       SaleItem: entity({
@@ -97,7 +93,7 @@ export function testMap(dialect: Dialect = "postgres"): SchemaMap {
         hostTable: "clients",
         joins: [],
         rowFilters: [{ table: "clients", column: "deleted_at", op: "is_null" }],
-        fields: fields("clients", { id: "id", name: "name", due_balance: ["clients", "due_paisa", 100] }),
+        fields: fields("clients", { id: "id", name: "name", due_balance: ["clients", "due"] }),
       }),
     },
   };

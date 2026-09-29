@@ -248,7 +248,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       );
       expect(second.reply).toBe("রহিম মোটরসের বাকি ১৯,২০০ টাকা।");
       expect(second.events.find((event) => event.type === "table")).toMatchObject({
-        rows: [["Rahim Motors", 1920000]],
+        rows: [["Rahim Motors", 19200]],
       });
       expect(second.outcome.state.context.customer).toMatchObject({ name: "Rahim Motors" });
     },
@@ -397,7 +397,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     { style: "Bangla", text: "কোন কোন মাল অর্ডার দিতে হবে?" },
     { style: "Banglish", text: "kon kon mal order dite hobe?" },
   ])(
-    "shows a read query's rows as a table, money in paisa and quantities as numbers, and says to look at it ($style)",
+    "shows a read query's rows as a table, money in whole taka and quantities as numbers, and says to look at it ($style)",
     async ({ text }) => {
       const sql =
         "SELECT p.name_en, s.quantity, p.retail_price FROM parts p JOIN stock_levels s ON s.part_id = p.id WHERE s.quantity <= p.reorder_level";
@@ -411,7 +411,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       const table = events.find((event) => event.type === "table") as Extract<ReplyEvent, { type: "table" }>;
       expect(table.rows).toHaveLength(8);
       expect(table.columns.map((column) => column.kind)).toEqual(["text", "number", "money"]);
-      for (const row of table.rows) expect(Number(row[2]) % 100).toBe(0); // whole taka, carried in paisa
+      for (const row of table.rows) expect(Number.isInteger(row[2])).toBe(true); // whole taka (D110)
     },
   );
   // From the first voice test on the emulator (D101): Whisper split "এক্সিও" into "এক জিও" and wrote the year in words.

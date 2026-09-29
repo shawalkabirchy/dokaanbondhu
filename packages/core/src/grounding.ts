@@ -1,10 +1,9 @@
 import { NUMBER_WORDS } from "./numbers";
-import { wholeTaka } from "./format";
 import { asciiDigits } from "./text";
 
 // The grounding check (spec 12.1; architecture, response builder): every number and rack label in a sentence must be
-// in the tool results (after the value scale, in paisa and in taka), said by the user, a row count, or a total
-// computed by code. A sentence that fails is dropped and the template answer is used instead.
+// in the tool results (money in whole taka, D110), said by the user, a row count, or a total computed by code. A
+// sentence that fails is dropped and the template answer is used instead.
 
 /** Number words that are also ordinary words (নয় is "nine" and "is not"): never counted as numbers. */
 const AMBIGUOUS_WORDS = new Set(["নয়", "নয়", "বার"]);
@@ -28,13 +27,10 @@ export class AllowedFacts {
     return this;
   }
 
-  /** Money in paisa: allowed as paisa and as taka. */
-  addMoney(paisa: bigint | null | undefined): this {
-    if (paisa === null || paisa === undefined) return this;
-    const absolute = paisa < 0n ? -paisa : paisa;
-    this.addNumber(absolute);
-    this.addNumber(wholeTaka(absolute)); // said in whole taka only (D92)
-    return this;
+  /** Money in whole taka. */
+  addMoney(taka: bigint | null | undefined): this {
+    if (taka === null || taka === undefined) return this;
+    return this.addNumber(taka < 0n ? -taka : taka);
   }
 
   addRack(label: string | null | undefined): this {
@@ -51,7 +47,7 @@ export class AllowedFacts {
     return this;
   }
 
-  /** Every value of a tool result, walked: numbers, bigints (paisa) and the numbers inside strings. */
+  /** Every value of a tool result, walked: numbers, bigints (taka) and the numbers inside strings. */
   addResult(value: unknown): this {
     if (value === null || value === undefined) return this;
     if (typeof value === "bigint") return this.addMoney(value);

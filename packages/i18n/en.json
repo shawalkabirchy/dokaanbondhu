@@ -152,7 +152,6 @@
     "confirmed": "Confirmed",
     "not_confirmed": "Not confirmed yet",
     "filters": "Rows left out",
-    "which_price": "Which price is right?",
     "missing": "Not mapped (questions about these can't be answered):",
     "warnings": "Warnings:",
     "step_catalog": "3. Catalog sync",

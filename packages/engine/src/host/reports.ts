@@ -1,4 +1,5 @@
-import { toPaisa, toUnits } from "./find-parts";
+import { roundTaka } from "@dokaanbondhu/core";
+import { toTaka, toUnits } from "./find-parts";
 import type { RunQuery } from "./pool";
 import { hasField, type SchemaMap } from "./schema-map";
 import { buildQuery } from "./sql";
@@ -16,14 +17,14 @@ export interface ReportFormula {
   confirmed: boolean;
 }
 
-/** The host's own report endpoint, when its feature list names one: the figure in paisa. */
+/** The host's own report endpoint, when its feature list names one: the figure in whole taka. */
 export type HostReportCall = (name: ReportName, from: string | null, to: string | null) => Promise<bigint>;
 
 export type ReportResult =
   | {
       kind: "figure";
       name: ReportName;
-      paisa: bigint;
+      taka: bigint;
       from: string | null;
       to: string | null;
       source: "host" | "formula";
@@ -40,7 +41,10 @@ export function proposeStockValue(map: SchemaMap): ReportFormula | null {
   return ready ? { name: "stock_value", definition: STOCK_VALUE, confirmed: false } : null;
 }
 
-/** Sum over parts of stock quantity times average cost, negative stock counted as zero, in exact paisa. */
+/**
+ * Sum over parts of stock quantity times average cost, negative stock counted as zero, in whole taka: summed exactly
+ * (quantities carry at most three decimals) and rounded once (D110).
+ */
 export async function stockValue(map: SchemaMap, run: RunQuery): Promise<bigint> {
   const built = buildQuery(map, {
     from: { concept: "StockItem", alias: "s" },
@@ -56,16 +60,14 @@ export async function stockValue(map: SchemaMap, run: RunQuery): Promise<bigint>
       { ref: { alias: "pr", field: "cost" }, as: "cost" },
     ],
   });
-  const scale = (as: string) => built.columns.find((column) => column.as === as)?.valueScale ?? 1;
-  let total = 0n;
+  let milliTaka = 0n;
   for (const row of await run(built)) {
-    const quantity = toUnits(row.quantity, scale("quantity")) ?? 0;
-    const cost = toPaisa(row.cost, scale("cost")) ?? 0n;
+    const quantity = toUnits(row.quantity) ?? 0;
+    const cost = toTaka(row.cost) ?? 0n;
     if (quantity <= 0 || cost <= 0n) continue;
-    const milli = BigInt(Math.round(quantity * 1000)); // quantities carry at most three decimals
-    total += (milli * cost + 500n) / 1000n;
+    milliTaka += BigInt(Math.round(quantity * 1000)) * cost;
   }
-  return total;
+  return roundTaka(milliTaka, 1000n);
 }
 
 export interface ReportInput {
@@ -83,7 +85,7 @@ export interface ReportInput {
 export async function getReport(input: ReportInput): Promise<ReportResult> {
   const { name, from, to } = input;
   if (input.hostReports.includes(name) && input.callHost) {
-    return { kind: "figure", name, paisa: await input.callHost(name, from, to), from, to, source: "host" };
+    return { kind: "figure", name, taka: await input.callHost(name, from, to), from, to, source: "host" };
   }
   const formula = input.formulas.find((candidate) => candidate.name === name && candidate.confirmed);
   if (
@@ -94,7 +96,7 @@ export async function getReport(input: ReportInput): Promise<ReportResult> {
     return {
       kind: "figure",
       name,
-      paisa: await stockValue(input.map, input.run),
+      taka: await stockValue(input.map, input.run),
       from: null,
       to: null,
       source: "formula",

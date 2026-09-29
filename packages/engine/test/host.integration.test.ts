@@ -96,7 +96,7 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     expect(noah.map((vehicle) => vehicle.yearFrom).sort()).toEqual([2001, 2007, 2014]);
   });
 
-  it("finds both front pads for a 2014 Axio, separated by quality, with price in paisa, stock and rack", async () => {
+  it("finds both front pads for a 2014 Axio, separated by quality, with price in taka, stock and rack", async () => {
     const result = await findParts(
       input({ part_type: "সামনের প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" }),
     );
@@ -107,7 +107,7 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     expect(catalog.parts.find((part) => part.hostId === genuine.hostPartId)?.partNumbers).toContain(
       "04465-10010",
     );
-    expect(genuine).toMatchObject({ retailPaisa: 450000n, stock: 3, rack: "B-3", fitmentVerified: true });
+    expect(genuine).toMatchObject({ retailTaka: 4500n, stock: 3, rack: "B-3", fitmentVerified: true });
     expect(result.rows.map((row) => row.quality).sort()).toEqual(["aftermarket", "genuine"]);
     expect(separatingSlot(result.rows)?.slot).toBe("quality");
   });
@@ -205,7 +205,7 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     const due = await pools.readOnly(db, (run) =>
       runReadQuery(geargridMap, run, "SELECT name, due_balance FROM customers WHERE name = 'Rahim Motors'"),
     );
-    expect(due.rows).toEqual([{ name: "Rahim Motors", due_balance: 1920000n }]);
+    expect(due.rows).toEqual([{ name: "Rahim Motors", due_balance: 19200n }]);
     const low = await pools.readOnly(db, (run) =>
       runReadQuery(
         geargridMap,
@@ -221,11 +221,11 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
     const value = await pools.readOnly(db, (run) => stockValue(geargridMap, run));
     const [direct] = await pools.readOnly(db, (run) =>
       run({
-        // avg_cost is whole taka (D92): times 100 for paisa
-        text: "SELECT SUM(ROUND(GREATEST(s.quantity, 0) * p.avg_cost * 100)) AS paisa FROM stock_levels s JOIN parts p ON p.id = s.part_id WHERE p.avg_cost > 0",
+        // avg_cost is whole taka (D92); the sum is rounded once to the taka (D110)
+        text: "SELECT ROUND(SUM(GREATEST(s.quantity, 0) * p.avg_cost)) AS taka FROM stock_levels s JOIN parts p ON p.id = s.part_id WHERE p.avg_cost > 0",
         values: [],
       }),
     );
-    expect(value).toBe(BigInt(String(direct?.paisa)));
+    expect(value).toBe(BigInt(String(direct?.taka)));
   });
 });

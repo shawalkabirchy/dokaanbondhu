@@ -1,17 +1,17 @@
 import type { EntityMap, FieldMap, SchemaMap } from "../src/host/schema-map";
 
 // GearGrid's schema map as the owner confirms it (spec 5.2), for integration tests against the CI copy of GearGrid.
-// Money is whole taka (value scale 1, D92); quantities are numeric (scale 1).
+// Money is whole taka (D92, D110); quantities are numeric.
 
-type Spec = string | [table: string, column: string, scale?: number];
+type Spec = string | [table: string, column: string];
 
 function fields(table: string, pairs: Record<string, Spec>): Record<string, FieldMap> {
   return Object.fromEntries(
     Object.entries(pairs).map(([conceptField, spec]) => {
-      const [hostTable, hostColumn, valueScale = 1] = typeof spec === "string" ? [table, spec] : spec;
+      const [hostTable, hostColumn] = typeof spec === "string" ? [table, spec] : spec;
       return [
         conceptField,
-        { conceptField, hostTable, hostColumn, dataType: null, idType: null, valueScale, confirmed: true },
+        { conceptField, hostTable, hostColumn, dataType: null, idType: null, confirmed: true },
       ];
     }),
   );

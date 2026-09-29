@@ -29,7 +29,7 @@ export interface CatalogCustomer {
   nameBn: string | null;
 }
 
-/** A find_parts row (spec 11.5), money in paisa. */
+/** A find_parts row (spec 11.5), money in whole taka (D110). */
 export interface PartRow {
   hostPartId: string;
   name: string;
@@ -39,9 +39,9 @@ export interface PartRow {
   brand: string | null;
   unit: string | null;
   stock: number | null;
-  retailPaisa: bigint | null;
-  garagePaisa: bigint | null;
-  wholesalePaisa: bigint | null;
+  retailTaka: bigint | null;
+  garageTaka: bigint | null;
+  wholesaleTaka: bigint | null;
   rack: string | null;
   fitmentVerified: boolean;
   /** The vehicle the row's fitment names (its year range and engine separate generations). */
@@ -140,7 +140,7 @@ export interface SlotOption {
   value: string;
   rows: PartRow[];
   /** The customer's tier price, else retail, of the option's cheapest row. */
-  pricePaisa: bigint | null;
+  priceTaka: bigint | null;
   stock: number;
 }
 
@@ -170,14 +170,13 @@ export function separatingSlot(
     groups.set(value, [...(groups.get(value) ?? []), row]);
   }
   const price = (row: PartRow) =>
-    (tier === "garage" ? row.garagePaisa : tier === "wholesale" ? row.wholesalePaisa : null) ??
-    row.retailPaisa;
+    (tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : null) ?? row.retailTaka;
   const options = [...groups.entries()].map(([value, group]) => {
-    const prices = group.map(price).filter((paisa): paisa is bigint => paisa !== null);
+    const prices = group.map(price).filter((taka): taka is bigint => taka !== null);
     return {
       value,
       rows: group,
-      pricePaisa: prices.length ? prices.reduce((low, paisa) => (paisa < low ? paisa : low)) : null,
+      priceTaka: prices.length ? prices.reduce((low, taka) => (taka < low ? taka : low)) : null,
       stock: group.reduce((sum, row) => sum + (row.stock ?? 0), 0),
     };
   });

@@ -171,25 +171,7 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
   const message = useErrorText();
   const { entity } = props;
   const confirm = useMutation({
-    mutationFn: (scales?: Record<string, number>) =>
-      api<{ schema: SchemaView }>(`/setup/schema/${entity.id}`, {
-        method: "PUT",
-        body: scales
-          ? {
-              entity: {
-                host_table: entity.host_table,
-                joins: entity.joins.map((join) => ({ table: join.table, on: join.on })),
-                row_filters: entity.row_filters,
-                fields: entity.fields.map((field) => ({
-                  concept_field: field.concept_field,
-                  host_table: field.host_table,
-                  host_column: field.host_column,
-                  value_scale: scales[field.concept_field] ?? field.value_scale,
-                })),
-              },
-            }
-          : {},
-      }),
+    mutationFn: () => api<{ schema: SchemaView }>(`/setup/schema/${entity.id}`, { method: "PUT", body: {} }),
     onSuccess: (data) => props.onSchema(data.schema),
   });
   return (
@@ -209,20 +191,6 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
           {field.samples.length && field.kind !== "id" && field.kind !== "ref" ? (
             <Text style={{ fontSize: 17, color: colors.ink }}>{field.samples.join("  ·  ")}</Text>
           ) : null}
-          {/* Money: the first sample read both ways; the owner picks the price that is right (the value scale). */}
-          {field.kind === "money" && field.readings?.["1"] && field.readings["100"] ? (
-            <>
-              <Note>{t("setup.which_price")}</Note>
-              <Chips
-                value={String(field.value_scale)}
-                options={[
-                  { value: "100", label: field.readings["100"] },
-                  { value: "1", label: field.readings["1"] },
-                ]}
-                onChange={(scale) => confirm.mutate({ [field.concept_field]: Number(scale) })}
-              />
-            </>
-          ) : null}
         </View>
       ))}
       {entity.row_filters.length ? (
@@ -234,7 +202,7 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
       {!entity.confirmed ? (
         <Button
           label={confirm.isPending ? t("common.loading") : t("setup.confirm")}
-          onPress={() => confirm.mutate(undefined)}
+          onPress={() => confirm.mutate()}
           disabled={confirm.isPending}
         />
       ) : null}
@@ -340,7 +308,7 @@ function ReportsSection({ connectionId, language }: { connectionId: string; lang
       {stock?.available ? (
         <Text style={{ fontSize: 18, color: colors.ink }}>
           {t("setup.stock_value_now")}{" "}
-          {stock.current_paisa === null ? t("setup.unknown") : takaText(stock.current_paisa, language)}
+          {stock.current_taka === null ? t("setup.unknown") : takaText(stock.current_taka, language)}
         </Text>
       ) : null}
       {stock?.confirmed ? <Note tone="ok">{t("setup.stock_value_confirmed")}</Note> : null}

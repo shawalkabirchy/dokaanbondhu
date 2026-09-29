@@ -54,33 +54,33 @@ describe("run_read_query guard (spec 11.6)", () => {
     for (const sql of refused) expect(() => guardReadQuery(map, sql), sql).toThrow(ReadQueryRejected);
   });
 
-  it("gives result columns their lineage: mapped money and quantities scaled, COUNT a count, others unscaled", () => {
+  it("gives result columns their lineage: mapped money and quantities, COUNT a count, others unmapped", () => {
     const { columns } = guardReadQuery(
       map,
-      "SELECT c.name, c.due_paisa, SUM(l.qty) AS sold, COUNT(l.bill_id) AS lines, upper(c.name) AS loud " +
-        "FROM clients c JOIN bill_lines l ON l.bill_id = c.id GROUP BY c.name, c.due_paisa",
+      "SELECT c.name, c.due, SUM(l.qty) AS sold, COUNT(l.bill_id) AS lines, upper(c.name) AS loud " +
+        "FROM clients c JOIN bill_lines l ON l.bill_id = c.id GROUP BY c.name, c.due",
     );
     expect(columns).toEqual([
-      { key: "name", kind: "text", valueScale: 1 },
-      { key: "due_paisa", kind: "money", valueScale: 100 },
-      { key: "sold", kind: "quantity", valueScale: 1 },
-      { key: "lines", kind: "count", valueScale: 1 },
-      { key: "loud", kind: "unscaled", valueScale: 1 },
+      { key: "name", kind: "text" },
+      { key: "due", kind: "money" },
+      { key: "sold", kind: "quantity" },
+      { key: "lines", kind: "count" },
+      { key: "loud", kind: "unmapped" },
     ]);
   });
 
-  it("returns money in paisa, counts as numbers, and runs only the guarded SQL", async () => {
+  it("returns money in whole taka, counts as numbers, and runs only the guarded SQL", async () => {
     const seen: string[] = [];
     const result = await runReadQuery(
       map,
       async ({ text }) => {
         seen.push(text);
-        return [{ name: "Rahim Motors", due_paisa: "1920000", lines: "3" }];
+        return [{ name: "Rahim Motors", due: "19200.40", lines: "3" }];
       },
-      "SELECT name, due_paisa, COUNT(id) AS lines FROM clients GROUP BY name, due_paisa",
+      "SELECT name, due, COUNT(id) AS lines FROM clients GROUP BY name, due",
     );
     expect(seen[0]).toMatch(/^WITH "clients" AS/);
-    expect(result.rows).toEqual([{ name: "Rahim Motors", due_paisa: 1920000n, lines: 3 }]);
+    expect(result.rows).toEqual([{ name: "Rahim Motors", due: 19200n, lines: 3 }]); // a fraction rounds to the taka
     expect(result.truncated).toBe(false);
   });
 });

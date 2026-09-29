@@ -118,7 +118,6 @@ export const schemaFields = pgTable(
     hostColumn: text("host_column").notNull(),
     dataType: text("data_type"),
     idType: text("id_type"),
-    valueScale: integer("value_scale").notNull().default(1),
     confirmed: boolean("confirmed").notNull().default(false),
   },
   (t) => [
@@ -186,7 +185,6 @@ export const capabilityParams = pgTable(
     entityConcept: text("entity_concept"),
     semanticSlot: text("semantic_slot"), // spec 9.6
     safetyCritical: boolean("safety_critical").notNull().default(false),
-    valueScale: integer("value_scale").notNull().default(1),
     spokenMap: jsonb("spoken_map"),
     confirmed: boolean("confirmed").notNull().default(false),
   },

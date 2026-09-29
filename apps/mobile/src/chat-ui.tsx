@@ -5,8 +5,8 @@ import { numberText, stockText, takaText } from "./lib/money";
 import type { Language } from "./lib/settings-store";
 import { colors } from "./ui";
 
-// What a reply shows (spec 15.2): its text, part cards, result tables and choice chips. Money arrives in paisa and is
-// shown in taka; large text and large touch targets.
+// What a reply shows (spec 15.2): its text, part cards, result tables and choice chips. Money arrives in whole taka
+// (D110); large text and large touch targets.
 
 const PRICE_TIERS = ["retail", "garage", "wholesale"] as const;
 
@@ -34,9 +34,9 @@ export function PartCards({ parts, language }: { parts: PartCard[]; language: La
                   ? stockText(part.stock, part.unit, language)
                   : t("chat.out")}
             </Text>
-            {PRICE_TIERS.filter((tier) => part.price_paisa[tier] !== undefined).map((tier) => (
+            {PRICE_TIERS.filter((tier) => part.price_taka[tier] !== undefined).map((tier) => (
               <Text key={tier} style={styles.cardLine}>
-                {t(`chat.prices.${tier}`)}: {takaText(part.price_paisa[tier]!, language)}
+                {t(`chat.prices.${tier}`)}: {takaText(part.price_taka[tier]!, language)}
               </Text>
             ))}
             {part.rack ? (

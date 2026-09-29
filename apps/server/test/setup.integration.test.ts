@@ -63,7 +63,6 @@ const proposal = {
       concept_field: field.conceptField,
       host_table: field.hostTable,
       host_column: field.hostColumn,
-      value_scale: field.valueScale,
     })),
   })),
 };
@@ -220,7 +219,7 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     expect(schema.entities.every((entity) => !entity.confirmed)).toBe(true);
     const price = schema.entities.find((entity) => entity.concept === "Price")!;
     const retail = price.fields.find((field) => field.concept_field === "retail_price")!;
-    expect(retail.value_scale).toBe(1); // GearGrid stores whole taka (D92)
+    expect(retail).not.toHaveProperty("value_scale"); // money is whole taka, never a scale (D110)
     expect(retail.samples.length).toBeGreaterThan(0);
     expect(retail.samples.every((sample) => sample.endsWith("টাকা"))).toBe(true);
 
@@ -245,13 +244,11 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
               concept_field: field.concept_field,
               host_table: field.host_table,
               host_column: field.host_column,
-              value_scale: field.value_scale,
             })),
             {
               concept_field: "phone",
               host_table: "suppliers",
               host_column: "no_such_column",
-              value_scale: 1,
             },
           ],
         },
@@ -282,8 +279,8 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
       stock_value: { available: true, confirmed: false },
       see_in_app: ["profit_loss", "cash_book"],
     });
-    const current = (reports.body.reports as { stock_value: { current_paisa: number } }).stock_value
-      .current_paisa;
+    const current = (reports.body.reports as { stock_value: { current_taka: number } }).stock_value
+      .current_taka;
     expect(current).toBeGreaterThan(0);
 
     const confirmed = await call(routes.reports.PUT, {
@@ -291,7 +288,7 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
       body: { connection_id: connectionId, name: "stock_value" },
     });
     expect(confirmed.body.reports).toMatchObject({
-      stock_value: { available: true, confirmed: true, current_paisa: current },
+      stock_value: { available: true, confirmed: true, current_taka: current },
     });
   });
 });

@@ -20,8 +20,8 @@ const tables: IntrospectedTable[] = [
       { name: "is_active", dataType: "boolean", nullable: false, primaryKey: false, references: null },
     ],
     samples: [
-      { id: "a1", title: "Front brake pad set", price_retail: "450000", deleted_at: null, is_active: "true" },
-      { id: "a2", title: "Oil filter", price_retail: "65000", deleted_at: null, is_active: "true" },
+      { id: "a1", title: "Front brake pad set", price_retail: "4500", deleted_at: null, is_active: "true" },
+      { id: "a2", title: "Oil filter", price_retail: "650", deleted_at: null, is_active: "true" },
     ],
   },
   {
@@ -34,9 +34,9 @@ const tables: IntrospectedTable[] = [
         primaryKey: false,
         references: { table: "items", column: "id" },
       },
-      { name: "qty_milli", dataType: "bigint", nullable: false, primaryKey: false, references: null },
+      { name: "qty", dataType: "numeric", nullable: false, primaryKey: false, references: null },
     ],
-    samples: [{ item_id: "a1", qty_milli: "3000" }],
+    samples: [{ item_id: "a1", qty: "3.000" }],
   },
 ];
 
@@ -77,7 +77,7 @@ const good = JSON.stringify({
       host_table: "items",
       fields: [
         { concept_field: "part_id", host_table: "items", host_column: "id" },
-        { concept_field: "retail_price", host_table: "items", host_column: "price_retail", value_scale: 100 },
+        { concept_field: "retail_price", host_table: "items", host_column: "price_retail" },
       ],
     },
     {
@@ -85,7 +85,7 @@ const good = JSON.stringify({
       host_table: "stock",
       fields: [
         { concept_field: "part_id", host_table: "stock", host_column: "item_id" },
-        { concept_field: "quantity", host_table: "stock", host_column: "qty_milli", value_scale: 1000 },
+        { concept_field: "quantity", host_table: "stock", host_column: "qty" },
       ],
     },
     { concept: "Customer", host_table: "clients", fields: [] },
@@ -104,7 +104,7 @@ describe("schema mapper (spec 11.3)", () => {
     expect(hint(items!, "deleted_at")).toMatch(/soft delete/);
     expect(hint(items!, "is_active")).toBe("active flag");
     expect(hint(stock!, "item_id")).toBe("link to items.id");
-    expect(hint(stock!, "qty_milli")).toBe("quantity");
+    expect(hint(stock!, "qty")).toBe("quantity");
   });
 
   it("keeps what matches the database and drops the rest with a warning", async () => {
@@ -130,7 +130,7 @@ describe("schema mapper (spec 11.3)", () => {
     expect(proposal.entities).toHaveLength(3);
   });
 
-  it("shows sample values as they will be spoken, so a wrong scale shows at once", async () => {
+  it("shows sample values as they will be spoken, money in whole taka (D110)", async () => {
     const proposal = await proposeSchemaMap([stubLlm([good])], tables);
     const price = proposal.entities.find((entity) => entity.concept === "Price")!;
     expect(spokenSamples(price, price.fields.retail_price!, tables)).toEqual(["৪,৫০০ টাকা", "৬৫০ টাকা"]);

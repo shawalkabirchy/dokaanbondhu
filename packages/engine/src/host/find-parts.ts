@@ -7,6 +7,7 @@ import {
   parseEngineCode,
   parseYear,
   partsOfType,
+  roundTaka,
   type CatalogVehicle,
   type Dictionary,
   type PartRow,
@@ -18,7 +19,7 @@ import { buildQuery, type Condition, type SelectItem } from "./sql";
 
 // find_parts (spec 11.5): the part type and vehicle resolved through the glossary and the catalog, one generated
 // query over the mapped part, fitment, stock and price tables, DokaanBondhu's own fitment_extra and rack_extra rows
-// merged (marked unverified where they are), the value scale applied, then the part-type pair and the offers.
+// merged (marked unverified where they are), money read as whole taka (D110), then the part-type pair and the offers.
 // Fitment is never asserted without a row.
 
 /** The tool's arguments, all strings as said (spec 9.6). */
@@ -102,26 +103,24 @@ function ordered(rows: PartRow[]): PartRow[] {
 }
 const FETCH_LIMIT = 200;
 
-/** A host money value (text, exact) to paisa, using the field's value scale; half away from zero. */
-export function toPaisa(value: unknown, valueScale: number): bigint | null {
+/**
+ * A host money value (text, exact) in whole taka: every connected app keeps money in taka (D110), and a fraction
+ * ("1990.50") is rounded to the taka, half away from zero.
+ */
+export function toTaka(value: unknown): bigint | null {
   if (value === null || value === undefined || value === "") return null;
-  const text = String(value).trim();
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(text);
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(String(value).trim());
   if (!match) return null;
   const [, sign, whole, fraction = ""] = match;
-  const digits = BigInt(`${whole}${fraction}`);
-  const denominator = 10n ** BigInt(fraction.length) * BigInt(valueScale);
-  const numerator = digits * 100n;
-  let paisa = numerator / denominator;
-  if ((numerator % denominator) * 2n >= denominator) paisa += 1n;
-  return sign === "-" ? -paisa : paisa;
+  const taka = roundTaka(BigInt(`${whole}${fraction}`), 10n ** BigInt(fraction.length));
+  return sign === "-" ? -taka : taka;
 }
 
-/** A host quantity to units, using the field's value scale (3 decimals kept). */
-export function toUnits(value: unknown, valueScale: number): number | null {
+/** A host quantity as a number of units (3 decimals kept). */
+export function toUnits(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
-  return Number.isFinite(number) ? Math.round((number / valueScale) * 1000) / 1000 : null;
+  return Number.isFinite(number) ? Math.round(number * 1000) / 1000 : null;
 }
 
 function understood(
@@ -226,7 +225,6 @@ async function queryRows(
     where,
     limit: FETCH_LIMIT,
   });
-  const scale = (as: string) => built.columns.find((column) => column.as === as)?.valueScale ?? 1;
   const rows: Row[] = await input.run(built);
   const vehicles = new Map(input.catalog.vehicles.map((vehicle) => [vehicle.hostId, vehicle]));
   return rows.map((row): PartRow => {
@@ -240,10 +238,10 @@ async function queryRows(
       position: (row.position as string | null) ?? null,
       brand: (row.brand as string | null) ?? null,
       unit: (row.unit as string | null) ?? null,
-      stock: toUnits(row.stock, scale("stock")),
-      retailPaisa: toPaisa(row.retail_price, scale("retail_price")),
-      garagePaisa: toPaisa(row.garage_price, scale("garage_price")),
-      wholesalePaisa: toPaisa(row.wholesale_price, scale("wholesale_price")),
+      stock: toUnits(row.stock),
+      retailTaka: toTaka(row.retail_price),
+      garageTaka: toTaka(row.garage_price),
+      wholesaleTaka: toTaka(row.wholesale_price),
       rack: (row.rack as string | null) ?? input.rackExtra.get(hostPartId) ?? null,
       fitmentVerified: vehicleIds
         ? row.verified === undefined || row.verified === true || row.verified === "true" || row.verified === 1

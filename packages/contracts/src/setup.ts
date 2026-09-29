@@ -69,17 +69,14 @@ export const entityViewSchema = z.object({
   fields: z.array(
     z.object({
       concept_field: z.string(),
-      /** What the field holds: money and quantity have a value scale; id, ref, text, number, boolean, time. */
+      /** What the field holds: money (whole taka, D110), quantity, id, ref, text, number, boolean, time. */
       kind: z.string(),
       host_table: z.string(),
       host_column: z.string(),
-      value_scale: z.number().int(),
       id_type: z.enum(["integer", "uuid", "text"]).nullable(),
       confirmed: z.boolean(),
       /** Up to three sample values as they will be spoken (a price as "৪,২০০ টাকা"). */
       samples: z.array(z.string()),
-      /** Money only: the first sample read at each scale, so the owner picks the price that is right. */
-      readings: z.record(z.string(), z.string()).optional(),
     }),
   ),
 });
@@ -108,7 +105,6 @@ export const entityConfirmSchema = z.object({
           concept_field: z.string().min(1),
           host_table: z.string().min(1),
           host_column: z.string().min(1),
-          value_scale: z.number().int().positive().default(1),
         }),
       ),
     })
@@ -132,8 +128,8 @@ export const reportsViewSchema = z.object({
     /** Both fields are mapped, so the formula can be proposed. */
     available: z.boolean(),
     confirmed: z.boolean(),
-    /** The formula's result now, in paisa, for the owner to compare with the app. */
-    current_paisa: z.number().nullable(),
+    /** The formula's result now, in whole taka, for the owner to compare with the app. */
+    current_taka: z.number().nullable(),
   }),
   /** Reports answered with "see this in your app" (spec 11.7). */
   see_in_app: z.array(z.string()),
