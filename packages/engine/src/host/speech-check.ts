@@ -14,6 +14,7 @@ import {
   llmStream,
   OWN_SIDE,
   selectProviders,
+  SpeechError,
   sttAdapter,
   ttsAdapter,
   type LlmProvider,
@@ -146,9 +147,15 @@ export async function runSpeechCheck(
     const perVoice: { heard: string[]; keep: string[] }[] = [];
     try {
       for (const voice of VOICES) {
-        const audio = await tts.synthesize(`${spoken} ${CARRIER}`, { voice });
-        const asr = await stt.transcribe(audio.bytes, { keyterms: [], nbest: 5, lowConfidenceBelow: 0.5 });
-        const hypotheses = asr.nbest.length ? asr.nbest.map((hypothesis) => hypothesis.text) : [asr.text];
+        let hypotheses: string[] = [];
+        try {
+          const audio = await tts.synthesize(`${spoken} ${CARRIER}`, { voice });
+          const asr = await stt.transcribe(audio.bytes, { keyterms: [], nbest: 5, lowConfidenceBelow: 0.5 });
+          hypotheses = asr.nbest.length ? asr.nbest.map((hypothesis) => hypothesis.text) : [asr.text];
+        } catch (error) {
+          // The worker refused this one clip ("audio too short"): this voice heard nothing. Anything else stops the run.
+          if (!(error instanceof SpeechError && error.status !== null && error.status < 500)) throw error;
+        }
         perVoice.push(checkedSpellings(spoken, hypotheses, dictionary, target));
       }
     } catch (error) {
