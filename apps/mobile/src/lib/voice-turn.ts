@@ -4,13 +4,17 @@ import { RmsMeter } from "./pcm";
 // the button is held (2 in flight, 3 tries each), exactly as recorded, once the press has lasted 0.3 s, so a tap sends
 // nothing at all; a clip with an RMS under 0.01 plays the bundled "abar bolben" clip instead of reaching the server;
 // on release the turn is finished, and chunks the server reports missing are sent again, once. The conversation may
-// still be opening when recording starts, so uploads wait for its ID instead of delaying the recorder.
+// still be opening when recording starts, so uploads wait for its ID instead of delaying the recorder. When the phone
+// is busy the recorder can hand over several seconds at once, more than the server takes in one chunk (64 KB): such a
+// chunk is cut into pieces of at most one second, in order, so nothing is lost (D112).
 
 export const MIN_PRESS_MS = 300;
 export const MAX_RECORDING_MS = 30_000;
 export const QUIET_RMS = 0.01;
 const IN_FLIGHT = 2;
 const TRIES = 3;
+/** One second of 16 kHz 16-bit mono: the largest piece uploaded (an even number, so no sample is split). */
+export const MAX_PIECE_BYTES = 32_000;
 
 export interface FinishBody {
   conversation_id: string;
@@ -54,14 +58,16 @@ export class VoiceTurn {
     this.startedAt = deps.now();
   }
 
-  /** One recorded chunk: measured, kept for a resend, and queued for upload. */
+  /** One recorded chunk: measured, cut into pieces of at most one second, kept for a resend, and queued for upload. */
   add(bytes: Uint8Array): void {
     this.bytes += bytes.byteLength;
     for (const wake of this.arrived.splice(0)) wake();
-    const seq = this.seq++;
     this.rms.add(bytes);
-    this.chunks.set(seq, bytes);
-    this.waiting.push(seq);
+    for (let start = 0; start < bytes.byteLength; start += MAX_PIECE_BYTES) {
+      const seq = this.seq++;
+      this.chunks.set(seq, bytes.subarray(start, start + MAX_PIECE_BYTES));
+      this.waiting.push(seq);
+    }
     if (this.deps.now() - this.startedAt >= MIN_PRESS_MS) this.pump();
   }
 

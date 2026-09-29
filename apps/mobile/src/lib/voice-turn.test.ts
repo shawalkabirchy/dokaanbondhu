@@ -125,6 +125,26 @@ describe("push-to-talk turn", () => {
     expect(turn.receivedMs).toBe(500);
   });
 
+  // From the owner's test on 30 Sep (D112): the busy emulator's recorder handed over 2 s and more at once, and the
+  // server refused those chunks as over 64 KB, so the question ended with "part of the recording is missing".
+  it("cuts a chunk of several seconds into pieces of at most one second, in order, losing nothing", async () => {
+    const { turn, uploads, advance } = setup();
+    advance(500);
+    turn.add(chunk(0.3, 1));
+    advance(2500);
+    const burst = new Uint8Array(80_000); // 2.5 s at once
+    for (let i = 0; i < burst.length; i++) burst[i] = i % 251;
+    turn.add(burst);
+    turn.markReleased();
+    const finish = jest.fn(async (_turnId: string, _body: FinishBody) => undefined);
+    await turn.send(finish);
+    expect(uploads.map((upload) => upload.bytes.byteLength)).toEqual([16_000, 32_000, 32_000, 16_000]);
+    expect(uploads.map((upload) => upload.seq)).toEqual([0, 1, 2, 3]);
+    const joined = Buffer.concat(uploads.slice(1).map((upload) => Buffer.from(upload.bytes)));
+    expect(joined.equals(Buffer.from(burst))).toBe(true);
+    expect(finish.mock.calls[0]![1]).toMatchObject({ chunk_count: 4 });
+  });
+
   it("resends the chunks the server reports missing, then finishes once more", async () => {
     const { turn, uploads, advance } = setup();
     advance(500);
