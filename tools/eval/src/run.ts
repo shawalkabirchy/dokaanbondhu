@@ -13,6 +13,8 @@ const MAX_TURNS = 5;
 export interface RunState {
   runId: string;
   startedAt: string;
+  /** The providers in use when the run started (D98). */
+  providers?: { chat: string[]; stt: string | null; tts: string | null };
   itemIds: string[];
   builtActions: string[];
   nextIndex: number;
@@ -35,13 +37,28 @@ function tooMany(turn: TurnRecord): boolean {
   );
 }
 
-export async function runChatItem(item: Item, session: Session): Promise<ItemResult> {
-  const conversation = await session.newConversation();
+/** A voice item's recording as 16 kHz mono PCM, or null when it has not been recorded yet. */
+export type LoadClip = (item: Item) => Promise<Uint8Array | null>;
+
+/**
+ * One item in its own conversation. A voice item's first turn is its recording, sent in real time as the app does;
+ * the answers to the questions it should need are sent as text in both halves, so the voice score measures the first
+ * utterance (architecture 11.2).
+ */
+export async function runChatItem(
+  item: Item,
+  session: Session,
+  clip: Uint8Array | null = null,
+): Promise<ItemResult> {
+  const conversation = await session.newConversation(clip ? "voice" : "chat");
   const turns: TurnRecord[] = [];
   let unscripted = 0;
   let text = item.text ?? "";
   for (let n = 0; n < MAX_TURNS; n++) {
-    const turn = await session.chat(conversation, text);
+    const turn =
+      n === 0 && clip
+        ? await session.voice(conversation, clip, { realTime: true })
+        : await session.chat(conversation, text);
     if (dailyLimit(turn)) throw new DailyLimitReached(item.id);
     turns.push(turn);
     if (turn.state !== "CLARIFYING") break;
@@ -58,15 +75,6 @@ export async function runChatItem(item: Item, session: Session): Promise<ItemRes
 
 /** Why an item is not run now, or null to run it. */
 export function notRunReason(item: Item, builtActions: string[]): ItemResult | null {
-  if (item.channel === "voice") {
-    return {
-      id: item.id,
-      status: "skipped",
-      reason: "voice items run from step 4",
-      turns: [],
-      unscripted: 0,
-    };
-  }
   if (item.kind === "write") {
     const action = (item.expected as WriteExpected).action;
     if (!builtActions.includes(action)) {
@@ -88,15 +96,20 @@ export async function runItems(
   sessions: Record<"owner" | "staff", Session>,
   save: (state: RunState) => void,
   log: (line: string) => void,
+  loadClip: LoadClip = async () => null,
 ): Promise<RunState> {
   delete state.stopped;
   let rateLimited = 0;
   for (let index = state.nextIndex; index < items.length; index++) {
     const item = items[index]!;
     let result = notRunReason(item, state.builtActions);
+    const clip = !result && item.channel === "voice" ? await loadClip(item) : null;
+    if (!result && item.channel === "voice" && !clip) {
+      result = { id: item.id, status: "skipped", reason: "not recorded yet", turns: [], unscripted: 0 };
+    }
     if (!result) {
       try {
-        result = await runChatItem(item, sessions[item.as]);
+        result = await runChatItem(item, sessions[item.as], clip);
       } catch (error) {
         if (error instanceof DailyLimitReached) {
           state.nextIndex = index;

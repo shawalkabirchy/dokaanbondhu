@@ -237,7 +237,7 @@ describe.skipIf(!allLocal)("voice turns", () => {
     const sent = speech.asrRequests[0]!;
     expect(sent.riff).toBe(true);
     expect(sent.wavBytes).toBeLessThan(pcm.byteLength); // 1 s of silence cut on each side
-    expect(sent.keyterms).toContain("ব্রেক প্যাড");
+    expect(sent.keyterms).toEqual([]); // built, but the worker gets none by default (D100)
     expect(sent.nbest).toBe("5");
     expect(llm.received).toHaveLength(1);
 

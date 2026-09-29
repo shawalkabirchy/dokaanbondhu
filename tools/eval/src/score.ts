@@ -1,4 +1,4 @@
-import { asciiDigits, factsIn, SEE_IN_APP } from "@dokaanbondhu/core";
+import { asciiDigits, factsIn, normalize, SEE_IN_APP } from "@dokaanbondhu/core";
 import type { Item, LookupExpected, MustNotExpected, ReadExpected } from "./items";
 
 // The scorer (spec 18.4; architecture 11.2): correct action, exact part after clarification, questions per item, the
@@ -45,6 +45,10 @@ export interface TurnRecord {
   errors: string[];
   firstTextMs: number | null;
   totalMs: number;
+  /** Voice turns: what the speech model heard, when the first audio came, and the server's stage timings. */
+  transcript?: string;
+  firstAudioMs?: number | null;
+  timings?: Record<string, number>;
 }
 
 export interface ItemResult {
@@ -71,6 +75,8 @@ export interface ItemScore {
   zeroRules: string[];
   firstTextMs: number | null;
   totalMs: number | null;
+  /** Voice items with a reference transcript: word errors of the first transcript against it (D64). */
+  wer: { errors: number; words: number } | null;
   notes: string[];
 }
 
@@ -172,6 +178,10 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     unnecessary: result.unscripted,
     firstTextMs: result.turns[0]?.firstTextMs ?? null,
     totalMs: result.turns[0]?.totalMs ?? null,
+    wer:
+      item.channel === "voice" && item.reference_transcript && result.turns[0]?.transcript !== undefined
+        ? wordErrors(item.reference_transcript, result.turns[0].transcript)
+        : null,
   };
   if (result.status !== "done") {
     return {
@@ -250,6 +260,8 @@ export interface GroupReport {
   zeroRuleViolations: number;
   medianFirstTextMs: number | null;
   medianTotalMs: number | null;
+  /** The speech model's word error rate over the voice items with a reference transcript (D64). */
+  werRate: number | null;
 }
 
 function median(values: number[]): number | null {
@@ -283,11 +295,21 @@ export function groupReport(scores: ItemScore[]): GroupReport {
       scored.flatMap((score) => (score.firstTextMs === null ? [] : [score.firstTextMs])),
     ),
     medianTotalMs: median(scored.flatMap((score) => (score.totalMs === null ? [] : [score.totalMs]))),
+    werRate: (() => {
+      const measured = scores.flatMap((score) => (score.wer ? [score.wer] : []));
+      const words = measured.reduce((sum, wer) => sum + wer.words, 0);
+      return rate(
+        measured.reduce((sum, wer) => sum + wer.errors, 0),
+        words,
+      );
+    })(),
   };
 }
 
 export interface Report {
   runId: string;
+  /** The providers that answered, from GET /me at the start of the run (D98), e.g. chat: cloudflare -> deepseek. */
+  providers: { chat: string[]; stt: string | null; tts: string | null } | null;
   groups: Record<string, GroupReport>;
   byKind: Record<string, GroupReport>;
   /** Chat items by how they are written, overall and per split: Bangla script against Banglish (D96). */
@@ -298,7 +320,11 @@ export interface Report {
   scores: ItemScore[];
 }
 
-export function buildReport(runId: string, scores: ItemScore[]): Report {
+export function buildReport(
+  runId: string,
+  scores: ItemScore[],
+  providers: Report["providers"] = null,
+): Report {
   const groupBy = (key: (score: ItemScore) => string, among = scores) => {
     const groups = new Map<string, ItemScore[]>();
     for (const score of among) groups.set(key(score), [...(groups.get(key(score)) ?? []), score]);
@@ -309,6 +335,7 @@ export function buildReport(runId: string, scores: ItemScore[]): Report {
   const chat = scores.filter((score) => score.style);
   return {
     runId,
+    providers,
     groups: { ...groupBy((score) => `${score.channel} ${score.split}`), all: groupReport(scores) },
     byKind: groupBy((score) => score.kind),
     byStyle: {
@@ -329,15 +356,19 @@ export function buildReport(runId: string, scores: ItemScore[]): Report {
 export function renderMarkdown(report: Report): string {
   const cell = (value: number | null, suffix = "") => (value === null ? "–" : `${value}${suffix}`);
   const table = (groups: Record<string, GroupReport>) => [
-    "| Group | Items | Scored | Correct action | Exact part | Questions/item | Unnecessary | Zero rules | First text (median) | Total (median) |",
-    "|---|---|---|---|---|---|---|---|---|---|",
+    "| Group | Items | Scored | Correct action | Exact part | Questions/item | Unnecessary | Zero rules | First text (median) | Total (median) | Speech WER |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
     ...Object.entries(groups).map(
       ([name, g]) =>
-        `| ${name} | ${g.items} | ${g.scored} | ${cell(g.correctRate, "%")} (${g.correct}) | ${cell(g.exactPartRate, "%")} (${g.exactPart}/${g.exactPartOf}) | ${cell(g.questionsPerItem)} | ${g.unnecessaryQuestions} | ${g.zeroRuleViolations} | ${cell(g.medianFirstTextMs, " ms")} | ${cell(g.medianTotalMs, " ms")} |`,
+        `| ${name} | ${g.items} | ${g.scored} | ${cell(g.correctRate, "%")} (${g.correct}) | ${cell(g.exactPartRate, "%")} (${g.exactPart}/${g.exactPartOf}) | ${cell(g.questionsPerItem)} | ${g.unnecessaryQuestions} | ${g.zeroRuleViolations} | ${cell(g.medianFirstTextMs, " ms")} | ${cell(g.medianTotalMs, " ms")} | ${cell(g.werRate, "%")} |`,
     ),
   ];
   const lines = [
     `# Evaluation run ${report.runId}`,
+    "",
+    report.providers
+      ? `Models in use: chat ${report.providers.chat.join(" -> ") || "none"}; speech-to-text ${report.providers.stt ?? "none"}; text-to-speech ${report.providers.tts ?? "none"} (evaluation turns always use our own speech models, D98).`
+      : "Models in use: not recorded for this run.",
     "",
     report.zeroRules.length
       ? `**Zero rules broken: ${report.zeroRules.length}. The evaluation fails whatever the accuracy.**`
@@ -370,4 +401,23 @@ export function renderMarkdown(report: Report): string {
     lines.push("## Not scored", "", ...report.notScored.map((n) => `- ${n.id}: ${n.reason}`), "");
   }
   return lines.join("\n");
+}
+
+/** Word errors (substitutions, insertions, deletions) of a transcript against its reference, on normalized words. */
+export function wordErrors(reference: string, heard: string): { errors: number; words: number } {
+  const ref = normalize(reference).tokens;
+  const hyp = normalize(heard).tokens;
+  let previous = Array.from({ length: hyp.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= ref.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= hyp.length; j++) {
+      current[j] = Math.min(
+        previous[j]! + 1,
+        current[j - 1]! + 1,
+        previous[j - 1]! + (ref[i - 1] === hyp[j - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return { errors: previous[hyp.length]!, words: ref.length };
 }

@@ -58,12 +58,13 @@ describe("speech worker adapters", () => {
     baseUrl,
     auth: "modal",
     secret: "key-1:secret-1",
+    maxKeyterms: 2,
     ...overrides,
   });
 
   it("sends the clip with keyterms and N-best as multipart, and maps the answer field for field", async () => {
     const result = await speechWorkerStt(config()).transcribe(new Uint8Array([82, 73, 70, 70]), {
-      keyterms: ["সেলফ", "নোয়া"],
+      keyterms: ["সেলফ", "নোয়া", "এক্সিও"], // the third is over this worker's limit of 2
       nbest: 5,
       lowConfidenceBelow: 0.5,
     });
@@ -84,6 +85,15 @@ describe("speech worker adapters", () => {
     expect(form).toContain('name="low_confidence_below"\r\n\r\n0.5');
     expect(form).toContain('name="audio"; filename="clip.wav"');
     expect(recentHealth("stt")).toBe("ok");
+  });
+
+  it("sends no keyterms unless the row allows some (D100)", async () => {
+    await speechWorkerStt(config({ maxKeyterms: undefined })).transcribe(new Uint8Array(4), {
+      keyterms: ["সেলফ", "নোয়া"],
+      nbest: 5,
+      lowConfidenceBelow: 0.5,
+    });
+    expect(seen.at(-1)!.body.toString("utf8")).toContain('name="keyterms"\r\n\r\n\r\n');
   });
 
   it("asks for MP3 with the voice, with the pod's X-API-Key", async () => {

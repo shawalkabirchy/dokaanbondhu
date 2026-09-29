@@ -54,6 +54,11 @@ export interface SpeechWorkerConfig {
   /** "modal": Modal-Key and Modal-Secret from "<key>:<secret>" (development); "x-api-key": the pod's X-API-Key. */
   auth: "modal" | "x-api-key" | "none";
   secret: string | null;
+  /**
+   * How many keyterms the worker gets (options.keyterms, default 0, D100): Whisper's prompt made it drop and invent
+   * words on 29 Sep even at 4 to 6 terms, so none are sent until real recordings show a number that helps.
+   */
+  maxKeyterms?: number;
 }
 
 // Timeouts (spec 13.4): 10 s to transcribe, 8 s per sentence to speak; Modal may first have to start the container
@@ -107,7 +112,7 @@ export function speechWorkerStt(config: SpeechWorkerConfig): SttProvider {
     async transcribe(wav, options, signal) {
       const form = new FormData();
       form.append("audio", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "clip.wav");
-      form.append("keyterms", options.keyterms.join(","));
+      form.append("keyterms", options.keyterms.slice(0, config.maxKeyterms ?? 0).join(","));
       form.append("nbest", String(options.nbest));
       form.append("low_confidence_below", String(options.lowConfidenceBelow));
       try {
@@ -176,8 +181,14 @@ function workerConfig(row: StoredProviderRow, aesKey: Buffer): SpeechWorkerConfi
         row.secretEncrypted,
       )
     : null;
-  const auth = ((row.options ?? {}) as { auth?: SpeechWorkerConfig["auth"] }).auth ?? "none";
-  return { id: row.id, baseUrl: row.baseUrl, auth, secret };
+  const options = (row.options ?? {}) as { auth?: SpeechWorkerConfig["auth"]; keyterms?: number };
+  return {
+    id: row.id,
+    baseUrl: row.baseUrl,
+    auth: options.auth ?? "none",
+    secret,
+    maxKeyterms: options.keyterms ?? 0,
+  };
 }
 
 export function sttAdapter(row: StoredProviderRow, aesKey: Buffer): SttProvider | null {

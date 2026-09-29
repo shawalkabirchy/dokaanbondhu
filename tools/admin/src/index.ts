@@ -43,6 +43,7 @@ const providerOptions = z
     auth: z.enum(["modal", "x-api-key"]).optional(),
     extra_body: z.record(z.string(), z.unknown()).optional(),
     voice_ids: z.record(z.string(), z.string()).optional(),
+    keyterms: z.number().int().min(0).max(25).optional(), // how many keyterms the speech worker gets (D100)
   })
   .strict();
 

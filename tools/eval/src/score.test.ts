@@ -1,11 +1,12 @@
 import { CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
 import { describe, expect, it } from "vitest";
 import { itemSchema, type Item } from "./items";
-import { DailyLimitReached, DONT_KNOW, notRunReason, runChatItem } from "./run";
+import { DailyLimitReached, DONT_KNOW, notRunReason, runChatItem, runItems, type RunState } from "./run";
 import {
   buildReport,
   renderMarkdown,
   scoreItem,
+  wordErrors,
   type ItemResult,
   type Trace,
   type TurnRecord,
@@ -205,6 +206,33 @@ describe("scoring", () => {
     expect(Object.keys(report.byStyle)).not.toContain("null");
     expect(renderMarkdown(report)).toContain("## Chat by writing style");
   });
+
+  it("measures the speech model's word error rate on the first transcript, and names the models in use", () => {
+    expect(wordErrors("নোয়ার সেলফ আছে", "নোয়ার সেল আছে")).toEqual({ errors: 1, words: 3 });
+    expect(wordErrors("এক্সিও ২০১৪ প্যাড", "এক্সিও 2014 প্যাড")).toEqual({ errors: 0, words: 3 }); // digits alike
+    const voice = item({
+      id: "v-1",
+      channel: "voice",
+      kind: "part_lookup",
+      expected: pads.expected,
+      reference_transcript: "এক্সিও ২০১৪ সামনের প্যাড আছে",
+    });
+    const heard = done("v-1", [
+      turn({
+        transcript: "এক্সিও ২০১৪ সামনে প্যাড আছে",
+        trace: trace({ lookups: [lookup(2014, [["04465-10010"]])] }),
+      }),
+    ]);
+    const report = buildReport("r1", [scoreItem(voice, heard)], {
+      chat: ["cloudflare (gemma)", "deepseek (deepseek-flash)"],
+      stt: "speech_worker",
+      tts: "speech_worker",
+    });
+    expect(report.groups["voice open"]).toMatchObject({ werRate: 20 });
+    const markdown = renderMarkdown(report);
+    expect(markdown).toContain("chat cloudflare (gemma) -> deepseek (deepseek-flash)");
+    expect(markdown).toContain("| 20% |");
+  });
 });
 
 describe("runner", () => {
@@ -249,14 +277,51 @@ describe("runner", () => {
     await expect(runChatItem(pads, fakeSession([limited]))).rejects.toBeInstanceOf(DailyLimitReached);
   });
 
-  it("leaves voice items for step 4 and unbuilt writes out", () => {
-    expect(
-      notRunReason(item({ id: "v-1", channel: "voice", kind: "part_lookup", expected: pads.expected }), []),
-    ).toMatchObject({
-      status: "skipped",
-    });
+  it("leaves unbuilt writes out", () => {
     const sale = item({ id: "c-111", kind: "write", expected: { action: "sale" } });
     expect(notRunReason(sale, [])).toMatchObject({ status: "not_built" });
     expect(notRunReason(sale, ["sale"])).toBeNull();
+  });
+
+  it("sends a voice item's recording as its first turn, the scripted answers as text, and skips one not recorded", async () => {
+    const voiced: string[] = [];
+    const session = {
+      ...fakeSession([turn({ reply: "done" })]),
+      newConversation: async (channel: string) => `conv-${channel}`,
+      voice: async (conversation: string, pcm: Uint8Array) => {
+        voiced.push(`${conversation}:${pcm.byteLength}`);
+        return turn({ state: "CLARIFYING", slot: "year", transcript: "নোয়ার সেলফ আছে" });
+      },
+    } as unknown as Session & { sent: string[] };
+    const noah = item({
+      id: "v-7",
+      channel: "voice",
+      kind: "part_lookup",
+      audio: "recordings/<shop_id>/eval/v-7.wav",
+      expected: pads.expected,
+      script: { year: "2016" },
+    });
+    const result = await runChatItem(noah, session, new Uint8Array(32_000));
+    expect(voiced).toEqual(["conv-voice:32000"]);
+    expect(session.sent).toEqual(["2016"]);
+    expect(result.turns[0]?.transcript).toBe("নোয়ার সেলফ আছে");
+
+    const state: RunState = {
+      runId: "r",
+      startedAt: "",
+      itemIds: [],
+      builtActions: [],
+      nextIndex: 0,
+      results: [],
+    };
+    const finished = await runItems(
+      [noah],
+      state,
+      { owner: session, staff: session },
+      () => {},
+      () => {},
+      async () => null,
+    );
+    expect(finished.results[0]).toMatchObject({ id: "v-7", status: "skipped", reason: "not recorded yet" });
   });
 });
