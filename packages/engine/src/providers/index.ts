@@ -21,3 +21,15 @@ export {
   type Side,
   type Sides,
 } from "./select";
+export {
+  SpeechError,
+  speechWorkerStt,
+  speechWorkerTts,
+  sttAdapter,
+  ttsAdapter,
+  type AsrResult,
+  type SpeechWorkerConfig,
+  type SttOptions,
+  type SttProvider,
+  type TtsProvider,
+} from "./speech";

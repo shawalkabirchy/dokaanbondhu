@@ -11,3 +11,4 @@ export {
   type TurnOutcome,
   type TurnState,
 } from "./turn";
+export { buildKeyterms, MAX_KEYTERMS } from "./keyterms";

@@ -9,9 +9,13 @@ import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
   llmChain,
   selectProviders,
+  sttAdapter,
+  ttsAdapter,
   type LlmProvider,
   type ProviderJob,
   type Sides,
+  type SttProvider,
+  type TtsProvider,
 } from "@dokaanbondhu/engine/providers";
 import { aiProviders, shops, type Tx, type users } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
@@ -91,4 +95,25 @@ export function providersInUse(rows: ProviderRowDb[], shopId: string): Providers
 /** The shop's LLM chain (spec 13.2, 13.3): the chosen side in priority order, then the other side as the backup. */
 export async function shopLlm(shopId: string): Promise<LlmProvider[]> {
   return llmChain(await providerRows(shopId), shopId, serverSides(), parseAesKey(serverEnv().AES_KEY));
+}
+
+/**
+ * The shop's speech providers for a turn (spec 13.2, D98): the developer's sides; requests with the evaluation key
+ * always use our own speech models, because the recordings' consent covers only those (D41).
+ */
+export async function shopSpeech(
+  shopId: string,
+  evalMode: boolean,
+): Promise<{ stt: SttProvider | null; tts: TtsProvider | null }> {
+  const sides = serverSides();
+  const used = selectProviders(
+    await providerRows(shopId),
+    shopId,
+    evalMode ? { ...sides, listen: "own", speak: "own" } : sides,
+  );
+  const key = parseAesKey(serverEnv().AES_KEY);
+  return {
+    stt: used.stt ? sttAdapter(used.stt, key) : null,
+    tts: used.tts ? ttsAdapter(used.tts, key) : null,
+  };
 }

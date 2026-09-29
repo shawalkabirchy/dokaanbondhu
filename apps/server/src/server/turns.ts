@@ -1,6 +1,8 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
+import { ASK_AGAIN, pcmToWav, trimSilence } from "@dokaanbondhu/core";
 import {
+  buildKeyterms,
   runTurn,
   type ConversationState,
   type Offer,
@@ -10,18 +12,21 @@ import {
   type TurnState,
 } from "@dokaanbondhu/engine/conversation";
 import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
+import type { AsrResult } from "@dokaanbondhu/engine/providers";
 import { conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { serverEnv } from "../env";
 import { appError } from "./errors";
 import { shopHost } from "./host";
 import type { Caller } from "./route";
-import { shopLlm } from "./shop";
+import { loadShop, settingsOf, shopLlm, shopSpeech } from "./shop";
+import { Speaker } from "./speak";
 import { logger, platform } from "./singletons";
 
-// A chat turn on the server (spec 8.3, 8.5, 9.1): load the conversation, its open frame and the last messages; run
-// the engine's turn; save both messages, the state, the context and the frame; stream every event as one NDJSON line.
-// The done event is held back until the turn is saved, so the app's next message always sees this one.
+// Chat and voice turns on the server (spec 8.3, 8.4, 8.5, 9.1): load the conversation, its open frame and the last
+// messages; for voice, trim and transcribe the clip first; run the engine's turn; save both messages, the state, the
+// context and the frame; stream every event as one NDJSON line, speaking the sentences when asked. The done event is
+// held back until the turn is saved and spoken, so the app's next message always sees this one.
 
 const HISTORY = 6;
 
@@ -174,103 +179,318 @@ function errorCodeOf(error: unknown): ErrorCode {
   return "INTERNAL";
 }
 
-export interface ChatTurnInput {
+export interface TurnRequest {
   caller: Caller;
   conversation: LoadedConversation;
   text?: string;
   choice?: { slot: string; optionId: string };
   evalMode: boolean;
   requestId: string;
+  /** Chat: the speaker toggle asks for audio too (D88). Voice turns always speak. */
+  speak?: boolean;
+}
+
+/** What the turn saves as the user's message besides the engine's own facts. */
+interface Said {
+  userText: string | null;
+  userMeta?: Record<string, unknown>;
+  /** Stage timings measured before the engine ran (asr). */
+  timings?: Record<string, number>;
+}
+
+type DoneEvent = Extract<ReplyEvent, { type: "done" }>;
+
+/** The shop's voice for spoken replies (spec 7.2 settings). */
+async function shopVoice(shopId: string): Promise<string> {
+  const shop = await platform().withShop(shopId, (tx) => loadShop(tx, shopId));
+  return settingsOf(shop).voice;
+}
+
+/**
+ * Runs the engine's turn, saves it and streams it. Text events are also spoken when a speaker is given; the done event
+ * waits until the turn is saved and every sentence has its audio, so the app's next message always sees this one.
+ */
+async function answer(
+  request: TurnRequest,
+  turnInput: TurnInput,
+  said: Said,
+  emit: (event: ReplyEvent) => void,
+  speaker: Speaker | null,
+): Promise<void> {
+  const { caller, conversation } = request;
+  let held: DoneEvent | null = null;
+  const [llm, shopHostValue] = await Promise.all([shopLlm(caller.shopId), shopHost(caller.shopId)]);
+  // Read before the turn, which changes the frame in place: when the open frame would have expired.
+  const opened = conversation.state.frame;
+  const openedExpiry = opened ? Date.parse(opened.expiresAt) : 0;
+  const outcome = await runTurn(
+    turnInput,
+    conversation.state,
+    {
+      llm,
+      dictionary: shopHostValue.dictionary,
+      host: shopHostValue.host,
+      now: () => new Date(),
+      newId: () => randomUUID(),
+      evalMode: request.evalMode,
+      shopWords: shopHostValue.shopWords,
+    },
+    (event) => {
+      if (event.type === "done") {
+        held = event;
+        return;
+      }
+      emit(event);
+      if (event.type === "text" && speaker) speaker.say(event.seq, event.text);
+    },
+  );
+  const timings = { ...said.timings, ...outcome.meta.timings_ms };
+
+  const now = new Date();
+  await platform().withShop(caller.shopId, async (tx) => {
+    await tx.insert(messages).values([
+      {
+        shopId: caller.shopId,
+        conversationId: conversation.id,
+        turnId: outcome.turnId,
+        role: "user",
+        text: said.userText,
+        ...(said.userMeta ? { meta: said.userMeta } : {}),
+      },
+      {
+        shopId: caller.shopId,
+        conversationId: conversation.id,
+        turnId: outcome.turnId,
+        role: "assistant",
+        text: outcome.assistantText,
+        meta: { ...outcome.meta, timings_ms: timings },
+        createdAt: sql`now() + interval '1 millisecond'`, // after the user's, for the history order
+      },
+    ]);
+    await tx
+      .update(conversations)
+      .set({ state: outcome.state.state, context: outcome.state.context, lastActiveAt: now })
+      .where(eq(conversations.id, conversation.id));
+    // A new frame sets the old open one aside (or marks it expired); only one may be open (spec 9.3 rule 4).
+    const next = outcome.state.frame;
+    if (conversation.frameId && next?.id !== conversation.frameId) {
+      await tx
+        .update(requestFrames)
+        .set({
+          status: openedExpiry < now.getTime() ? "expired" : "set_aside",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(requestFrames.id, conversation.frameId),
+            inArray(requestFrames.status, ["active", "confirming"]),
+          ),
+        );
+    }
+    if (next) await saveFrame(tx, caller.shopId, conversation.id, next);
+  });
+  if (speaker) await speaker.drain();
+  const done = held as DoneEvent | null;
+  if (done) {
+    emit({
+      ...done,
+      timings_ms: {
+        ...said.timings,
+        ...done.timings_ms,
+        ...(speaker?.firstAudioMs != null ? { first_audio: speaker.firstAudioMs } : {}),
+      },
+    });
+  }
+}
+
+/** Streams the fatal error of a turn that failed after the stream started: an error event, then done. */
+function failed(request: TurnRequest, error: unknown, emit: (event: ReplyEvent) => void, kind: string): void {
+  const code = errorCodeOf(error);
+  logger().error(
+    { err: error, request_id: request.requestId, conversation_id: request.conversation.id },
+    `${kind} turn failed`,
+  );
+  emit({ type: "error", code, message_key: `errors.${code}`, fatal: true });
+  emit({ type: "done", turn_id: request.requestId, state: "IDLE", timings_ms: {} });
 }
 
 /** Runs one chat turn and streams it; failures after the stream started are an error event, then done. */
-export async function chatTurn(input: ChatTurnInput, emit: (event: ReplyEvent) => void): Promise<void> {
-  const { caller, conversation } = input;
-  let held: ReplyEvent | null = null;
+export async function chatTurn(request: TurnRequest, emit: (event: ReplyEvent) => void): Promise<void> {
+  const startedAt = Date.now();
   try {
-    const [llm, shopHostValue] = await Promise.all([shopLlm(caller.shopId), shopHost(caller.shopId)]);
-    // Read before the turn, which changes the frame in place: the chip's label (what the user "said") and when the
-    // open frame would have expired.
-    const opened = conversation.state.frame;
-    const tapped = input.choice
-      ? opened?.offers?.find((offer) => offer.id === input.choice!.optionId)?.label
+    // The chip's label is what the user "said"; read before the turn changes the frame.
+    const tapped = request.choice
+      ? request.conversation.state.frame?.offers?.find((offer) => offer.id === request.choice!.optionId)
+          ?.label
       : undefined;
-    const openedExpiry = opened ? Date.parse(opened.expiresAt) : 0;
-    const turnInput: TurnInput = {
-      ...(input.text ? { text: input.text } : {}),
-      ...(input.choice ? { choice: input.choice } : {}),
-    };
-    const outcome = await runTurn(
-      turnInput,
-      conversation.state,
-      {
-        llm,
-        dictionary: shopHostValue.dictionary,
-        host: shopHostValue.host,
-        now: () => new Date(),
-        newId: () => randomUUID(),
-        evalMode: input.evalMode,
-        shopWords: shopHostValue.shopWords,
-      },
-      (event) => (event.type === "done" ? (held = event) : emit(event)),
-    );
-
-    const now = new Date();
-    await platform().withShop(caller.shopId, async (tx) => {
-      await tx.insert(messages).values([
-        {
-          shopId: caller.shopId,
-          conversationId: conversation.id,
-          turnId: outcome.turnId,
-          role: "user",
-          text: input.text ?? tapped ?? null,
-          ...(input.choice ? { meta: { choice: input.choice } } : {}),
-        },
-        {
-          shopId: caller.shopId,
-          conversationId: conversation.id,
-          turnId: outcome.turnId,
-          role: "assistant",
-          text: outcome.assistantText,
-          meta: outcome.meta,
-          createdAt: sql`now() + interval '1 millisecond'`, // after the user's, for the history order
-        },
+    let speaker: Speaker | null = null;
+    if (request.speak) {
+      const [speech, voice] = await Promise.all([
+        shopSpeech(request.caller.shopId, request.evalMode),
+        shopVoice(request.caller.shopId),
       ]);
-      await tx
-        .update(conversations)
-        .set({ state: outcome.state.state, context: outcome.state.context, lastActiveAt: now })
-        .where(eq(conversations.id, conversation.id));
-      // A new frame sets the old open one aside (or marks it expired); only one may be open (spec 9.3 rule 4).
-      const next = outcome.state.frame;
-      if (conversation.frameId && next?.id !== conversation.frameId) {
-        await tx
-          .update(requestFrames)
-          .set({
-            status: openedExpiry < now.getTime() ? "expired" : "set_aside",
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(requestFrames.id, conversation.frameId),
-              inArray(requestFrames.status, ["active", "confirming"]),
-            ),
-          );
-      }
-      if (next) await saveFrame(tx, caller.shopId, conversation.id, next);
-    });
-    if (held) emit(held);
-  } catch (error) {
-    const code = errorCodeOf(error);
-    logger().error(
-      { err: error, request_id: input.requestId, conversation_id: conversation.id },
-      "chat turn failed",
+      speaker = new Speaker(speech.tts, voice, emit, startedAt, { request_id: request.requestId });
+    }
+    await answer(
+      request,
+      {
+        ...(request.text ? { text: request.text } : {}),
+        ...(request.choice ? { choice: request.choice } : {}),
+      },
+      {
+        userText: request.text ?? tapped ?? null,
+        ...(request.choice ? { userMeta: { choice: request.choice } } : {}),
+      },
+      emit,
+      speaker,
     );
-    emit({ type: "error", code, message_key: `errors.${code}`, fatal: true });
-    emit({
-      type: "done",
-      turn_id: (held as { turn_id?: string } | null)?.turn_id ?? input.requestId,
-      state: "IDLE",
-      timings_ms: {},
-    });
+  } catch (error) {
+    failed(request, error, emit, "chat");
   }
+}
+
+export interface VoiceClip {
+  /** The joined chunks: 16-bit little-endian mono PCM at 16 kHz. */
+  pcm: Uint8Array;
+  durationMs: number;
+  rms: number;
+}
+
+const NBEST = 5;
+const LOW_CONFIDENCE_BELOW = 0.5;
+
+/**
+ * Runs one voice turn (spec 8.4, 9.1): trim the silence (D45), transcribe with the keyterms, then answer as a chat turn
+ * with the N-best hypotheses, spoken. No speech, an empty or very quiet transcript, or a speech-to-text failure ends
+ * the turn with "আবার বলবেন?" and no LLM call.
+ */
+export async function voiceTurn(
+  request: TurnRequest,
+  clip: VoiceClip,
+  emit: (event: ReplyEvent) => void,
+): Promise<void> {
+  const startedAt = Date.now();
+  const { caller, conversation } = request;
+  try {
+    emit({ type: "status", state: "UNDERSTANDING", label_key: "status.listening" });
+    const [speech, voice] = await Promise.all([
+      shopSpeech(caller.shopId, request.evalMode),
+      shopVoice(caller.shopId),
+    ]);
+    const speaker = new Speaker(speech.tts, voice, emit, startedAt, { request_id: request.requestId });
+    const upload = { duration_ms: clip.durationMs, rms: clip.rms, bytes: clip.pcm.byteLength };
+    const again = (voiceMeta: Record<string, unknown>, timings: Record<string, number>, heard?: string) =>
+      askAgain(request, emit, speaker, startedAt, { upload, ...voiceMeta }, timings, heard ?? null);
+
+    const trimmed = trimSilence(clip.pcm);
+    if (!trimmed.speech) return await again({ reason: "no speech" }, {});
+    if (!speech.stt) {
+      emit({
+        type: "error",
+        code: "SPEECH_UNAVAILABLE",
+        message_key: "errors.SPEECH_UNAVAILABLE",
+        fatal: false,
+      });
+      return await again({ reason: "no speech-to-text provider" }, {});
+    }
+    const shopHostValue = await shopHost(caller.shopId);
+    const keyterms = buildKeyterms(
+      shopHostValue.host.catalog,
+      shopHostValue.dictionary,
+      conversation.state.context,
+    );
+    const asrStarted = Date.now();
+    let result: AsrResult;
+    try {
+      result = await speech.stt.transcribe(pcmToWav(trimmed.pcm), {
+        keyterms,
+        nbest: NBEST,
+        lowConfidenceBelow: LOW_CONFIDENCE_BELOW,
+      });
+    } catch (error) {
+      logger().warn({ err: error, request_id: request.requestId }, "speech-to-text failed");
+      emit({
+        type: "error",
+        code: "SPEECH_UNAVAILABLE",
+        message_key: "errors.SPEECH_UNAVAILABLE",
+        fatal: false,
+      });
+      return await again({ reason: "speech-to-text failed" }, { asr: Date.now() - asrStarted });
+    }
+    const timings = { asr: Date.now() - asrStarted };
+    const asr = {
+      provider: speech.stt.id,
+      duration_seconds: result.durationSeconds,
+      processing_ms: result.processingMs,
+      note: result.note,
+      nbest: result.nbest.map((hypothesis) => hypothesis.text),
+      keyterms: keyterms.length,
+    };
+    emit({
+      type: "transcript",
+      text: result.text,
+      unclear: result.lowConfidenceWords.map((word) => word.word),
+    });
+    if (!result.text.trim() || result.note === "audio very quiet") {
+      const reason = result.text.trim() ? "audio very quiet" : "empty transcript";
+      return await again({ asr, reason }, timings, result.text || undefined);
+    }
+    await answer(
+      request,
+      { text: result.text, hypotheses: result.nbest.map((hypothesis) => hypothesis.text) },
+      { userText: result.text, userMeta: { voice: { upload, asr } }, timings },
+      emit,
+      speaker,
+    );
+  } catch (error) {
+    failed(request, error, emit, "voice");
+  }
+}
+
+/** "আবার বলবেন?", spoken, without the LLM; the conversation keeps its state, so an open question stays open. */
+async function askAgain(
+  request: TurnRequest,
+  emit: (event: ReplyEvent) => void,
+  speaker: Speaker,
+  startedAt: number,
+  voice: Record<string, unknown>,
+  timings: Record<string, number>,
+  heard: string | null,
+): Promise<void> {
+  const { caller, conversation } = request;
+  const turnId = randomUUID();
+  emit({ type: "text", seq: 0, text: ASK_AGAIN, final: true });
+  speaker.say(0, ASK_AGAIN);
+  await platform().withShop(caller.shopId, (tx) =>
+    tx.insert(messages).values([
+      {
+        shopId: caller.shopId,
+        conversationId: conversation.id,
+        turnId,
+        role: "user",
+        text: heard,
+        meta: { voice },
+      },
+      {
+        shopId: caller.shopId,
+        conversationId: conversation.id,
+        turnId,
+        role: "assistant",
+        text: ASK_AGAIN,
+        meta: { timings_ms: { ...timings, total: Date.now() - startedAt }, llm_calls: 0 },
+        createdAt: sql`now() + interval '1 millisecond'`,
+      },
+    ]),
+  );
+  await speaker.drain();
+  emit({
+    type: "done",
+    turn_id: turnId,
+    state: conversation.state.state,
+    timings_ms: {
+      ...timings,
+      total: Date.now() - startedAt,
+      ...(speaker.firstAudioMs != null ? { first_audio: speaker.firstAudioMs } : {}),
+    },
+  });
 }

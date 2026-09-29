@@ -1,4 +1,5 @@
 export * from "./answers";
+export * from "./audio";
 export { AppError } from "./errors";
 export * from "./format";
 export * from "./glossary";

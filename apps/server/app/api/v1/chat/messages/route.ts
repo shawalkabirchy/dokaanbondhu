@@ -19,6 +19,7 @@ export const POST = route({ role: "any", limit: "turn" }, async ({ request, call
         ...(body.choice ? { choice: { slot: body.choice.slot, optionId: body.choice.option_id } } : {}),
         evalMode,
         requestId,
+        speak: body.speak,
       },
       emit,
     ),
