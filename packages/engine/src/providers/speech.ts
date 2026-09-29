@@ -99,6 +99,18 @@ async function call(
   return response;
 }
 
+/** Answers that refuse one clip or text ("audio too short"): the worker itself is working. */
+const REFUSED_INPUT = new Set([400, 413, 422]);
+
+/**
+ * What a failed call says about the worker for /health (D111): an answer refusing this one input means it is up; no
+ * answer, a timeout, a wrong key or a server error means it is down; a call the caller cancelled says nothing.
+ */
+function recordFailure(job: "stt" | "tts", error: unknown, signal: AbortSignal | undefined): void {
+  if (signal?.aborted) return;
+  recordProviderCall(job, error instanceof SpeechError && REFUSED_INPUT.has(error.status ?? 0));
+}
+
 interface WorkerWord {
   word: string;
   start: number;
@@ -137,7 +149,7 @@ export function speechWorkerStt(config: SpeechWorkerConfig): SttProvider {
           note: body.note,
         };
       } catch (error) {
-        recordProviderCall("stt", false);
+        recordFailure("stt", error, signal);
         throw error;
       }
     },
@@ -164,7 +176,7 @@ export function speechWorkerTts(config: SpeechWorkerConfig): TtsProvider {
         recordProviderCall("tts", true);
         return { mime: "audio/mpeg", bytes };
       } catch (error) {
-        recordProviderCall("tts", false);
+        recordFailure("tts", error, signal);
         throw error;
       }
     },

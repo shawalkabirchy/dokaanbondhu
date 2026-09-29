@@ -32,7 +32,7 @@ import { Button, colors, OfflineBanner } from "../../src/ui";
 export default function Voice() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
-  const { micAllowed } = useHealth();
+  const { micAllowed, speechTrouble, refresh } = useHealth();
   const { messages, busy, runTurn, ensureConversation, send, reset } = useVoice();
   const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
   const [recording, setRecording] = useState(false);
@@ -130,6 +130,7 @@ export default function Voice() {
         current.send((turnId, body) => streamTurn(`/voice/turns/${turnId}/finish`, body, onEvent)),
       playerTap(),
     );
+    if (speechTrouble) void refresh(); // a turn that worked clears the warning at once
   }
 
   return (
@@ -168,7 +169,8 @@ export default function Voice() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("voice.hold")}
-          disabled={!micAllowed}
+          // Never while recording: a question being asked is always finished and sent (D111).
+          disabled={!micAllowed && !recording}
           onPressIn={onPressIn}
           onPressOut={onPressOut}
           style={[
@@ -178,7 +180,11 @@ export default function Voice() {
         >
           <Text style={styles.buttonText}>{recording ? t("status.listening") : t("voice.hold")}</Text>
         </Pressable>
-        {!micAllowed ? <Text style={styles.danger}>{t("offline.mic_off")}</Text> : null}
+        {!micAllowed ? (
+          <Text style={styles.danger}>{t("offline.mic_off")}</Text>
+        ) : speechTrouble ? (
+          <Text style={styles.danger}>{t("offline.speech_trouble")}</Text>
+        ) : null}
         {messages.length > 0 && !busy && !recording ? (
           <Button
             label={t("chat.new")}

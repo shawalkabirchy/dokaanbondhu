@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN, pcmToWav, trimSilence } from "@dokaanbondhu/core";
+import { ASK_AGAIN, pcmDurationMs, pcmToWav, trimSilence } from "@dokaanbondhu/core";
 import {
   buildKeyterms,
   runTurn,
@@ -12,7 +12,7 @@ import {
   type TurnState,
 } from "@dokaanbondhu/engine/conversation";
 import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
-import type { AsrResult } from "@dokaanbondhu/engine/providers";
+import { SpeechError, type AsrResult } from "@dokaanbondhu/engine/providers";
 import { aliasSuggestions, conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { serverEnv } from "../env";
@@ -378,6 +378,8 @@ export interface VoiceClip {
 
 const NBEST = 5;
 const LOW_CONFIDENCE_BELOW = 0.5;
+/** The speech worker's shortest clip (its MIN_CLIP_SECONDS), after the silence is cut. */
+const MIN_CLIP_MS = 300;
 
 /**
  * Runs one voice turn (spec 8.4, 9.1): trim the silence (D45), transcribe with the keyterms, then answer as a chat turn
@@ -404,6 +406,8 @@ export async function voiceTurn(
 
     const trimmed = trimSilence(clip.pcm);
     if (!trimmed.speech) return await again({ reason: "no speech" }, {});
+    // The speech worker refuses a clip under 0.3 s: asked again without calling it (D111).
+    if (pcmDurationMs(trimmed.pcm) < MIN_CLIP_MS) return await again({ reason: "too short" }, {});
     if (!speech.stt) {
       emit({
         type: "error",
@@ -428,14 +432,21 @@ export async function voiceTurn(
         lowConfidenceBelow: LOW_CONFIDENCE_BELOW,
       });
     } catch (error) {
+      // A clip the worker refused ("audio too short") is asked again; voice is not reported as not working (D111).
+      const refused = error instanceof SpeechError && [400, 413, 422].includes(error.status ?? 0);
       logger().warn({ err: error, request_id: request.requestId }, "speech-to-text failed");
-      emit({
-        type: "error",
-        code: "SPEECH_UNAVAILABLE",
-        message_key: "errors.SPEECH_UNAVAILABLE",
-        fatal: false,
-      });
-      return await again({ reason: "speech-to-text failed" }, { asr: Date.now() - asrStarted });
+      if (!refused) {
+        emit({
+          type: "error",
+          code: "SPEECH_UNAVAILABLE",
+          message_key: "errors.SPEECH_UNAVAILABLE",
+          fatal: false,
+        });
+      }
+      return await again(
+        { reason: refused ? "clip refused" : "speech-to-text failed" },
+        { asr: Date.now() - asrStarted },
+      );
     }
     const timings = { asr: Date.now() - asrStarted };
     const asr = {

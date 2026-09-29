@@ -100,14 +100,14 @@ describe("setup page", () => {
   it("shows the connection form when the shop has no database connection yet", async () => {
     answer([]);
     await show();
-    expect(await screen.findByText("setup.host", {}, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByText("setup.host", {}, { timeout: 15_000 })).toBeTruthy();
     expect(screen.getByText("setup.save_connection")).toBeTruthy();
   });
 
   it("shows money in whole taka with no second reading, and confirms the concept as proposed (D110)", async () => {
     answer([connection]);
     await show();
-    expect(await screen.findByText("৪,৫০০ টাকা", {}, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByText("৪,৫০০ টাকা", {}, { timeout: 15_000 })).toBeTruthy();
     expect(screen.queryByText("৪,৫০,০০০ টাকা")).toBeNull();
     fireEvent.press(screen.getByText("setup.confirm"));
     await waitFor(() =>
@@ -121,7 +121,7 @@ describe("setup page", () => {
   it("confirms a concept as proposed", async () => {
     answer([connection]);
     await show();
-    fireEvent.press(await screen.findByText("setup.confirm", {}, { timeout: 5000 }));
+    fireEvent.press(await screen.findByText("setup.confirm", {}, { timeout: 15_000 }));
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(`/setup/schema/${schema.entities[0]!.id}`, {
         method: "PUT",

@@ -27,6 +27,8 @@ describe("speech worker adapters", () => {
         seen.push({ path: request.url ?? "", headers: request.headers, body });
         if (request.headers["modal-key"] === "bad") {
           response.writeHead(401).end("unauthorized");
+        } else if (request.headers["modal-key"] === "short") {
+          response.writeHead(422, { "Content-Type": "application/json" }).end('{"detail":"audio too short"}');
         } else if (request.url === "/asr") {
           response.writeHead(200, { "Content-Type": "application/json" }).end(
             JSON.stringify({
@@ -124,5 +126,25 @@ describe("speech worker adapters", () => {
       speechWorkerTts(config({ baseUrl: "http://127.0.0.1:9" })).synthesize("x", { voice: "aditi" }),
     ).rejects.toBeInstanceOf(SpeechError);
     expect(recentHealth("tts")).toBe("down");
+  });
+
+  // From the owner's test on 30 Sep (D111): "audio too short" marked speech down, and the app then turned the
+  // microphone off for five minutes.
+  it("keeps speech up when the worker refuses one clip, and a cancelled call changes nothing", async () => {
+    const options = { keyterms: [], nbest: 5, lowConfidenceBelow: 0.5 };
+    await expect(
+      speechWorkerStt(config({ secret: "short:x" })).transcribe(new Uint8Array(4), options),
+    ).rejects.toMatchObject({ name: "SpeechError", status: 422 });
+    expect(recentHealth("stt")).toBe("ok");
+
+    await expect(
+      speechWorkerStt(config({ secret: "bad:x" })).transcribe(new Uint8Array(4), options),
+    ).rejects.toThrow();
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await expect(
+      speechWorkerStt(config()).transcribe(new Uint8Array(4), options, cancelled.signal),
+    ).rejects.toBeInstanceOf(SpeechError);
+    expect(recentHealth("stt")).toBe("down"); // still the wrong key's result
   });
 });

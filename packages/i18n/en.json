@@ -48,7 +48,8 @@
   },
   "offline": {
     "banner": "The assistant is offline. The shop's own app keeps working.",
-    "mic_off": "Voice is off right now. You can still type."
+    "mic_off": "Voice is off right now. You can still type.",
+    "speech_trouble": "Voice had a problem a moment ago. Try again, or type."
   },
   "status": {
     "listening": "Listening…",

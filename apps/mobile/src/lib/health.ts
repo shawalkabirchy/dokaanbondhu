@@ -5,7 +5,8 @@ import { AppState } from "react-native";
 import { useDeviceSettings } from "./settings-store";
 
 // GET /health at start, when the app comes to the foreground, and at most every 60 s (spec 15.7). While status is
-// not "ok" the app shows the offline banner and turns the microphone off; speech "down" turns off only the microphone.
+// not "ok" the app shows the offline banner and turns the microphone off. Speech "down" only shows a warning: the
+// button still works, so a press tries again and a success clears it (D111).
 
 export async function fetchHealth(serverUrl: string): Promise<Health> {
   const controller = new AbortController();
@@ -45,7 +46,9 @@ export function useHealth() {
   return {
     health,
     online: health.status === "ok",
-    micAllowed: health.status === "ok" && health.speech !== "down",
+    micAllowed: health.status === "ok",
+    speechTrouble: health.status === "ok" && health.speech === "down",
     checking: query.isLoading,
+    refresh: refetch,
   };
 }

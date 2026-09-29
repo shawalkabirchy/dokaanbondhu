@@ -3,7 +3,8 @@ import Voice from "../app/(app)/voice";
 import { streamTurn, uploadChunk } from "./lib/stream";
 
 // The voice page (spec 15.3, 15.8) with the recorder, the player and the server replaced: holding the button records,
-// recording stops by itself at 30 s, and a quiet clip never reaches finish.
+// recording stops by itself at 30 s, a quiet clip never reaches finish, and the button is never locked while speech
+// only had trouble or while a question is being recorded (D111).
 
 const mockRecorder = {
   prepareRecording: jest.fn(async () => undefined),
@@ -23,7 +24,14 @@ jest.mock("expo-crypto", () => {
   return { randomUUID: () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}` };
 });
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
-jest.mock("./lib/health", () => ({ useHealth: () => ({ online: true, checking: false, micAllowed: true }) }));
+const mockHealth = {
+  online: true,
+  checking: false,
+  micAllowed: true,
+  speechTrouble: false,
+  refresh: jest.fn(),
+};
+jest.mock("./lib/health", () => ({ useHealth: () => mockHealth }));
 jest.mock("./lib/audio", () => ({
   phonePlayer: {
     save: () => "file://x.mp3",
@@ -59,6 +67,7 @@ describe("voice page", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    Object.assign(mockHealth, { online: true, micAllowed: true, speechTrouble: false });
   });
   afterEach(() => jest.useRealTimers());
 
@@ -127,5 +136,41 @@ describe("voice page", () => {
     expect(streamTurn).not.toHaveBeenCalled();
     expect(jest.requireMock("./lib/audio").playAskAgain).toHaveBeenCalled();
     expect(uploadChunk).toHaveBeenCalled(); // the press was long enough to upload, just too quiet to finish
+  });
+
+  // From the owner's test on 30 Sep (D111): one "audio too short" locked the microphone for five minutes.
+  it("keeps the button working when speech had trouble, with a warning", async () => {
+    mockHealth.speechTrouble = true;
+    await render(<Voice />);
+    expect(screen.getByText("offline.speech_trouble")).toBeTruthy();
+    await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
+    expect(mockRecorder.startRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns the button off while the server is offline", async () => {
+    mockHealth.online = false;
+    mockHealth.micAllowed = false;
+    await render(<Voice />);
+    expect(screen.getByText("offline.mic_off")).toBeTruthy();
+    await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
+    expect(mockRecorder.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("finishes and sends a question even when the server goes offline while the button is held", async () => {
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => onChunk(loud()));
+    mockHealth.online = false;
+    mockHealth.micAllowed = false;
+    await screen.rerender(<Voice />);
+    await act(async () => void fireEvent(button, "pressOut"));
+    await act(async () => jest.advanceTimersByTime(700));
+    expect(streamTurn).toHaveBeenCalledWith(
+      expect.stringMatching(/\/finish$/),
+      expect.objectContaining({ chunk_count: 1 }),
+      expect.any(Function),
+    );
   });
 });

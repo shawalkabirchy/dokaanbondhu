@@ -276,6 +276,25 @@ describe.skipIf(!allLocal)("voice turns", () => {
     expect(llm.received).toHaveLength(0);
   });
 
+  // From the owner's test on 30 Sep (D111): "audio too short" marked speech down, and the app then turned the
+  // microphone off for five minutes.
+  it("asks again for a clip too short to transcribe, and a clip the worker refuses never marks speech down", async () => {
+    const tiny = await say(clip([[200, 0.2]])); // under the worker's 0.3 s even before trimming
+    expect(tiny.reply).toBe(ASK_AGAIN);
+    expect(speech.asrRequests).toHaveLength(0); // not sent to the worker at all
+
+    speech.asr.push({ text: "", status: 422 }); // the worker's "audio too short"
+    const refused = await say(spoken());
+    expect(refused.reply).toBe(ASK_AGAIN);
+    expect(refused.events.filter((event) => event.type === "error")).toEqual([]);
+    const { GET } = await import("../app/api/v1/health/route");
+    const health = (await (await GET()).json()) as {
+      speech: string;
+    };
+    expect(health.speech).not.toBe("down");
+    expect(llm.received).toHaveLength(0);
+  });
+
   it("refuses missing chunks, another user's turn, a chunk over 64 KB and a turn over 30.5 s", async () => {
     const conversationId = await newConversation();
     const turnId = randomUUID();
