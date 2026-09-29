@@ -1,27 +1,51 @@
-import { useRef, useState } from "react";
+import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import * as Crypto from "expo-crypto";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { AssistantBubble, UserBubble } from "../../src/chat-ui";
+import { phonePlayer } from "../../src/lib/audio";
 import { useChat } from "../../src/lib/chat";
+import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useDeviceSettings } from "../../src/lib/settings-store";
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
-/** The chat page (spec 15.2): the message list with cards, tables and chips, and the input at the bottom. */
+/**
+ * The chat page (spec 15.2): the message list with cards, tables and chips, and the input at the bottom. The speaker
+ * switch asks for the spoken reply too (speak: true, D88), played in sentence order.
+ */
 export default function Chat() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const { messages, busy, send, reset } = useChat();
   const [text, setText] = useState("");
+  const [speak, setSpeak] = useState(false);
+  const player = useRef<ReplyPlayer | null>(null);
   const [top, setTop] = useState(0);
   const box = useRef<View>(null);
   const list = useRef<ScrollView>(null);
   const newestReply = [...messages].reverse().find((message) => message.kind === "assistant");
 
+  useEffect(() => () => player.current?.stop(), []);
+
+  /** Sending options: with the speaker on, the reply's audio is played by a new player. */
+  const options = () => {
+    player.current?.stop();
+    if (!speak) return {};
+    const current = new ReplyPlayer(phonePlayer, Crypto.randomUUID());
+    player.current = current;
+    const tap = (event: ReplyEvent) => {
+      if (event.type === "audio") current.add(event.seq, event.data);
+      if (event.type === "done") current.end();
+    };
+    return { speak: true, tap };
+  };
+
   const submit = () => {
     const question = text.trim();
     if (!question || busy) return;
     setText("");
-    void send({ text: question });
+    void send({ text: question }, options());
   };
 
   return (
@@ -48,7 +72,7 @@ export default function Chat() {
                 newest={message.id === newestReply?.id}
                 busy={busy}
                 onChoose={(slot, option) =>
-                  void send({ choice: { slot, option_id: option.id }, label: option.label })
+                  void send({ choice: { slot, option_id: option.id }, label: option.label }, options())
                 }
               />
             ),
@@ -68,11 +92,15 @@ export default function Chat() {
           />
           <Button label={t("chat.send")} onPress={submit} disabled={busy || !text.trim()} />
         </View>
-        {messages.length > 0 && !busy ? (
-          <View style={styles.newRow}>
-            <Button label={t("chat.new")} kind="plain" onPress={reset} />
+        <View style={styles.newRow}>
+          <View style={styles.speakRow}>
+            <Switch value={speak} onValueChange={setSpeak} accessibilityLabel={t("chat.speak")} />
+            <Text style={styles.speakText}>{t("chat.speak")}</Text>
           </View>
-        ) : null}
+          {messages.length > 0 && !busy ? (
+            <Button label={t("chat.new")} kind="plain" onPress={reset} />
+          ) : null}
+        </View>
       </KeyboardAvoidingView>
     </View>
   );
@@ -103,5 +131,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.ink,
   },
-  newRow: { paddingHorizontal: 12, paddingBottom: 10 },
+  newRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+  },
+  speakRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  speakText: { fontSize: 16, color: colors.ink },
 });

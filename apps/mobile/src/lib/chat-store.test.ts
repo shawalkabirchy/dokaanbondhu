@@ -118,7 +118,7 @@ describe("chat store", () => {
       stream: jest.fn(() => new Promise<void>((resolve) => (finish = resolve))),
     });
     const first = useChat.getState().send({ text: "এক" });
-    await Promise.resolve();
+    while (!(deps.stream as jest.Mock).mock.calls.length) await Promise.resolve(); // the first reply has started
     await useChat.getState().send({ text: "দুই" });
     finish();
     await first;
