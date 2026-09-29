@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN } from "@dokaanbondhu/core";
+import { ASK_AGAIN, spokenText } from "@dokaanbondhu/core";
 import { aiProviders, createPlatform, messages, type Platform } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -223,9 +223,13 @@ describe.skipIf(!allLocal)("voice turns", () => {
     );
     expect(audio.map((event) => event.seq)).toEqual(texts.map((event) => event.seq));
     for (const event of audio) {
-      expect(Buffer.from(event.data, "base64")).toEqual(fakeMp3(texts[event.seq]!.text));
+      expect(Buffer.from(event.data, "base64")).toEqual(fakeMp3(spokenText(texts[event.seq]!.text)));
       expect(events.indexOf(event)).toBeGreaterThan(events.indexOf(texts[event.seq]!));
     }
+    // Text-to-speech gets the numbers as Bangla words; the screen keeps the digits (P7, D109).
+    expect(speech.ttsTexts.join(" ")).toContain("দুই হাজার চৌদ্দ");
+    expect(speech.ttsTexts.join(" ")).toContain("চার হাজার পাঁচশো টাকা");
+    expect(speech.ttsTexts.join(" ")).not.toMatch(/[০-৯]/);
     const done = events.at(-1)!;
     expect(done).toMatchObject({ type: "done", state: "IDLE" });
     expect((done as { timings_ms: Record<string, number> }).timings_ms).toMatchObject({

@@ -1,6 +1,7 @@
 export {
   catalogVersion,
   loadCatalog,
+  rackLabels,
   readCatalog,
   toCatalog,
   writeCatalog,

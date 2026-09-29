@@ -191,6 +191,68 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     },
   );
 
+  // From the end-to-end check (D108): the answer to "কোন গাড়ির?" had the year too, and it was asked again.
+  it.each([
+    {
+      style: "Bangla",
+      text: "সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", position: "সামনের" },
+      answer: "এক্সিও ২০১৪",
+    },
+    {
+      style: "Banglish",
+      text: "shamner brake pad ache?",
+      args: { part_type: "brake pad", position: "front" },
+      answer: "axio dui hajar choddo",
+    },
+  ])(
+    "takes the year said with the car in the answer to the car question, without the LLM (D108; $style)",
+    async ({ text, args, answer }) => {
+      const conversationId = await newConversation();
+      llm.script.push({ calls: [{ name: "find_parts", arguments: args }] });
+      const first = await chat({ conversation_id: conversationId, text });
+      expect(first.reply).toBe("কোন গাড়ির?");
+      const second = await chat({ conversation_id: conversationId, text: answer });
+      expect(llm.received).toHaveLength(1);
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড");
+    },
+  );
+
+  // The shop's own names said in the request reach the LLM as they are stored (D95, D108): in Bangla script too, and
+  // the words of a name are not taken for a part ("গ্যারেজের" sounds like grease) or a car ("তাকে কী" like Aqua).
+  it.each([
+    {
+      style: "Bangla",
+      text: "নিউ ঢাকা গ্যারেজের ফোন নম্বর কত?",
+      named: "customer New Dhaka Garage",
+      not: ["Grease"],
+    },
+    {
+      style: "Banglish",
+      text: "New Dhaka Garage er phone number koto?",
+      named: "customer New Dhaka Garage",
+      not: ["Grease"],
+    },
+    {
+      style: "Bangla",
+      text: "ইস্টার্ন লুব্রিকেন্টসের ফোন নম্বর দিন",
+      named: "supplier Eastern Lubricants",
+      not: [],
+    },
+    { style: "Bangla", text: "সি-২ তাকে কী কী আছে?", named: "rack C-2", not: ["Toyota Aqua"] },
+    { style: "Banglish", text: "C-2 rack e ki ki ache?", named: "rack C-2", not: ["Toyota Aqua"] },
+  ])(
+    "tells the LLM a customer, supplier or rack named in the request ($style: $text)",
+    async ({ text, named, not }) => {
+      llm.script.push({ text: "ঠিক আছে।" });
+      await chat({ conversation_id: await newConversation(), text });
+      const messagesSent = llm.received[0]!.messages as { role: string; content: string }[];
+      const request = messagesSent.at(-1)!.content;
+      expect(request).toContain(named);
+      for (const wrong of not) expect(request).not.toContain(wrong);
+    },
+  );
+
   it("sends profit to the app, gives the trace only with the evaluation key, and says so when the LLM is down", async () => {
     const conversationId = await newConversation();
     llm.script.push({ calls: [{ name: "get_report", arguments: { name: "profit_loss" } }] });

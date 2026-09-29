@@ -97,8 +97,8 @@ const SAME_PLACE = 0.5;
  * other N-best hypotheses (rank order, rank 0 first). Words of the hypotheses count only where they sound like the
  * said value, so "fit" in "axio 2014 e fit hobe" is not taken for Honda Fit. An exact normalized match scores 1.0,
  * else 0.9 x phonetic similarity (0 below 0.6), times the rank's weight; a candidate keeps its best score. Keys
- * shorter than two letters are not matched phonetically, and neither are words made only of number words ("এক", "ek",
- * "হাজার"): "এক" sounds like Aqua's "একুয়া" (D101).
+ * shorter than two letters are not matched phonetically, two-letter keys only between single words (D108), and words
+ * made only of number words ("এক", "ek", "হাজার") never: "এক" sounds like Aqua's "একুয়া" (D101).
  */
 export function matchConcept(
   concept: AliasConcept,
@@ -120,12 +120,19 @@ export function matchConcept(
     for (const gram of ngrams(normalized)) {
       const key = phoneticKey(gram.text);
       if (source.nearSaid && keySimilarity(key, saidKey) < SAME_PLACE) continue;
-      const numeric = gram.text.split(" ").every(isNumberWord);
+      const words = gram.text.split(" ");
+      const numeric = words.every(isNumberWord);
       const weight = source.weight;
       for (const term of terms) {
         const exact = gram.text === term.text;
+        // A two-letter key is too little to go on beyond one word: "toyota aqua" is "tk", and so are "তাকে কী" and
+        // "টাকা"; "e ki ki" is Aqua's "ek" (D108).
+        const tooShort =
+          Math.min(key.length, term.key.length) <= 2 && (words.length > 1 || term.text.includes(" "));
         const similarity =
-          exact || numeric || key.length < 2 || term.key.length < 2 ? 0 : keySimilarity(key, term.key);
+          exact || numeric || tooShort || key.length < 2 || term.key.length < 2
+            ? 0
+            : keySimilarity(key, term.key);
         const score = weight * matchScore(exact, similarity);
         if (score <= 0) continue;
         const current = best.get(term.value);

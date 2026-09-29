@@ -1,4 +1,5 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import { spokenText } from "@dokaanbondhu/core";
 import type { TtsProvider } from "@dokaanbondhu/engine/providers";
 import { logger } from "./singletons";
 
@@ -50,7 +51,8 @@ export class Speaker {
       cache.delete(text); // most recently used goes last
     } else {
       try {
-        bytes = (await this.tts.synthesize(text, { voice: this.voice })).bytes;
+        // Numbers as Bangla words: Parler-TTS misreads digits (P7, D109); the screen keeps them.
+        bytes = (await this.tts.synthesize(spokenText(text), { voice: this.voice })).bytes;
       } catch (error) {
         return this.fail(error);
       }

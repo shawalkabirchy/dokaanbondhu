@@ -91,6 +91,26 @@ export async function readCatalog(
   const since = new Date(now.getTime() - 30 * 86_400_000);
   const sold = await salesCounts(run, map, since);
 
+  // The rack labels each part is kept on, so a rack named in a request is known however it was said (D108).
+  const racks = new Map<string, Set<string>>();
+  if (hasField(map, "StockItem", "part_id") && hasField(map, "StockItem", "rack_location")) {
+    const rows = await run(
+      buildQuery(map, {
+        from: { concept: "StockItem", alias: "st" },
+        select: [
+          { ref: { alias: "st", field: "part_id" }, as: "part_id" },
+          { ref: { alias: "st", field: "rack_location" }, as: "rack" },
+        ],
+      }),
+    );
+    for (const row of rows) {
+      const rack = text(row.rack)?.trim();
+      if (!rack) continue;
+      const id = String(row.part_id);
+      racks.set(id, (racks.get(id) ?? new Set()).add(rack));
+    }
+  }
+
   if (hasField(map, "Part", "id") && hasField(map, "Part", "name")) {
     const attrFields = [
       "name_bn",
@@ -129,6 +149,8 @@ export async function readCatalog(
     for (const row of rows) {
       const attrs: Record<string, unknown> = { sold_30d: sold.parts.get(String(row.id)) ?? 0 };
       for (const item of extra) if (item.as !== "name_bn") attrs[item.as] = text(row[item.as]);
+      const kept = racks.get(String(row.id));
+      if (kept) attrs.racks = [...kept];
       out.push({
         concept: "part",
         hostId: String(row.id),
@@ -306,6 +328,14 @@ export function toCatalog(rows: (CatalogRow & { syncedAt?: Date })[]): Catalog {
     }
   }
   return catalog;
+}
+
+/** Every rack label the shop's stock is kept on (D108). */
+export function rackLabels(catalog: Catalog): string[] {
+  const labels = new Set<string>();
+  for (const part of catalog.parts)
+    if (Array.isArray(part.attrs.racks)) for (const rack of part.attrs.racks) labels.add(String(rack));
+  return [...labels];
 }
 
 /** The newest sync time of a connection's cache (the server polls this every 60 s). */

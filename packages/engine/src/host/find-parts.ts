@@ -285,6 +285,18 @@ async function extraRows(
   }));
 }
 
+/**
+ * The model year: its own argument, or else said with the car ("এক্সিও ২০১৪", "axio dui hajar choddo"), as in the
+ * answer to "কোন গাড়ির?" or a tool call that put both in the vehicle (D108). A year that is part of the model's own
+ * name is not one.
+ */
+function yearOf(query: PartQuery, model: string, now: Date | undefined): number | null {
+  const own = query.year ? parseYear(normalize(query.year).tokens, { now, bare: true }) : null;
+  if (own !== null || !query.vehicle) return own;
+  const withCar = parseYear(normalize(query.vehicle).tokens, { now });
+  return withCar !== null && !model.includes(String(withCar)) ? withCar : null;
+}
+
 export async function findParts(input: FindPartsInput): Promise<FindPartsResult> {
   const { query, catalog, dictionary } = input;
   const bold: string[] = [];
@@ -313,9 +325,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
     if (car?.value) {
       resolved.partType = match.exact;
       resolved.vehicle = car.value;
-      resolved.year = query.year
-        ? parseYear(normalize(query.year).tokens, { now: input.now, bare: true })
-        : null;
+      resolved.year = yearOf(query, car.value, input.now);
       resolved.engine = query.engine ? parseEngineCode(normalize(query.engine).tokens) : null;
       const vehicles = matchVehicles(car.value, resolved.year, resolved.engine, catalog.vehicles);
       if (vehicles.needsYear) {
@@ -348,7 +358,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
   if (model.unclear || !model.value)
     return { kind: "ask", slot: "vehicle", options: model.options, resolved };
   resolved.vehicle = model.value;
-  resolved.year = query.year ? parseYear(normalize(query.year).tokens, { now: input.now, bare: true }) : null;
+  resolved.year = yearOf(query, model.value, input.now);
   resolved.engine = query.engine ? parseEngineCode(normalize(query.engine).tokens) : null;
   for (const slot of ["position", "quality", "brand"] as const) {
     const value = understood(slot, query[slot], input, bold);

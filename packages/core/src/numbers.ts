@@ -106,6 +106,11 @@ const SPOKEN: ReadonlyMap<string, string> = new Map([
   ),
 ]);
 
+/** One sign said on its own: a spelled letter or digit ("সি", "see", "ওয়ান") or a single digit, lower case. */
+export function spokenSign(token: string): string | null {
+  return SPOKEN.get(nfc(token)) ?? (/^[0-9]$/.test(asciiDigits(token)) ? asciiDigits(token) : null);
+}
+
 /**
  * An engine code from tokens: written (1nz, 1nz-fe) or spelled one sign at a time (one en zed, ওয়ান এন জেড). The
  * longest run of spelled signs (at least two) that contains a letter and a digit, upper-cased.
@@ -118,7 +123,7 @@ export function parseEngineCode(tokens: readonly string[]): string | null {
   let best = "";
   let run = "";
   for (const token of [...tokens, ""]) {
-    const sign = SPOKEN.get(nfc(token)) ?? (/^[0-9]$/.test(asciiDigits(token)) ? asciiDigits(token) : null);
+    const sign = spokenSign(token);
     if (sign !== null) {
       run += sign;
       continue;

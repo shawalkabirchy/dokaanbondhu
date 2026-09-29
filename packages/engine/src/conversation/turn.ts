@@ -9,9 +9,11 @@ import {
   isGrounded,
   matchConcept,
   money,
+  namesInText,
   noFitmentAnswer,
   normalize,
   partPhrase,
+  racksInText,
   partsAnswer,
   quantity,
   question,
@@ -29,7 +31,7 @@ import {
   type QuestionSlot,
 } from "@dokaanbondhu/core";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
-import type { Catalog } from "../host/catalog";
+import { rackLabels, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
 import { ReadQueryRejected, runReadQuery, TABLE_ROWS, type ReadQueryResult } from "../host/read-query";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
@@ -360,35 +362,32 @@ export async function runTurn(
   hypotheses.forEach((hypothesis) => normalize(hypothesis, deps.dictionary.variants));
   mark("normalize", since);
   since = Date.now();
+  // The shop's own customers, suppliers and racks named in the request, as stored, so the LLM knows "Eastern
+  // Lubricants" is one of them and "সি-২" is rack C-2 (D95, D108). The words of a name are not also a car or a part:
+  // "গ্যারেজের" in "নিউ ঢাকা গ্যারেজের" is not grease.
+  const named = [
+    ...namesInText(
+      text,
+      [
+        ...deps.host.catalog.customers.map((customer) => ({ kind: "customer", name: customer.name })),
+        ...deps.host.catalog.suppliers.map((supplier) => ({ kind: "supplier", name: supplier.name })),
+      ],
+      deps.dictionary,
+    ),
+    ...racksInText(text, rackLabels(deps.host.catalog)),
+  ];
+  const inName = (heard: string) => named.some((name) => ` ${name.heard} `.includes(` ${heard} `));
   const candidates = (["part_type", "vehicle_model", "quality", "position"] as const)
     .map((concept) => {
       const best = hypotheses[0]
-        ? matchConcept(concept, hypotheses[0], others, deps.dictionary).candidates[0]
+        ? matchConcept(concept, hypotheses[0], others, deps.dictionary).candidates.find(
+            (candidate) => !inName(candidate.heard),
+          )
         : undefined;
       return best && best.score >= 0.7 ? `${concept} ${best.value} (${best.score.toFixed(2)})` : null;
     })
     .filter(Boolean) as string[];
-  // The shop's own customers and suppliers named in the request, so the LLM knows "Eastern Lubricants" is one of
-  // them and not an outside company (D95).
-  const said = ` ${normalize(text, deps.dictionary.variants).tokens.join(" ")} `;
-  const named = (kind: string, names: string[]) =>
-    names
-      .filter((name) => {
-        const tokens = normalize(name, deps.dictionary.variants).tokens;
-        return tokens.length > 0 && said.includes(` ${tokens.join(" ")} `);
-      })
-      .slice(0, 3)
-      .map((name) => `${kind} ${name}`);
-  candidates.push(
-    ...named(
-      "customer",
-      deps.host.catalog.customers.map((customer) => customer.name),
-    ),
-    ...named(
-      "supplier",
-      deps.host.catalog.suppliers.map((supplier) => supplier.name),
-    ),
-  );
+  candidates.push(...named.map((name) => `${name.kind} ${name.name}`));
   mark("candidates", since);
 
   const facts: Facts = { allowed: new AllowedFacts() };

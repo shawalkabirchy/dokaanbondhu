@@ -62,6 +62,29 @@ describe("matching (spec 10.2, 10.3)", () => {
     }
   });
 
+  // From the end-to-end check (D108): "toyota aqua" has the two-letter key "tk", and so have "তাকে" (on the rack) and
+  // "টাকা"; "e ki ki" has Aqua's "ek".
+  it.each([
+    { style: "Bangla", said: "সি-২ তাকে কী কী আছে?" },
+    { style: "Bangla", said: "দাম কত টাকা?" },
+    { style: "Banglish", said: "C-2 rack e ki ki ache?" },
+    { style: "Banglish", said: "dam koto taka?" },
+  ])("never takes a few everyday words for Aqua ($style: $said)", ({ said }) => {
+    const aqua = matchConcept("vehicle_model", said, [], dictionary).candidates.find(
+      (candidate) => candidate.value === "Toyota Aqua",
+    );
+    expect(aqua?.score ?? 0).toBeLessThan(0.7);
+  });
+
+  it.each([
+    { style: "Bangla", said: "একোয়া" },
+    { style: "Banglish", said: "akoya" },
+  ])("still hears a short name spelled differently ($style)", ({ said }) => {
+    const match = matchConcept("vehicle_model", said, [], dictionary);
+    expect(match.candidates[0]).toMatchObject({ value: "Toyota Aqua", exact: false });
+    expect(match.decision).not.toBe("unclear");
+  });
+
   it.each([
     { style: "Bangla", said: "এক সি ও দুই হাজার চৌদ্দ" },
     { style: "Banglish", said: "axio dui hajar choddo" },
