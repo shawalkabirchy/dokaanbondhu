@@ -82,11 +82,7 @@ const llmAnswer = proposalSchema.parse({
     {
       concept: "Sale",
       host_table: "bills",
-      fields: [
-        field("id", "bills.id"),
-        field("total", "bills.total", 100),
-        field("payment_type", "bills.status"),
-      ],
+      fields: [field("id", "bills.id"), field("total", "bills.total"), field("payment_type", "bills.status")],
     },
     {
       concept: "SaleItem",
@@ -101,7 +97,7 @@ const llmAnswer = proposalSchema.parse({
     {
       concept: "Payment",
       host_table: "receipts",
-      fields: [field("id", "receipts.id"), field("amount", "receipts.amount", 100)],
+      fields: [field("id", "receipts.id"), field("amount", "receipts.amount")],
     },
   ],
 });
