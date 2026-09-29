@@ -1,8 +1,18 @@
 import { randomInt, randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
 import { HostPools, runSpeechCheck, syncConnection } from "@dokaanbondhu/engine/host";
-import { llmChain, llmStream, sidesFrom, type ToolDef } from "@dokaanbondhu/engine/providers";
+import {
+  llmChain,
+  llmStream,
+  OWN_SIDE,
+  selectProviders,
+  sidesFrom,
+  sttAdapter,
+  ttsAdapter,
+  type ToolDef,
+} from "@dokaanbondhu/engine/providers";
 import {
   aiProviders,
   connections,
@@ -291,6 +301,43 @@ const commands: Record<string, Command> = {
     out(`provider: ${provider}`);
     out(`timings (ms from the request): ${JSON.stringify(marks)}; total ${Date.now() - started}`);
     out(`reasoning characters: ${reasoningChars}${text ? `; text: ${text}` : ""}`);
+  },
+
+  /**
+   * try-tts --shop <id> --text <text> --out <file.mp3> [--voice <v>]: our own voice says the text into an MP3 for a
+   * listening check (proof P7), and our own speech-to-text writes down what it hears as a first hint. Test data only.
+   */
+  "try-tts": async (platform, args) => {
+    const { values } = parseArgs({
+      args,
+      options: {
+        shop: { type: "string" },
+        text: { type: "string" },
+        out: { type: "string" },
+        voice: { type: "string" },
+      },
+    });
+    const shopId = uuid.parse(values.shop);
+    const text = z.string().min(1).parse(values.text);
+    const file = z.string().endsWith(".mp3").parse(values.out);
+    if (!env.success) throw new Error("unreachable");
+    const aesKey = parseAesKey(env.data.AES_KEY);
+    const rows = await platform.withAdmin((tx) =>
+      tx
+        .select()
+        .from(aiProviders)
+        .where(sql`${aiProviders.shopId} = ${shopId} or ${aiProviders.shopId} is null`),
+    );
+    const used = selectProviders(rows, shopId, OWN_SIDE);
+    const tts = used.tts ? ttsAdapter(used.tts, aesKey) : null;
+    const stt = used.stt ? sttAdapter(used.stt, aesKey) : null;
+    if (!tts || !stt) throw new Error("no own speech worker applies to this shop");
+    const started = Date.now();
+    const audio = await tts.synthesize(text, { voice: values.voice ?? "aditi" });
+    await writeFile(file, audio.bytes);
+    out(`saved ${file} (${audio.bytes.length} bytes, ${Date.now() - started} ms)`);
+    const heard = await stt.transcribe(audio.bytes, { keyterms: [], nbest: 1, lowConfidenceBelow: 0.5 });
+    out(`speech-to-text heard: ${heard.text}`);
   },
 
   /** list-shops */
