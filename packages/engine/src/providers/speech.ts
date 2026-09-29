@@ -62,10 +62,10 @@ export interface SpeechWorkerConfig {
 }
 
 // Timeouts (spec 13.4): 10 s to transcribe, 8 s per sentence to speak; Modal may first have to start the container
-// (P2: up to 193 s), so with Modal both are 240 s.
+// (P2: up to 193 s; over 240 s after a laptop restart on 29 Sep, D101), so with Modal both are 360 s.
 const STT_TIMEOUT_MS = 10_000;
 const TTS_TIMEOUT_MS = 8_000;
-const MODAL_TIMEOUT_MS = 240_000;
+const MODAL_TIMEOUT_MS = 360_000;
 
 function authHeaders(config: SpeechWorkerConfig): Record<string, string> {
   if (!config.secret || config.auth === "none") return {};

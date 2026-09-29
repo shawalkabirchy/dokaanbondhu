@@ -142,7 +142,8 @@ export function AssistantBubble(props: {
           <Text style={styles.bubbleText}>{text}</Text>
         </View>
       ) : null}
-      {message.status && !message.done ? (
+      {/* The spinner shows only until the answer's text arrives; its audio may still be on the way (D101). */}
+      {message.status && !message.done && !text ? (
         <View style={styles.statusRow}>
           <ActivityIndicator color={colors.green} />
           <Text style={styles.muted}>{t(message.status)}</Text>

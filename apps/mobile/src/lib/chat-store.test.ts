@@ -124,4 +124,36 @@ describe("chat store", () => {
     await first;
     expect(deps.stream).toHaveBeenCalledTimes(1);
   });
+
+  // D101: the reply's audio keeps coming after its text; the user must not wait for it to ask again.
+  it("is ready for the next question once the whole answer text is there, while its audio still streams", async () => {
+    let finishFirst: () => void = () => {};
+    let finishSecond: () => void = () => {};
+    let emitFirst: (event: ReplyEvent) => void = () => {};
+    const { useChat, deps } = store([], {
+      stream: jest.fn(async (_path, _body, onEvent) => {
+        if ((deps.stream as jest.Mock).mock.calls.length === 1) {
+          emitFirst = onEvent;
+          await new Promise<void>((resolve) => (finishFirst = resolve));
+        } else {
+          await new Promise<void>((resolve) => (finishSecond = resolve));
+        }
+      }),
+    });
+    const first = useChat.getState().send({ text: "নোয়ার সেলফ আছে?" });
+    while (!(deps.stream as jest.Mock).mock.calls.length) await Promise.resolve();
+    emitFirst({ type: "text", seq: 0, text: "কোন বছরের নোয়া?", final: true });
+    expect(useChat.getState().busy).toBe(false); // the audio is still on its way
+
+    const second = useChat.getState().send({ text: "২০১৬" });
+    expect(useChat.getState().busy).toBe(true);
+    finishFirst(); // the first turn's stream ends late
+    await first;
+    expect(useChat.getState().busy).toBe(true); // it does not end the newer turn's busy state
+    while ((deps.stream as jest.Mock).mock.calls.length < 2) await Promise.resolve();
+    finishSecond();
+    await second;
+    expect(useChat.getState().busy).toBe(false);
+    expect(deps.stream).toHaveBeenCalledTimes(2);
+  });
 });

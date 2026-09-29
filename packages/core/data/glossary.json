@@ -284,7 +284,7 @@
   {
     "target_concept": "vehicle_model",
     "target_value": "Toyota Axio",
-    "bn": ["এক্সিও", "এক্সিয়ো"],
+    "bn": ["এক্সিও", "এক্সিয়ো", "এক জিও", "একজিও", "এক সি ও", "এক সিও", "এক্সি ও", "এসিও"],
     "latin": ["axio", "exio", "aksio"]
   },
   {

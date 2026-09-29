@@ -22,6 +22,21 @@ describe("years (spec 10.5)", () => {
     expect(parseYear(tokens("14"), { now, bare: true })).toBe(2014);
   });
 
+  // Speech-to-text writes years in words (D101); "দুই" alone must never become 2002.
+  it.each([
+    { style: "Bangla", said: "দুই হাজার চৌদ্দ", year: 2014 },
+    { style: "Bangla", said: "এক্সিও দুই হাজার ষোল সালের", year: 2016 },
+    { style: "Bangla", said: "উনিশ শো নিরানব্বই", year: 1999 },
+    { style: "Banglish", said: "dui hajar choddo", year: 2014 },
+    { style: "Banglish", said: "axio dui hajar sholo saler", year: 2016 },
+    { style: "Banglish", said: "unish sho nobbui", year: 1990 },
+    { style: "Bangla", said: "এক জিও দুই হাজার চৌদ্দ এর সামনে ব্রেকপ্যান আছে", year: 2014 },
+    { style: "Banglish", said: "ek jio dui hajar choddo er samne brake pad ache", year: 2014 },
+  ])("reads a year said in words: $said ($style)", ({ said, year }) => {
+    expect(parseYear(tokens(said), { now })).toBe(year);
+    expect(parseYear(tokens(said), { now, bare: true })).toBe(year);
+  });
+
   it("expands two digits to 2000 + n up to next year, else 1900 + n", () => {
     expect(expandYear(27, now)).toBe(2027);
     expect(expandYear(28, now)).toBe(1928);

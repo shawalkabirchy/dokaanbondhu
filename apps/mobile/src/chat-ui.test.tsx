@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react-native";
-import { PartCards, ResultTable } from "./chat-ui";
+import { AssistantBubble, PartCards, ResultTable } from "./chat-ui";
+import type { AssistantMessage } from "./lib/chat-store";
 
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 
@@ -66,5 +67,26 @@ describe("reply content", () => {
     expect(screen.getByText("chat.prices.retail: ৪,৫০০ টাকা")).toBeTruthy();
     expect(screen.getByText("chat.rack: B-3")).toBeTruthy();
     expect(screen.getByText("chat.no_fitment")).toBeTruthy();
+  });
+
+  it("shows the working spinner only until the answer's text arrives, though its audio may still come (D101)", async () => {
+    const reply = (texts: string[]): AssistantMessage => ({
+      kind: "assistant",
+      id: "r1",
+      turnId: null,
+      status: "status.searching",
+      texts,
+      cards: [],
+      tables: [],
+      choices: null,
+      error: null,
+      done: false,
+    });
+    const props = { language: "bn" as const, newest: true, busy: false, onChoose: () => undefined };
+    const { rerender } = await render(<AssistantBubble message={reply([])} {...props} />);
+    expect(screen.getByText("status.searching")).toBeTruthy();
+    await rerender(<AssistantBubble message={reply(["কোন বছরের নোয়া?"])} {...props} />);
+    expect(screen.queryByText("status.searching")).toBeNull();
+    expect(screen.getByText("কোন বছরের নোয়া?")).toBeTruthy();
   });
 });

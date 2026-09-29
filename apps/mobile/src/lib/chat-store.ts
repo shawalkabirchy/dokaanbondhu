@@ -103,6 +103,11 @@ export function createChatStore(deps: ChatDeps) {
         ),
       }));
     let opening: Promise<string> | null = null;
+    /** The newest turn's reply: only it may end the busy state, so an older turn that finishes late cannot. */
+    let active: string | null = null;
+    const release = (replyId: string) => {
+      if (active === replyId) set({ busy: false });
+    };
 
     const ensureConversation = async () => {
       const current = get().conversationId;
@@ -125,6 +130,7 @@ export function createChatStore(deps: ChatDeps) {
       if (get().busy) return;
       const userId = deps.newId();
       const replyId = deps.newId();
+      active = replyId;
       set((state) => ({
         busy: true,
         messages: [
@@ -156,6 +162,8 @@ export function createChatStore(deps: ChatDeps) {
           } else {
             update(replyId, (message) => applyEvent(message, event));
           }
+          // The whole answer is on screen: the next question may start; the stream goes on only for the audio (D101).
+          if (event.type === "text" && event.final) release(replyId);
           tap?.(event);
         });
       } catch (error) {
@@ -166,7 +174,7 @@ export function createChatStore(deps: ChatDeps) {
         update(replyId, (message) => ({ ...message, error: key }));
       } finally {
         update(replyId, (message) => ({ ...message, status: null, done: true }));
-        set({ busy: false });
+        release(replyId);
       }
     };
 
@@ -176,7 +184,10 @@ export function createChatStore(deps: ChatDeps) {
       busy: false,
       ensureConversation,
       runTurn,
-      reset: () => set({ conversationId: null, messages: [], busy: false }),
+      reset: () => {
+        active = null;
+        set({ conversationId: null, messages: [], busy: false });
+      },
       send: (input, options = {}) =>
         runTurn(
           "text" in input ? input.text : input.label,

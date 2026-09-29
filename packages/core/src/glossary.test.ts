@@ -47,4 +47,27 @@ describe("matching (spec 10.2, 10.3)", () => {
     expect(near.candidates[0]?.exact).toBe(false);
     expect(matchConcept("part_type", "xyzzy", [], dictionary).decision).toBe("unclear");
   });
+
+  // From the first voice test on the emulator (D101): Whisper wrote "এক্সিও" as "এক জিও", and "এক" (one) sounds like
+  // Aqua's "একুয়া".
+  it("understands Axio as Whisper splits it, and never takes a number word for a car", () => {
+    const heard = "এক জিও দুই হাজার চৌদ্দ এর সামনে ব্রেকপ্যান আছে";
+    const axio = matchConcept("vehicle_model", heard, [], dictionary);
+    expect(axio.decision).toBe("understood");
+    expect(axio.candidates[0]).toMatchObject({ value: "Toyota Axio", exact: true });
+    const aqua = axio.candidates.find((candidate) => candidate.value === "Toyota Aqua");
+    expect(aqua?.score ?? 0).toBeLessThan(0.7);
+    for (const said of ["এক", "ek", "হাজার", "hajar", "দুই হাজার চৌদ্দ", "dui hajar choddo"]) {
+      expect(matchConcept("vehicle_model", said, [], dictionary).candidates, said).toEqual([]);
+    }
+  });
+
+  it.each([
+    { style: "Bangla", said: "এক সি ও দুই হাজার চৌদ্দ" },
+    { style: "Banglish", said: "axio dui hajar choddo" },
+  ])("understands Axio with a year said in words ($style)", ({ said }) => {
+    const match = matchConcept("vehicle_model", said, [], dictionary);
+    expect(match.decision).toBe("understood");
+    expect(match.candidates[0]?.value).toBe("Toyota Axio");
+  });
 });

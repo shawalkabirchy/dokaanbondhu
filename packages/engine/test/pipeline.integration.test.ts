@@ -414,4 +414,51 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       for (const row of table.rows) expect(Number(row[2]) % 100).toBe(0); // whole taka, carried in paisa
     },
   );
+  // From the first voice test on the emulator (D101): Whisper split "এক্সিও" into "এক জিও" and wrote the year in words.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক জিও দুই হাজার চৌদ্দ এর সামনে ব্রেকপ্যান আছে",
+      args: { part_type: "ব্রেকপ্যান", vehicle: "এক জিও", year: "দুই হাজার চৌদ্দ", position: "সামনে" },
+    },
+    {
+      style: "Banglish",
+      text: "axio dui hajar choddo er samne brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "dui hajar choddo", position: "samne" },
+    },
+  ])(
+    "understands Axio as speech-to-text splits it and a year said in words, never another car (D101; $style)",
+    async ({ text, args }) => {
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+      const { reply, outcome } = await turn(text, fresh(), [llm]);
+      expect(reply).toBe(a1Answer);
+      expect(outcome.state.context.vehicle).toMatchObject({ model: "Toyota Axio", year: 2014 });
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নোয়ার সেলফ আছে?",
+      args: { part_type: "সেলফ", vehicle: "নোয়া" },
+      year: "দুই হাজার ষোল",
+    },
+    {
+      style: "Banglish",
+      text: "noah er self ache?",
+      args: { part_type: "self", vehicle: "noah" },
+      year: "dui hajar sholo",
+    },
+  ])(
+    "takes a year said in words as the answer to the year question, not 2002 (D101; $style)",
+    async ({ text, args, year }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(first.reply).toBe("কোন বছরের নোয়া?");
+      const second = await turn(year, first.outcome.state, [scripted([])]);
+      expect(second.outcome.meta.llm_calls).toBe(0);
+      expect(second.reply).toContain("নোয়া ২০১৬-এর");
+    },
+  );
 });

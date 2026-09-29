@@ -7,6 +7,7 @@ import {
   phoneticKey,
   type Understanding,
 } from "./phonetic";
+import { isNumberWord } from "./numbers";
 import { normalize, type Normalized } from "./text";
 
 // Alias dictionary (spec 10.2): the global glossary plus the shop's aliases (owner-added and imported from the host).
@@ -96,7 +97,8 @@ const SAME_PLACE = 0.5;
  * other N-best hypotheses (rank order, rank 0 first). Words of the hypotheses count only where they sound like the
  * said value, so "fit" in "axio 2014 e fit hobe" is not taken for Honda Fit. An exact normalized match scores 1.0,
  * else 0.9 x phonetic similarity (0 below 0.6), times the rank's weight; a candidate keeps its best score. Keys
- * shorter than two letters are not matched phonetically.
+ * shorter than two letters are not matched phonetically, and neither are words made only of number words ("এক", "ek",
+ * "হাজার"): "এক" sounds like Aqua's "একুয়া" (D101).
  */
 export function matchConcept(
   concept: AliasConcept,
@@ -118,10 +120,12 @@ export function matchConcept(
     for (const gram of ngrams(normalized)) {
       const key = phoneticKey(gram.text);
       if (source.nearSaid && keySimilarity(key, saidKey) < SAME_PLACE) continue;
+      const numeric = gram.text.split(" ").every(isNumberWord);
       const weight = source.weight;
       for (const term of terms) {
         const exact = gram.text === term.text;
-        const similarity = exact || key.length < 2 || term.key.length < 2 ? 0 : keySimilarity(key, term.key);
+        const similarity =
+          exact || numeric || key.length < 2 || term.key.length < 2 ? 0 : keySimilarity(key, term.key);
         const score = weight * matchScore(exact, similarity);
         if (score <= 0) continue;
         const current = best.get(term.value);

@@ -21,6 +21,19 @@ export function wordNumber(token: string): number | null {
   return NUMBER_WORDS.get(nfc(token)) ?? null;
 }
 
+/** Words that go with numbers: thousand, hundred, lakh, and the year words (model, sal). */
+const NUMBER_CONTEXT = new Set(
+  ["হাজার", "hajar", "hazar", "শো", "শ", "sho", "লাখ", "lakh", ...YEAR_WORDS].map(nfc),
+);
+
+/**
+ * A number word or a word that goes with numbers ("এক", "ek", "হাজার", "সাল"). Such words are never matched to a car,
+ * part or brand by sound: "এক" sounds like Aqua's "একুয়া" (D101).
+ */
+export function isNumberWord(token: string): boolean {
+  return wordNumber(token) !== null || NUMBER_CONTEXT.has(nfc(token));
+}
+
 /** A two-digit year: 2000 + n up to next year, else 1900 + n. */
 export function expandYear(twoDigits: number, now: Date = new Date()): number {
   const limit = (now.getFullYear() % 100) + 1;
@@ -31,19 +44,46 @@ function isYear(value: number, now: Date): boolean {
   return value >= 1980 && value <= now.getFullYear() + 1;
 }
 
+const THOUSAND = new Set(["হাজার", "hajar", "hazar"].map(nfc));
+const HUNDRED = new Set(["শো", "শ", "sho", "so"].map(nfc));
+const NINETEEN_HUNDRED = new Set(["উনিশশো", "unishsho", "unisho"].map(nfc));
+
 /**
- * The model year in normalized tokens: four digits from 1980 to next year; or a two-digit number (digits or words)
- * next to model, sal, saler or their Bangla words. `bare` accepts a two-digit number on its own, for a value that
- * was said as the year (a tool's year argument).
+ * A year said in words, as speech-to-text writes it (D101): "দুই হাজার চৌদ্দ" / "dui hajar choddo" (2014),
+ * "উনিশ শো নিরানব্বই" / "unish sho nobbui" (1999), "উনিশশো নিরানব্বই".
+ */
+function spokenYear(tokens: readonly string[], index: number): number | null {
+  const at = (offset: number) => nfc(tokens[index + offset] ?? "");
+  const rest = (offset: number) => {
+    const value = wordNumber(tokens[index + offset] ?? "");
+    return value !== null && value < 100 ? value : 0;
+  };
+  const first = wordNumber(tokens[index] ?? "");
+  if ((first === 1 || first === 2) && THOUSAND.has(at(1))) return first * 1000 + rest(2);
+  if (first === 19 && HUNDRED.has(at(1))) return 1900 + rest(2);
+  if (NINETEEN_HUNDRED.has(at(0))) return 1900 + rest(1);
+  return null;
+}
+
+/**
+ * The model year in normalized tokens: four digits from 1980 to next year; a year said in words ("দুই হাজার চৌদ্দ");
+ * or a two-digit number (digits or words) next to model, sal, saler or their Bangla words. `bare` accepts a two-digit
+ * number on its own, for a value that was said as the year (a tool's year argument).
  */
 export function parseYear(
   tokens: readonly string[],
   options: { now?: Date; bare?: boolean } = {},
 ): number | null {
   const now = options.now ?? new Date();
+  // A whole year anywhere wins over a two-digit form, so the "এক" of "এক জিও দুই হাজার চৌদ্দ" is not 2001.
   for (let index = 0; index < tokens.length; index += 1) {
     const token = asciiDigits(tokens[index] ?? "");
     if (/^\d{4}$/.test(token) && isYear(Number(token), now)) return Number(token);
+    const spoken = spokenYear(tokens, index);
+    if (spoken !== null && isYear(spoken, now)) return spoken;
+  }
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = asciiDigits(tokens[index] ?? "");
     const value = wordNumber(tokens[index] ?? "");
     if (value === null || value > 99 || (/^\d+$/.test(token) && token.length > 2)) continue;
     const nextToYearWord = [tokens[index - 1], tokens[index + 1]].some(
