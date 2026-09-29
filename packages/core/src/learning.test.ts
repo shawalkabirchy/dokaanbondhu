@@ -49,4 +49,30 @@ describe("the listening check's spellings (D102 A)", () => {
   it("drops a wild guess that does not sound like the name", () => {
     expect(checkedSpellings("নোয়া", ["রেক্ষ আছে", "মাছ আছে"], dictionary).keep).toEqual([]);
   });
+
+  // D105, from the first live check: only spellings the matcher misses are worth the owner's time.
+  it("suggests only what the matcher would miss, and drops the carrier word however it was written", () => {
+    const axio = { concept: "vehicle_model" as const, value: "Toyota Axio" };
+    expect(checkedSpellings("এক্সিও", ["এক্সেও আছে"], dictionary, axio).keep).toEqual([]); // understood anyway
+    // "বক্স" alone sounds like Voxy's "ভক্সি", so the split Probox is ambiguous: worth suggesting.
+    const probox = { concept: "vehicle_model" as const, value: "Toyota Probox" };
+    expect(checkedSpellings("প্রোবক্স", ["প্রো বক্স আছে"], dictionary, probox).keep).toEqual(["প্রো বক্স"]);
+    const alternator = { concept: "part_type" as const, value: "Alternator" };
+    expect(
+      checkedSpellings("ডায়নামো", ["ডায়ালাম আছে", "ডায়ালমও আছি"], dictionary, alternator).keep,
+    ).toEqual(["ডায়ালাম", "ডায়ালমও"]);
+    const pads = checkedSpellings("ব্রেক প্যাড", ["ব্রেক প্যাড আছি", "ব্রেক প্যাড আছেই"], dictionary, {
+      concept: "part_type",
+      value: "Brake Pad",
+    });
+    expect(pads).toEqual({ heard: ["ব্রেক প্যাড"], keep: [] });
+  });
+
+  it.each([
+    { style: "Bangla", hypothesis: "ডায়ালাম আছে" },
+    { style: "Banglish", hypothesis: "dayalam ache" },
+  ])("drops the carrier word in both scripts ($style)", ({ hypothesis }) => {
+    const { heard } = checkedSpellings("ডায়নামো", [hypothesis], dictionary);
+    expect(heard[0]?.split(" ")).toHaveLength(1);
+  });
 });

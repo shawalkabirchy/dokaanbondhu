@@ -36,7 +36,7 @@ export const PUT = route<{ id: string }>(
           aliasPhonetic: phoneticKey(word.heard),
           targetConcept: word.targetConcept,
           targetValue: word.targetValue,
-          source: "learned",
+          source: word.origin === "listening" ? "asr_check" : "learned",
         });
       }
       await tx

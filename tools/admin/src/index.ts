@@ -342,8 +342,8 @@ const commands: Record<string, Command> = {
 
   /**
    * speech-check --shop <id> [--limit <n>]: the listening check now (D102 A), the same code as the worker's
-   * speech.calibrate job: our voice says each unchecked car model and part type, our speech-to-text writes it down,
-   * and new spellings become the shop's words. Test data only.
+   * speech.calibrate job: both our voices say each unchecked car model and part type, our speech-to-text writes it
+   * down, and the spellings worth adding are suggested to the owner in setup (D105). Test data only.
    */
   "speech-check": async (platform, args) => {
     const { values } = parseArgs({
@@ -369,7 +369,7 @@ const commands: Record<string, Command> = {
       { ...(values.limit ? { limit: Number(values.limit) } : {}), log: out },
     );
     out(
-      `checked ${result.checked}, words added ${result.added}, skipped ${result.skipped}, left ${result.left}` +
+      `checked ${result.checked}, suggested ${result.suggested}, skipped ${result.skipped}, left ${result.left}` +
         (result.stopped ? `; stopped: ${result.stopped}` : ""),
     );
   },

@@ -22,6 +22,7 @@ import {
   MESSAGE_ROLES,
   PROVIDER_JOBS,
   PROVIDERS,
+  SUGGESTION_ORIGINS,
   SUGGESTION_STATUSES,
   VERIFY_STATUSES,
 } from "./enums";
@@ -173,8 +174,9 @@ export const aliases = pgTable(
 );
 
 /**
- * Words learned from answered questions (D102 B): what a request had for a car, part type or brand that needed a
- * question, and what the answer was. Seen twice, it is offered to the owner, who adds it as an alias or dismisses it.
+ * Words the owner may add (D102, D105): from answered questions (what a request had for a car or part type that needed
+ * a question, and what the answer was; offered once seen twice) or from the listening check (offered at once). The
+ * owner adds one as an alias or dismisses it.
  */
 export const aliasSuggestions = pgTable(
   "alias_suggestions",
@@ -186,6 +188,7 @@ export const aliasSuggestions = pgTable(
     heard: text("heard").notNull(),
     targetConcept: text("target_concept").notNull(),
     targetValue: text("target_value").notNull(),
+    origin: text("origin").notNull().default("answers"),
     seen: integer("seen").notNull().default(1),
     status: text("status").notNull().default("open"),
     lastSeenAt: timestamptz("last_seen_at")
@@ -196,6 +199,7 @@ export const aliasSuggestions = pgTable(
   (t) => [
     check("alias_suggestions_target_concept_check", oneOf(t.targetConcept, ALIAS_TARGETS)),
     check("alias_suggestions_status_check", oneOf(t.status, SUGGESTION_STATUSES)),
+    check("alias_suggestions_origin_check", oneOf(t.origin, SUGGESTION_ORIGINS)),
     uniqueIndex("alias_suggestions_unique").on(t.shopId, t.heard, t.targetConcept, t.targetValue),
   ],
 );

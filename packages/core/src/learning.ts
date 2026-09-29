@@ -1,11 +1,11 @@
-import { type AliasConcept, type Dictionary, type GlossaryEntry } from "./glossary";
+import { matchConcept, type AliasConcept, type Dictionary, type GlossaryEntry } from "./glossary";
 import { isNumberWord } from "./numbers";
 import { keySimilarity, phoneticKey } from "./phonetic";
 import { isBangla, normalize } from "./text";
 
-// How each shop learns its own words (D102): the listening check writes down how speech-to-text spells the shop's car
-// and part names, and answered questions show how a name was heard. Both give words that become the shop's aliases;
-// these rules decide which words are safe to keep.
+// How each shop learns its own words (D102, D105): the listening check writes down how speech-to-text spells the shop's
+// car and part names, and answered questions show how a name was heard. Both give suggestions the owner adds as the
+// shop's aliases (or dismisses); these rules decide which words are worth suggesting.
 
 /** A shop's alias rows as glossary entries, so they join the dictionary (Bangla spellings apart from Latin ones). */
 export function aliasEntries(
@@ -37,30 +37,39 @@ export function learnableWords(heard: string, dictionary: Dictionary): string | 
   return text;
 }
 
-/** Words the carrier phrase of the listening check adds after the name ("… আছে?"), dropped from what was heard. */
-const CARRIER = /^(আছে|আছেন|আছে কি|ache|achhe)$/;
+/**
+ * The carrier word of the listening check ("… আছে?") as speech-to-text writes it (আছে, আছি, আছেই, আছেন; Banglish
+ * ache, achi), dropped from what was heard.
+ */
+const CARRIER = /^(আছ\S*|ach\S*|কি|ki)$/;
 
 /**
- * What the listening check keeps from one name's speech-to-text hypotheses (D102 A): the best two, without the
- * carrier word, that are learnable and sound at least half like the name (so a wild guess is never kept).
+ * What the listening check suggests from one name's speech-to-text hypotheses (D102 A, D105): of the best two, without
+ * the carrier word, the spellings that are learnable, sound at least half like the name (so a wild guess is never
+ * kept), and are not already understood as this name by the matcher (no need to suggest those).
  */
 export function checkedSpellings(
   spoken: string,
   hypotheses: readonly string[],
   dictionary: Dictionary,
+  target?: { concept: AliasConcept; value: string },
 ): { heard: string[]; keep: string[] } {
   const spokenKey = phoneticKey(normalize(spoken, dictionary.variants).tokens.join(" "));
   const heard: string[] = [];
   const keep: string[] = [];
   for (const hypothesis of hypotheses.slice(0, 2)) {
     const tokens = normalize(hypothesis, dictionary.variants).tokens;
-    while (tokens.length && CARRIER.test(tokens.at(-1)!)) tokens.pop();
+    while (tokens.length > 1 && CARRIER.test(tokens.at(-1)!)) tokens.pop();
     const text = tokens.join(" ");
     if (!text || heard.includes(text)) continue;
     heard.push(text);
     const words = learnableWords(text, dictionary);
-    if (words && keySimilarity(phoneticKey(words), spokenKey) >= 0.5 && !keep.includes(words))
-      keep.push(words);
+    if (!words || keep.includes(words) || keySimilarity(phoneticKey(words), spokenKey) < 0.5) continue;
+    if (target) {
+      const match = matchConcept(target.concept, words, [], dictionary);
+      if (match.decision === "understood" && match.candidates[0]?.value === target.value) continue;
+    }
+    keep.push(words);
   }
   return { heard, keep };
 }

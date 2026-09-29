@@ -108,38 +108,60 @@ describe.skipIf(!allLocal)("words the assistant learns", () => {
     await speech.close();
   });
 
-  it("the listening check keeps how speech-to-text splits a name, checks each name once, and the next turn understands it (D102 A)", async () => {
-    // Speech-to-text writes "প্রোবক্স" as two words, and hears every other name as said.
+  it("the listening check suggests what the matcher would miss, checks each name once, and adds nothing until the owner does (D102 A, D105)", async () => {
+    // Speech-to-text writes "এক্সিও" as "এক্সেও" (the matcher understands that anyway), "ডায়নামো" as "ডায়ালাম"
+    // (which it would miss), and every other name as said.
     speech.asrEcho = (spoken) => {
       const name = spoken.replace(/ আছে\?$/, "");
-      return name === "প্রোবক্স" ? ["প্রো বক্স আছে", "প্রোবক্স আছে"] : [`${name} আছে`];
+      if (name === "এক্সিও") return ["এক্সেও আছে", "এক্সিও আছে"];
+      if (name === "ডায়নামো") return ["ডায়ালাম আছে", "ডায়ালাম আছি"];
+      return [`${name} আছে`];
     };
     const withAdmin = <T>(fn: Parameters<Platform["withAdmin"]>[0]) => admin.withAdmin(fn) as Promise<T>;
     const first = await runSpeechCheck(withAdmin, aesKey, shop.shopId, shop.connectionId, { limit: 200 });
     expect(first.checked).toBeGreaterThan(10);
+    expect(first.suggested).toBe(1);
+    // Motorcycles without a Bangla word need one from the LLM, which is down here: they wait for the next run.
+    expect(first.left).toBe(first.skipped);
     expect(first.stopped).toBeUndefined();
+    const checked = await admin.withAdmin((tx) =>
+      tx.select().from(speechChecks).where(eq(speechChecks.shopId, shop.shopId)),
+    );
+    expect(checked).toHaveLength(first.checked);
+    const again = await runSpeechCheck(withAdmin, aesKey, shop.shopId, shop.connectionId, { limit: 200 });
+    expect(again).toMatchObject({ checked: 0, suggested: 0 }); // each name once
+
+    // Nothing is a word yet: the owner sees the suggestion at once, and adds it.
+    const words = await admin.withAdmin((tx) =>
+      tx
+        .select()
+        .from(aliases)
+        .where(and(eq(aliases.shopId, shop.shopId), eq(aliases.source, "asr_check"))),
+    );
+    expect(words).toEqual([]);
+    const listed = (await call(routes.words.GET, "GET", "/setup/words")).body.words;
+    const suggestion = listed.suggestions.find((word) => word.heard === "ডায়ালাম")!;
+    expect(suggestion).toMatchObject({ concept: "part_type", value: "Alternator", origin: "listening" });
+    expect(listed.checked).toEqual({ names: first.checked, words: 1 });
+    await call(
+      routes.word.PUT,
+      "PUT",
+      `/setup/words/${suggestion.id}`,
+      { action: "add" },
+      { id: suggestion.id },
+    );
     const added = await admin.withAdmin((tx) =>
       tx
         .select()
         .from(aliases)
         .where(and(eq(aliases.shopId, shop.shopId), eq(aliases.source, "asr_check"))),
     );
-    expect(added.map((row) => [row.aliasText, row.targetValue])).toEqual([["প্রো বক্স", "Toyota Probox"]]);
-    const checked = await admin.withAdmin((tx) =>
-      tx.select().from(speechChecks).where(eq(speechChecks.shopId, shop.shopId)),
-    );
-    expect(checked).toHaveLength(first.checked);
+    expect(added.map((row) => [row.aliasText, row.targetValue])).toEqual([["ডায়ালাম", "Alternator"]]);
 
-    const again = await runSpeechCheck(withAdmin, aesKey, shop.shopId, shop.connectionId, { limit: 200 });
-    expect(again).toMatchObject({ checked: 0, added: 0 }); // each name once
-
-    llm.script.push({
-      calls: [
-        { name: "find_parts", arguments: { part_type: "এয়ার ফিল্টার", vehicle: "প্রো বক্স", year: "২০১৩" } },
-      ],
-    });
-    const turn = await chat(await newConversation(), "প্রো বক্স ২০১৩-এর এয়ার ফিল্টার আছে?");
-    expect(turn.reply).toContain("প্রোবক্স ২০১৩-এর");
+    // Now a request with the word finds the part: the question is the car, not the part.
+    llm.script.push({ calls: [{ name: "find_parts", arguments: { part_type: "ডায়ালাম" } }] });
+    const turn = await chat(await newConversation(), "ডায়ালাম আছে?");
+    expect(turn.reply).toBe("কোন গাড়ির?");
   });
 
   it.each([

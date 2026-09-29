@@ -358,8 +358,9 @@ function ReportsSection({ connectionId, language }: { connectionId: string; lang
 }
 
 /**
- * Words the assistant learned (D102): a car or part name it did not understand at first and then got from the answer,
- * seen twice; the owner adds it (understood straight away next time) or dismisses it. Also what the listening check did.
+ * Words the assistant learned (D102, D105): spellings the listening check found, and car or part names it did not
+ * understand at first and then got from an answer (seen twice); the owner adds each (understood straight away next
+ * time) or dismisses it. Nothing learned is used before the owner adds it.
  */
 function WordsSection() {
   const { t } = useTranslation();
@@ -387,7 +388,9 @@ function WordsSection() {
           </Text>
           <Note>
             {t(`setup.word_concept.${word.concept}`, { defaultValue: word.concept })} ·{" "}
-            {t("setup.words_heard", { count: word.seen })}
+            {word.origin === "listening"
+              ? t("setup.words_from_check")
+              : t("setup.words_heard", { count: word.seen })}
           </Note>
           <View style={{ flexDirection: "row", gap: 10 }}>
             <Button

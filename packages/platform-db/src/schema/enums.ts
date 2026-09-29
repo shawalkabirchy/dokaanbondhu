@@ -33,6 +33,8 @@ export const ALIAS_TARGETS = ["part_type", "vehicle_model", "quality", "position
 /** asr_check: the listening check's spellings; learned: words learned from answered questions, added by the owner (D102). */
 export const ALIAS_SOURCES = ["global", "owner", "host", "asr_check", "learned"] as const;
 export const SUGGESTION_STATUSES = ["open", "added", "dismissed"] as const;
+/** answers: learned from answered questions (shown once seen twice); listening: the listening check (shown at once), D105. */
+export const SUGGESTION_ORIGINS = ["answers", "listening"] as const;
 export const FITMENT_EXTRA_SOURCES = ["parsed", "owner"] as const;
 
 export const CHANNELS = ["voice", "chat"] as const;

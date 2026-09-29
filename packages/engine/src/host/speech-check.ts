@@ -5,10 +5,9 @@ import {
   GLOSSARY,
   isBangla,
   learnableWords,
-  phoneticKey,
   type Dictionary,
 } from "@dokaanbondhu/core";
-import { aiProviders, aliases, speechChecks, type Tx } from "@dokaanbondhu/platform-db";
+import { aiProviders, aliases, aliasSuggestions, speechChecks, type Tx } from "@dokaanbondhu/platform-db";
 import { eq, isNull, or } from "drizzle-orm";
 import {
   llmChain,
@@ -21,12 +20,15 @@ import {
 } from "../providers";
 import { loadCatalog, type Catalog } from "./catalog";
 
-// The listening check (D102 A): after a catalog sync, our own voice says each car model and part type of the shop, our
-// own speech-to-text writes it down, and the ways it writes them that the dictionary lacks become the shop's aliases
-// (source asr_check). Each name is checked once (speech_checks); at most 500 names per shop, a batch per run.
+// The listening check (D102 A, D105): after a catalog sync, both of our voices say each car model and part type of the
+// shop, our own speech-to-text writes it down, and the spellings the matcher would miss, written the same way for both
+// voices, are suggested to the owner (origin listening), who adds them as aliases or dismisses them: the first live
+// run showed that added unseen, everyday words ("মোবাইল", "অল্প") would become names. Each name is checked once
+// (speech_checks); at most 500 names per shop, a batch per run.
 
 export const MAX_CHECKS_PER_SHOP = 500;
 const PER_RUN = 60;
+const VOICES = ["aditi", "arjun"] as const;
 /** Said after the name, so the name is heard as in a question, not alone; dropped from what was heard. */
 const CARRIER = "আছে?";
 
@@ -85,7 +87,8 @@ export async function banglaSpellings(names: string[], llm: LlmProvider[]): Prom
 
 export interface SpeechCheckResult {
   checked: number;
-  added: number;
+  /** Spellings suggested to the owner (none is used before the owner adds it, D105). */
+  suggested: number;
   skipped: number;
   /** Names still to check after this run. */
   left: number;
@@ -98,7 +101,7 @@ export async function runSpeechCheck(
   aesKey: Buffer,
   shopId: string,
   connectionId: string,
-  options: { limit?: number; voice?: string; log?: (line: string) => void } = {},
+  options: { limit?: number; log?: (line: string) => void } = {},
 ): Promise<SpeechCheckResult> {
   const { catalog, own, providers, checked } = await withAdmin(async (tx) => ({
     catalog: await loadCatalog(tx, connectionId),
@@ -112,13 +115,12 @@ export async function runSpeechCheck(
       .from(speechChecks)
       .where(eq(speechChecks.shopId, shopId)),
   }));
-  const learned = [...own];
-  let dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(learned)]);
+  const dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(own)]);
   const done = new Set(checked.map((row) => `${row.concept}|${row.value}`));
   const todo = namesToCheck(catalog, dictionary).filter((name) => !done.has(`${name.concept}|${name.value}`));
   const room = Math.max(0, MAX_CHECKS_PER_SHOP - checked.length);
   const batch = todo.slice(0, Math.min(options.limit ?? PER_RUN, room));
-  const result: SpeechCheckResult = { checked: 0, added: 0, skipped: 0, left: todo.length };
+  const result: SpeechCheckResult = { checked: 0, suggested: 0, skipped: 0, left: todo.length };
   if (!batch.length) return result;
 
   // Our own speech models only (D102): the check never sends the shop's names to a paid service.
@@ -132,35 +134,49 @@ export async function runSpeechCheck(
     () => new Map<string, string>(),
   );
 
+  const suggestedThisRun = new Set<string>();
   for (const name of batch) {
     const spoken = name.spoken ?? spellings.get(name.value);
     if (!spoken) {
       result.skipped++;
       continue; // no Bangla word yet: tried again next time
     }
-    let hypotheses: string[];
+    // Both voices say it; only what speech-to-text wrote the same way for both is suggested, so a one-off guess is not.
+    const target = { concept: name.concept, value: name.value };
+    const perVoice: { heard: string[]; keep: string[] }[] = [];
     try {
-      const audio = await tts.synthesize(`${spoken} ${CARRIER}`, { voice: options.voice ?? "aditi" });
-      const asr = await stt.transcribe(audio.bytes, { keyterms: [], nbest: 5, lowConfidenceBelow: 0.5 });
-      hypotheses = asr.nbest.length ? asr.nbest.map((hypothesis) => hypothesis.text) : [asr.text];
+      for (const voice of VOICES) {
+        const audio = await tts.synthesize(`${spoken} ${CARRIER}`, { voice });
+        const asr = await stt.transcribe(audio.bytes, { keyterms: [], nbest: 5, lowConfidenceBelow: 0.5 });
+        const hypotheses = asr.nbest.length ? asr.nbest.map((hypothesis) => hypothesis.text) : [asr.text];
+        perVoice.push(checkedSpellings(spoken, hypotheses, dictionary, target));
+      }
     } catch (error) {
       return { ...result, stopped: error instanceof Error ? error.message : String(error) };
     }
-    const { heard, keep } = checkedSpellings(spoken, hypotheses, dictionary);
-    // A new host's name: its Bangla word (from the LLM) is kept too, so a request with it is understood.
+    const heard = [...new Set(perVoice.flatMap((voice) => voice.heard))];
+    const both = perVoice[0]!.keep.filter((word) => perVoice.every((voice) => voice.keep.includes(word)));
+    // A new host's name: its Bangla word (from the LLM) is suggested too, so a request with it can be understood.
     const ownWord = name.spoken ? null : learnableWords(spoken, dictionary);
-    const words = [...new Set([...(ownWord ? [ownWord] : []), ...keep])];
-    const rows = words.map((word) => ({
-      shopId,
-      aliasText: word,
-      aliasNormalized: word,
-      aliasPhonetic: phoneticKey(word),
-      targetConcept: name.concept,
-      targetValue: name.value,
-      source: "asr_check",
-    }));
+    const words = [...new Set([...(ownWord ? [ownWord] : []), ...both])].filter(
+      (word) => !suggestedThisRun.has(word), // never the same word for two names
+    );
+    words.forEach((word) => suggestedThisRun.add(word));
     await withAdmin(async (tx) => {
-      if (rows.length) await tx.insert(aliases).values(rows);
+      if (words.length) {
+        await tx
+          .insert(aliasSuggestions)
+          .values(
+            words.map((word) => ({
+              shopId,
+              heard: word,
+              targetConcept: name.concept,
+              targetValue: name.value,
+              origin: "listening",
+            })),
+          )
+          .onConflictDoNothing();
+      }
       await tx
         .insert(speechChecks)
         .values({
@@ -169,20 +185,15 @@ export async function runSpeechCheck(
           targetValue: name.value,
           spoken,
           heard,
-          added: rows.length,
+          added: words.length,
         })
         .onConflictDoNothing();
     });
-    if (rows.length) {
-      // Known at once, so a later name never takes these words.
-      learned.push(...rows.map((row) => ({ ...row, id: "", createdAt: new Date() })));
-      dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(learned)]);
-    }
     result.checked++;
-    result.added += rows.length;
+    result.suggested += words.length;
     result.left--;
     options.log?.(
-      `${name.value}: said "${spoken}", heard ${JSON.stringify(heard)}, added ${JSON.stringify(words)}`,
+      `${name.value}: said "${spoken}", heard ${JSON.stringify(heard)}, suggested ${JSON.stringify(words)}`,
     );
   }
   return result;

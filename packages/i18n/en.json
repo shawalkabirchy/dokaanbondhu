@@ -180,12 +180,13 @@
       "Purchase": "Purchase"
     },
     "step_words": "Words the assistant learned",
-    "words_note": "Car and part names it did not understand at first and then learned from the answer. Add one and it is understood straight away next time.",
+    "words_note": "Spellings of car and part names the listening check found, and names it did not understand at first and then learned from the answer. Add the right ones and they are understood straight away next time; dismiss everyday words.",
+    "words_from_check": "from the listening check",
     "words_none": "No words to review yet.",
     "words_heard": "heard {{count}} times",
     "words_add": "Add",
     "words_dismiss": "Dismiss",
-    "words_checked": "Listening check: {{names}} names checked, {{words}} new spellings added.",
+    "words_checked": "Listening check: {{names}} names checked, {{words}} spellings found.",
     "word_concept": {
       "vehicle_model": "Car",
       "part_type": "Part",

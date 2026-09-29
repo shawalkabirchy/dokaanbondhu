@@ -1,0 +1,2 @@
+ALTER TABLE "alias_suggestions" ADD COLUMN "origin" text DEFAULT 'answers' NOT NULL;--> statement-breakpoint
+ALTER TABLE "alias_suggestions" ADD CONSTRAINT "alias_suggestions_origin_check" CHECK ("alias_suggestions"."origin" in ('answers', 'listening'));
