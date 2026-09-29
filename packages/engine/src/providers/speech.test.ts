@@ -137,14 +137,15 @@ describe("speech worker adapters", () => {
     ).rejects.toMatchObject({ name: "SpeechError", status: 422 });
     expect(recentHealth("stt")).toBe("ok");
 
-    await expect(
-      speechWorkerStt(config({ secret: "bad:x" })).transcribe(new Uint8Array(4), options),
-    ).rejects.toThrow();
+    // A call the caller cancelled (a text-to-speech call: its body is not a stream) leaves the last result as it was.
+    const tts = speechWorkerTts(config());
+    await tts.synthesize("আছে।", { voice: "aditi" });
+    expect(recentHealth("tts")).toBe("ok");
     const cancelled = new AbortController();
     cancelled.abort();
-    await expect(
-      speechWorkerStt(config()).transcribe(new Uint8Array(4), options, cancelled.signal),
-    ).rejects.toBeInstanceOf(SpeechError);
-    expect(recentHealth("stt")).toBe("down"); // still the wrong key's result
+    await expect(tts.synthesize("আছে।", { voice: "aditi" }, cancelled.signal)).rejects.toBeInstanceOf(
+      SpeechError,
+    );
+    expect(recentHealth("tts")).toBe("ok");
   });
 });
