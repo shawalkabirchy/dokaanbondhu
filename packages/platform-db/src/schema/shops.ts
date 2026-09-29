@@ -8,7 +8,6 @@ import { USER_ROLES, USER_STATUSES } from "./enums";
 
 export interface ShopSettings {
   staff_price_override?: boolean; // default false
-  external_providers_allowed?: boolean; // default false
   voice?: string; // default "aditi"
   default_language?: "bn" | "en"; // default "bn"
   evaluation_consent?: boolean; // default false; admin CLI only (D41)

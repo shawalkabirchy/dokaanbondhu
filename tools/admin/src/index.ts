@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
 import { HostPools, syncConnection } from "@dokaanbondhu/engine/host";
-import { llmChain, llmStream, type ToolDef } from "@dokaanbondhu/engine/providers";
+import { llmChain, llmStream, sidesFrom, type ToolDef } from "@dokaanbondhu/engine/providers";
 import {
   aiProviders,
   connections,
@@ -61,22 +61,20 @@ function supabaseAdmin() {
 type Command = (platform: Platform, args: string[]) => Promise<void>;
 
 const commands: Record<string, Command> = {
-  /** create-shop --name <n> [--market <m>] [--allow-external] */
+  /** create-shop --name <n> [--market <m>] */
   "create-shop": async (platform, args) => {
     const { values } = parseArgs({
       args,
       options: {
         name: { type: "string" },
         market: { type: "string" },
-        "allow-external": { type: "boolean" },
       },
     });
     const name = z.string().min(1).parse(values.name);
-    const settings = values["allow-external"] ? { external_providers_allowed: true } : {};
     const [shop] = await platform.withAdmin((tx) =>
       tx
         .insert(shops)
-        .values({ name, marketArea: values.market ?? null, settings })
+        .values({ name, marketArea: values.market ?? null })
         .returning(),
     );
     out(`Shop created: ${shop?.id}  ${name}`);
@@ -226,21 +224,20 @@ const commands: Record<string, Command> = {
     const question = z.string().min(1).parse(values.question);
     const extraBody = values["extra-body"] === undefined ? undefined : JSON.parse(values["extra-body"]);
     if (!env.success) throw new Error("unreachable");
-    const { rows, settings } = await platform.withAdmin(async (tx) => {
+    const rows = await platform.withAdmin(async (tx) => {
       const [shop] = await tx.select().from(shops).where(eq(shops.id, shopId));
       if (!shop) throw new Error(`no shop ${shopId}`);
-      const rows = await tx
+      return tx
         .select()
         .from(aiProviders)
         .where(sql`${aiProviders.shopId} = ${shopId} or ${aiProviders.shopId} is null`);
-      return { rows, settings: shop.settings };
     });
     const withBody =
       extraBody === undefined ? rows : rows.map((row) => ({ ...row, options: { extra_body: extraBody } }));
     const chain = llmChain(
       withBody,
       shopId,
-      settings.external_providers_allowed === true,
+      sidesFrom(process.env), // AI_CHAT in .env.local (D98)
       parseAesKey(env.data.AES_KEY),
     );
     if (chain.length === 0) throw new Error("no LLM provider applies to this shop");

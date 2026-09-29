@@ -83,13 +83,6 @@ export default function More() {
           <Heading>{t("settings.voice")}</Heading>
           <Chips value={settings.voice} options={VOICES} onChange={(voice) => save.mutate({ voice })} />
           <View style={styles.row}>
-            <Text style={{ fontSize: 17, flex: 1, color: colors.ink }}>{t("settings.external")}</Text>
-            <Switch
-              value={settings.external_providers_allowed}
-              onValueChange={(value) => save.mutate({ external_providers_allowed: value })}
-            />
-          </View>
-          <View style={styles.row}>
             <Text style={{ fontSize: 17, flex: 1, color: colors.ink }}>{t("settings.staff_price")}</Text>
             <Switch
               value={settings.staff_price_override}

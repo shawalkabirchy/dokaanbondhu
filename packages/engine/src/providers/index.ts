@@ -11,9 +11,13 @@ export {
   type ToolDef,
 } from "./llm";
 export {
-  candidatesFor,
+  OWN_SIDE,
   selectProviders,
+  sideOf,
+  sidesFrom,
   type ProviderJob,
   type ProviderRow,
   type ProvidersInUse,
+  type Side,
+  type Sides,
 } from "./select";

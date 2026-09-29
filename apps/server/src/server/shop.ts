@@ -11,6 +11,7 @@ import {
   selectProviders,
   type LlmProvider,
   type ProviderJob,
+  type Sides,
 } from "@dokaanbondhu/engine/providers";
 import { aiProviders, shops, type Tx, type users } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
@@ -58,13 +59,15 @@ export function providerView(row: ProviderRowDb): ProviderView {
   };
 }
 
-// The providers in use are cached per shop for 30 s; a switch clears the cache, so it applies from the next turn.
+// The provider rows are cached per shop for 30 s (spec 13.2).
 const CACHE_MS = 30_000;
 const holder = globalThis as { __dokaanProviders?: Map<string, { rows: ProviderRowDb[]; expires: number }> };
 const cache = (holder.__dokaanProviders ??= new Map());
 
-export function clearProviderCache(shopId: string): void {
-  cache.delete(shopId);
+/** The developer's switches in the server's environment (D98): which side answers chat, listening and speaking. */
+export function serverSides(): Sides {
+  const env = serverEnv();
+  return { chat: env.AI_CHAT, listen: env.AI_LISTEN, speak: env.AI_SPEAK };
 }
 
 /** Every provider row this shop can see: its own rows and the global ones (row-level security does the rest). */
@@ -76,12 +79,8 @@ export async function providerRows(shopId: string): Promise<ProviderRowDb[]> {
   return rows;
 }
 
-export function providersInUse(
-  rows: ProviderRowDb[],
-  shopId: string,
-  settings: ShopSettingsView,
-): ProvidersInUse {
-  const used = selectProviders(rows, shopId, settings.external_providers_allowed);
+export function providersInUse(rows: ProviderRowDb[], shopId: string): ProvidersInUse {
+  const used = selectProviders(rows, shopId, serverSides());
   return {
     llm: used.llm.map(providerView),
     stt: used.stt ? providerView(used.stt) : null,
@@ -89,16 +88,7 @@ export function providersInUse(
   };
 }
 
-/** The shop's LLM chain in priority order (spec 13.2, 13.3): its own rows or the global ones, external only if allowed. */
+/** The shop's LLM chain (spec 13.2, 13.3): the chosen side in priority order, then the other side as the backup. */
 export async function shopLlm(shopId: string): Promise<LlmProvider[]> {
-  const [shop, rows] = await Promise.all([
-    platform().withShop(shopId, (tx) => loadShop(tx, shopId)),
-    providerRows(shopId),
-  ]);
-  return llmChain(
-    rows,
-    shopId,
-    settingsOf(shop).external_providers_allowed,
-    parseAesKey(serverEnv().AES_KEY),
-  );
+  return llmChain(await providerRows(shopId), shopId, serverSides(), parseAesKey(serverEnv().AES_KEY));
 }

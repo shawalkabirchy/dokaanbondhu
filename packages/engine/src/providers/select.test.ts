@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { recentHealth, recordProviderCall, speechHealth } from "./health";
-import { selectProviders, type ProviderRow } from "./select";
+import {
+  OWN_SIDE,
+  selectProviders,
+  sideOf,
+  sidesFrom,
+  type ProviderRow,
+  type Side,
+  type Sides,
+} from "./select";
 
 const SHOP = "shop-a";
 const row = (fields: Partial<ProviderRow> & Pick<ProviderRow, "id" | "job" | "provider">): ProviderRow => ({
@@ -13,33 +21,46 @@ const row = (fields: Partial<ProviderRow> & Pick<ProviderRow, "id" | "job" | "pr
   ...fields,
 });
 
-describe("which provider answers", () => {
+describe("which provider answers (spec 13.2, D98)", () => {
   const rows = [
-    row({ id: "g-cf", job: "llm", provider: "cloudflare", priority: 1 }),
+    row({ id: "g-cf", job: "llm", provider: "cloudflare", priority: 1, external: true }),
     row({ id: "g-ds", job: "llm", provider: "deepseek", priority: 2, external: true }),
     row({ id: "g-oa", job: "llm", provider: "openai", priority: 3, external: true, enabled: false }),
     row({ id: "g-stt", job: "stt", provider: "speech_worker", active: true }),
     row({ id: "a-stt", shopId: SHOP, job: "stt", provider: "speech_worker", active: true }),
-    row({ id: "a-scribe", shopId: SHOP, job: "stt", provider: "elevenlabs", external: true }),
+    row({ id: "g-scribe", job: "stt", provider: "elevenlabs", external: true }),
     row({ id: "g-tts", job: "tts", provider: "speech_worker", active: true }),
     row({ id: "b-tts", shopId: "shop-b", job: "tts", provider: "elevenlabs", active: true }),
   ];
+  const sides = (chat: Side, listen: Side = "own", speak: Side = "own"): Sides => ({ chat, listen, speak });
 
-  it("drops external and disabled rows unless allowed, in priority order", () => {
-    expect(selectProviders(rows, SHOP, false).llm.map((r) => r.id)).toEqual(["g-cf"]);
-    expect(selectProviders(rows, SHOP, true).llm.map((r) => r.id)).toEqual(["g-cf", "g-ds"]);
+  it("puts the chosen side first and the other side after it as the backup, skipping disabled rows", () => {
+    expect(selectProviders(rows, SHOP, OWN_SIDE).llm.map((r) => r.id)).toEqual(["g-cf", "g-ds"]);
+    expect(selectProviders(rows, SHOP, sides("api")).llm.map((r) => r.id)).toEqual(["g-ds", "g-cf"]);
   });
 
-  it("uses the shop's own rows when it has any, else the global ones", () => {
-    const used = selectProviders(rows, SHOP, false);
-    expect(used.stt?.id).toBe("a-stt");
-    expect(used.tts?.id).toBe("g-tts"); // shop B's row never counts for shop A
+  it("switches listening and speaking separately, each on its own side", () => {
+    const api = selectProviders(rows, SHOP, sides("own", "api", "own"));
+    expect(api.stt?.id).toBe("g-scribe");
+    expect(api.tts?.id).toBe("g-tts");
+    // speaking on the APIs: this shop has no ElevenLabs voice (shop B's row never counts), so our own answers
+    expect(selectProviders(rows, SHOP, sides("own", "own", "api")).tts?.id).toBe("g-tts");
   });
 
-  it("falls back to the global rows when the shop's own rows are all external and not allowed", () => {
-    const onlyExternal = rows.filter((r) => r.id !== "a-stt");
-    expect(selectProviders(onlyExternal, SHOP, false).stt?.id).toBe("g-stt");
-    expect(selectProviders(onlyExternal, SHOP, true).stt).toBeNull(); // its own rows count, and none is active
+  it("uses the shop's own rows of a side when it has any, else the global ones", () => {
+    expect(selectProviders(rows, SHOP, OWN_SIDE).stt?.id).toBe("a-stt");
+    expect(selectProviders(rows, "shop-c", OWN_SIDE).stt?.id).toBe("g-stt");
+    expect(selectProviders(rows, "shop-b", sides("own", "own", "api")).tts?.id).toBe("b-tts");
+  });
+
+  it("reads the switches from the environment: unset or empty is own, anything else is refused", () => {
+    expect(sidesFrom({})).toEqual(OWN_SIDE);
+    expect(sidesFrom({ AI_CHAT: "api", AI_LISTEN: "", AI_SPEAK: " api " })).toEqual(
+      sides("api", "own", "api"),
+    );
+    expect(() => sidesFrom({ AI_CHAT: "deepseek" })).toThrow('AI_CHAT must be own or api, not "deepseek"');
+    expect(sideOf("cloudflare")).toBe("own");
+    expect(sideOf("elevenlabs")).toBe("api");
   });
 });
 

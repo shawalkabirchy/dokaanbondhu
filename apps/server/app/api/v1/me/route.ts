@@ -21,7 +21,7 @@ export const GET = route({ role: "any" }, async ({ caller }) => {
     user: userView(user),
     shop: { id: shop.id, name: shop.name, market_area: shop.marketArea },
     settings,
-    providers: providersInUse(await providerRows(caller.shopId), caller.shopId, settings),
+    providers: providersInUse(await providerRows(caller.shopId), caller.shopId),
   };
   return Response.json(body);
 });

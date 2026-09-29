@@ -1,9 +1,9 @@
 import { decryptSecret } from "../crypto";
 import { openAiCompatibleProvider, type LlmProvider } from "./llm";
-import { selectProviders, type ProviderRow } from "./select";
+import { selectProviders, type ProviderRow, type Sides } from "./select";
 
-// Builds the LLM chain of a shop from its ai_providers rows (spec 13.2, 13.3). Secrets are decrypted only here,
-// inside the adapters, and never logged (spec 13.5).
+// Builds the LLM chain of a shop from its ai_providers rows (spec 13.2, 13.3): the side the developer chose first, the
+// other side as the backup (D98). Secrets are decrypted only here, inside the adapters, and never logged (spec 13.5).
 
 export interface StoredProviderRow extends ProviderRow {
   baseUrl: string | null;
@@ -18,10 +18,10 @@ interface ProviderOptions {
 export function llmChain(
   rows: StoredProviderRow[],
   shopId: string,
-  externalAllowed: boolean,
+  sides: Sides,
   aesKey: Buffer,
 ): LlmProvider[] {
-  return selectProviders(rows, shopId, externalAllowed).llm.flatMap((row) => {
+  return selectProviders(rows, shopId, sides).llm.flatMap((row) => {
     if (!row.baseUrl || !row.model) return []; // an incomplete row is skipped, never guessed
     const apiKey = row.secretEncrypted
       ? decryptSecret(

@@ -5,16 +5,21 @@ describe("shop settings", () => {
   it("fills in every default for an empty settings object", () => {
     expect(shopSettingsSchema.parse({})).toEqual({
       staff_price_override: false,
-      external_providers_allowed: false,
       voice: "aditi",
       default_language: "bn",
       evaluation_consent: false,
     });
   });
 
-  it("lets the owner change only voice, external providers and the staff price override", () => {
+  it("lets the owner change only voice and the staff price override", () => {
     expect(settingsPatchSchema.safeParse({ staff_price_override: true }).success).toBe(true);
     expect(settingsPatchSchema.safeParse({ evaluation_consent: true }).success).toBe(false);
+    // which models answer is the developer's switch, not the owner's (D98)
+    expect(settingsPatchSchema.safeParse({ external_providers_allowed: true }).success).toBe(false);
+    // an old shop row that still holds the key reads without it
+    expect(shopSettingsSchema.parse({ external_providers_allowed: true })).not.toHaveProperty(
+      "external_providers_allowed",
+    );
     expect(settingsPatchSchema.safeParse({}).success).toBe(false);
   });
 });

@@ -14,7 +14,6 @@ export type Health = z.infer<typeof healthSchema>;
 /** A shop's settings with every default filled in (spec 7.2). */
 export const shopSettingsSchema = z.object({
   staff_price_override: z.boolean().default(false),
-  external_providers_allowed: z.boolean().default(false),
   voice: z.string().min(1).default("aditi"),
   default_language: z.enum(["bn", "en"]).default("bn"),
   evaluation_consent: z.boolean().default(false),
@@ -25,7 +24,6 @@ export type ShopSettingsView = z.infer<typeof shopSettingsSchema>;
 export const settingsPatchSchema = z
   .object({
     voice: z.string().min(1).max(40),
-    external_providers_allowed: z.boolean(),
     staff_price_override: z.boolean(),
   })
   .partial()
@@ -81,5 +79,3 @@ export const staffCreateSchema = z
 export type StaffCreate = z.infer<typeof staffCreateSchema>;
 
 export const staffPatchSchema = z.object({ status: z.enum(["active", "disabled"]) }).strict();
-
-export const providerSwitchSchema = z.object({ provider_id: z.uuid() }).strict();

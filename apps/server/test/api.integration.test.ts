@@ -154,8 +154,6 @@ describe.skipIf(!allLocal)("server endpoints", () => {
       staff: await import("../app/api/v1/staff/route"),
       staffOne: await import("../app/api/v1/staff/[userId]/route"),
       settings: await import("../app/api/v1/settings/route"),
-      providers: await import("../app/api/v1/providers/route"),
-      providerJob: await import("../app/api/v1/providers/[job]/route"),
     };
   });
 
@@ -188,8 +186,13 @@ describe.skipIf(!allLocal)("server endpoints", () => {
     expect(status).toBe(200);
     expect(body.user).toMatchObject({ id: ownerA.id, role: "owner" });
     expect(body.shop).toEqual({ id: shopA, name: "Shop A", market_area: null });
-    expect(body.settings).toMatchObject({ voice: "aditi", external_providers_allowed: false });
-    expect(body.providers.llm.map((p: { provider: string }) => p.provider)).toEqual(["cloudflare"]);
+    expect(body.settings).toMatchObject({ voice: "aditi" });
+    expect(body.settings).not.toHaveProperty("external_providers_allowed"); // the developer's switch now (D98)
+    // our own model first, the paid API after it as the backup
+    expect(body.providers.llm.map((p: { provider: string }) => p.provider)).toEqual([
+      "cloudflare",
+      "deepseek",
+    ]);
     expect(body.providers.stt).toMatchObject({ id: providers.ownStt, scope: "shop" });
     expect(body.providers.tts).toMatchObject({ provider: "speech_worker", scope: "global" });
   });
@@ -198,7 +201,6 @@ describe.skipIf(!allLocal)("server endpoints", () => {
     for (const [handler, method] of [
       [routes.staff?.GET, "GET"],
       [routes.settings?.PATCH, "PATCH"],
-      [routes.providers?.GET, "GET"],
     ] as const) {
       const { status, body } = await call(handler, { auth: staffA.auth, method, body: { voice: "x" } });
       expect(status).toBe(403);
@@ -263,30 +265,36 @@ describe.skipIf(!allLocal)("server endpoints", () => {
     expect(other.status).toBe(404);
   });
 
-  it("switches the speech provider only among the shop's own rows, external only when allowed", async () => {
-    const switchTo = (id: string, auth = ownerA.auth) =>
-      call(routes.providerJob?.PATCH, {
-        auth,
-        method: "PATCH",
-        body: { provider_id: id },
-        params: { job: "stt" },
+  it("takes which models answer from the developer's switches, never from the owner (D98)", async () => {
+    const cached = globalThis as { __dokaanServerEnv?: unknown };
+    const switches = ["AI_CHAT", "AI_LISTEN", "AI_SPEAK"] as const;
+    const before = switches.map((name) => process.env[name]);
+    try {
+      process.env.AI_CHAT = "api";
+      process.env.AI_LISTEN = "api";
+      process.env.AI_SPEAK = "api";
+      delete cached.__dokaanServerEnv; // the server reads its environment once; a restart does the same
+      const { body } = await call(routes.me?.GET, { auth: ownerA.auth });
+      expect(body.providers.llm.map((p: { provider: string }) => p.provider)).toEqual([
+        "deepseek",
+        "cloudflare",
+      ]);
+      expect(body.providers.stt).toMatchObject({ id: providers.ownScribe, provider: "elevenlabs" });
+      // no ElevenLabs voice for this shop: speaking stays on our own model
+      expect(body.providers.tts).toMatchObject({ provider: "speech_worker" });
+    } finally {
+      switches.forEach((name, index) => {
+        if (before[index] === undefined) delete process.env[name];
+        else process.env[name] = before[index];
       });
-    expect((await switchTo(providers.ownScribe)).body.error.code).toBe("EXTERNAL_PROVIDERS_NOT_ALLOWED");
-    expect((await switchTo(providers.shopBStt)).status).toBe(404);
-
-    const allowed = await call(routes.settings?.PATCH, {
+      delete cached.__dokaanServerEnv;
+    }
+    const owner = await call(routes.settings?.PATCH, {
       auth: ownerA.auth,
       method: "PATCH",
       body: { external_providers_allowed: true },
     });
-    expect(allowed.body.settings.external_providers_allowed).toBe(true);
-    const switched = await switchTo(providers.ownScribe);
-    expect(switched.status).toBe(200);
-    expect(switched.body.in_use.stt).toMatchObject({ id: providers.ownScribe, provider: "elevenlabs" });
-    expect((await call(routes.me?.GET, { auth: ownerA.auth })).body.providers.llm).toHaveLength(2);
-
-    const listed = await call(routes.providers?.GET, { auth: ownerA.auth });
-    expect(listed.body.providers.filter((p: { job: string }) => p.job === "stt")).toHaveLength(2);
+    expect(owner.status).toBe(400);
   });
 
   it("refuses a settings change the owner may not make", async () => {
