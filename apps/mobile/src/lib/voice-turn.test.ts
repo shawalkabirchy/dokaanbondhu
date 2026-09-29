@@ -97,6 +97,34 @@ describe("push-to-talk turn", () => {
     expect(tries.get(0)).toBe(1);
   });
 
+  // D103: the recorder sends its last partial chunk a moment after it stops.
+  it("waits for the recorder's last chunk, and ends the duration at the release, not after the wait", async () => {
+    const { turn, advance } = setup();
+    advance(500);
+    turn.add(chunk(0.2)); // 500 ms
+    advance(400);
+    turn.markReleased(); // held 900 ms
+    const waiting = turn.waitForAudio(650, 600);
+    setTimeout(() => turn.add(chunk(0.2)), 50); // the last chunk comes after the stop
+    await waiting;
+    expect(turn.receivedMs).toBe(1000);
+    advance(300); // the wait does not count as speech
+    const finish = jest.fn(async (_turnId: string, _body: FinishBody) => undefined);
+    expect(turn.verdict()).toBe("send");
+    await turn.send(finish);
+    expect(finish.mock.calls[0]![1]).toMatchObject({ chunk_count: 2, duration_ms: 900 });
+  });
+
+  it("stops waiting for a last chunk that never comes", async () => {
+    const { turn, advance } = setup();
+    advance(500);
+    turn.add(chunk(0.2));
+    const started = Date.now();
+    await turn.waitForAudio(5000, 100);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(turn.receivedMs).toBe(500);
+  });
+
   it("resends the chunks the server reports missing, then finishes once more", async () => {
     const { turn, uploads, advance } = setup();
     advance(500);

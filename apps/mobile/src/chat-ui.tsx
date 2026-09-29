@@ -117,10 +117,19 @@ export function ChoiceChips(props: {
   );
 }
 
+/**
+ * Android measures Bangla text a little narrower than it draws it with its default ("highQuality") line breaking, so
+ * the last word of a short bubble ("দুই হাজার ষোল") wrapped onto a line the bubble did not show; simple breaking
+ * measures what it draws (D103).
+ */
+const BANGLA_BREAKS = "simple" as const;
+
 export function UserBubble({ text }: { text: string }) {
   return (
     <View style={[styles.bubble, styles.userBubble]}>
-      <Text style={[styles.bubbleText, styles.userText]}>{text}</Text>
+      <Text style={[styles.bubbleText, styles.userText]} textBreakStrategy={BANGLA_BREAKS}>
+        {text}
+      </Text>
     </View>
   );
 }
@@ -139,7 +148,9 @@ export function AssistantBubble(props: {
     <View style={styles.reply}>
       {text ? (
         <View style={[styles.bubble, styles.assistantBubble]}>
-          <Text style={styles.bubbleText}>{text}</Text>
+          <Text style={styles.bubbleText} textBreakStrategy={BANGLA_BREAKS}>
+            {text}
+          </Text>
         </View>
       ) : null}
       {/* The spinner shows only until the answer's text arrives; its audio may still be on the way (D101). */}

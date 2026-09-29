@@ -18,6 +18,10 @@ import { useDeviceSettings } from "../../src/lib/settings-store";
 import { streamTurn, uploadChunk } from "../../src/lib/stream";
 import { useVoice } from "../../src/lib/voice";
 import { MAX_RECORDING_MS, VoiceTurn } from "../../src/lib/voice-turn";
+
+/** How long release waits for the recorder's last chunk, and how much short of the held time counts as all of it. */
+const LAST_CHUNK_WAIT_MS = 600;
+const LAST_CHUNK_SLACK_MS = 250;
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
 // The voice page (spec 15.2, 15.3, 15.4): hold the button and speak; on release the clip is finished and the answer
@@ -33,6 +37,9 @@ export default function Voice() {
   const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
   const [recording, setRecording] = useState(false);
   const turn = useRef<VoiceTurn | null>(null);
+  /** The turn the recorder's chunks belong to: it stays until the recorder's last chunk is in (D103). */
+  const capturing = useRef<VoiceTurn | null>(null);
+  const recordingSince = useRef(0);
   const player = useRef<ReplyPlayer | null>(null);
   const limit = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micReady = useRef(false);
@@ -47,7 +54,7 @@ export default function Voice() {
     interval: 500,
     onAudioStream: async (event: AudioDataEvent) => {
       if (typeof event.data !== "string") return;
-      turn.current?.add(base64ToBytes(event.data)); // exactly as recorded: no gain, no normalizing
+      capturing.current?.add(base64ToBytes(event.data)); // exactly as recorded: no gain, no normalizing
     },
   }).current;
 
@@ -76,7 +83,7 @@ export default function Voice() {
   async function onPressIn() {
     player.current?.stop(); // barge-in
     stopPlayback();
-    if (busy || turn.current) return;
+    if (busy || turn.current || capturing.current) return; // the last recording is still coming in
     if (!micReady.current) {
       const permission = await AudioStudioModule.requestPermissionsAsync();
       if (!permission?.granted) return;
@@ -88,11 +95,14 @@ export default function Voice() {
       ensureConversation(),
     );
     turn.current = started;
+    capturing.current = started;
     setRecording(true);
     await startRecording(config);
+    recordingSince.current = Date.now();
     if (turn.current !== started) {
       // released while the recorder was starting: a tap, dropped by its verdict
       await stopRecording().catch(() => undefined);
+      if (capturing.current === started) capturing.current = null;
       void prepareRecording(config);
       return;
     }
@@ -103,8 +113,14 @@ export default function Voice() {
     const current = turn.current;
     if (!current) return;
     turn.current = null;
+    current.markReleased();
     if (limit.current) clearTimeout(limit.current);
-    await stopRecording().catch(() => undefined); // flushes the last partial chunk
+    const heldMs = Date.now() - recordingSince.current;
+    await stopRecording().catch(() => undefined);
+    // The recorder sends its last partial chunk a moment after it stops: wait for it (at most 0.6 s), so the end of
+    // what was said is not lost, and it can never land in the next question (D103).
+    await current.waitForAudio(heldMs - LAST_CHUNK_SLACK_MS, LAST_CHUNK_WAIT_MS);
+    if (capturing.current === current) capturing.current = null;
     setRecording(false);
     void prepareRecording(config); // ready for the next press
     if (current.verdict() !== "send") return;

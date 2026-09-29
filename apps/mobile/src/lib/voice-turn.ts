@@ -43,6 +43,8 @@ export class VoiceTurn {
   private readonly waiting: number[] = [];
   private running = 0;
   private drained: (() => void)[] = [];
+  private bytes = 0;
+  private arrived: (() => void)[] = [];
 
   constructor(
     private readonly deps: VoiceTurnDeps,
@@ -54,6 +56,8 @@ export class VoiceTurn {
 
   /** One recorded chunk: measured, kept for a resend, and queued for upload. */
   add(bytes: Uint8Array): void {
+    this.bytes += bytes.byteLength;
+    for (const wake of this.arrived.splice(0)) wake();
     const seq = this.seq++;
     this.rms.add(bytes);
     this.chunks.set(seq, bytes);
@@ -89,6 +93,32 @@ export class VoiceTurn {
   private whenDrained(): Promise<void> {
     if (this.running === 0 && this.waiting.length === 0) return Promise.resolve();
     return new Promise((resolve) => this.drained.push(resolve));
+  }
+
+  /** The button is released (or 30 s are up): the time the turn's duration ends. */
+  markReleased(): void {
+    this.endedAt ??= this.deps.now();
+  }
+
+  /** Milliseconds of audio received so far (16 kHz, 16-bit mono: 32 bytes a millisecond). */
+  get receivedMs(): number {
+    return this.bytes / 32;
+  }
+
+  /**
+   * Waits for the recorder's last chunk, which it sends a moment after it has stopped (D103): until the audio received
+   * reaches `ms`, or `timeoutMs` has passed.
+   */
+  async waitForAudio(ms: number, timeoutMs: number): Promise<void> {
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      for (const wake of this.arrived.splice(0)) wake();
+    }, timeoutMs);
+    while (this.receivedMs < ms && !timedOut) {
+      await new Promise<void>((resolve) => this.arrived.push(resolve));
+    }
+    clearTimeout(timer);
   }
 
   /**

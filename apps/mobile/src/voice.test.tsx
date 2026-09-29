@@ -25,7 +25,12 @@ jest.mock("expo-crypto", () => {
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 jest.mock("./lib/health", () => ({ useHealth: () => ({ online: true, checking: false, micAllowed: true }) }));
 jest.mock("./lib/audio", () => ({
-  phonePlayer: {},
+  phonePlayer: {
+    save: () => "file://x.mp3",
+    play: async () => undefined,
+    stopPlaying: () => undefined,
+    remove: () => undefined,
+  },
   playAskAgain: jest.fn(),
   stopPlayback: jest.fn(),
 }));
@@ -68,13 +73,57 @@ describe("voice page", () => {
     expect(mockRecorder.stopRecording).toHaveBeenCalledTimes(1);
   });
 
+  /** 500 ms of a 200 Hz tone at amplitude 0.2, as the recorder's base64. */
+  const loud = () => {
+    const bytes = Buffer.alloc(16_000);
+    for (let i = 0; i < 8000; i++) bytes.writeInt16LE(Math.round(0.2 * 32767 * Math.sin(i / 12.7)), i * 2);
+    return bytes.toString("base64");
+  };
+
+  // D103: the recorder sends its last partial chunk a moment after stopRecording resolves.
+  it("waits for the recorder's last chunk after release and sends it with the question", async () => {
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => onChunk(loud()));
+    await act(async () => jest.advanceTimersByTime(500));
+    mockRecorder.stopRecording.mockImplementationOnce(async () => {
+      setTimeout(() => void onChunk(loud()), 100); // the last chunk, after the stop
+      return {};
+    });
+    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => jest.advanceTimersByTime(150));
+    expect(uploadChunk).toHaveBeenCalledTimes(2);
+    expect(streamTurn).toHaveBeenCalledWith(
+      expect.stringMatching(/\/finish$/),
+      expect.objectContaining({ chunk_count: 2 }),
+      expect.any(Function),
+    );
+  });
+
+  it("drops a chunk that comes after the question was sent, so it never joins the next one", async () => {
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => onChunk(loud()));
+    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => jest.advanceTimersByTime(700)); // no last chunk: the wait gives up
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+    const uploads = (uploadChunk as jest.Mock).mock.calls.length;
+    await act(async () => onChunk(loud())); // far too late
+    expect((uploadChunk as jest.Mock).mock.calls.length).toBe(uploads);
+  });
+
   it("sends no finish for a quiet clip", async () => {
     await render(<Voice />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(1_000));
     await act(async () => onChunk(Buffer.alloc(16_000).toString("base64"))); // silence
-    await act(async () => fireEvent(button, "pressOut"));
+    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => jest.advanceTimersByTime(700)); // no last chunk comes
     expect(streamTurn).not.toHaveBeenCalled();
     expect(jest.requireMock("./lib/audio").playAskAgain).toHaveBeenCalled();
     expect(uploadChunk).toHaveBeenCalled(); // the press was long enough to upload, just too quiet to finish
