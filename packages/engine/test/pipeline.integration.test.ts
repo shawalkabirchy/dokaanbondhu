@@ -419,7 +419,8 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     {
       style: "Bangla",
       text: "এক জিও দুই হাজার চৌদ্দ এর সামনে ব্রেকপ্যান আছে",
-      args: { part_type: "ব্রেকপ্যান", vehicle: "এক জিও", year: "দুই হাজার চৌদ্দ", position: "সামনে" },
+      // as Gemma passed it live: the part and position in English, the car as heard, the year here in words
+      args: { part_type: "Brake Pad", vehicle: "এক জিও", year: "দুই হাজার চৌদ্দ", position: "front" },
     },
     {
       style: "Banglish",
