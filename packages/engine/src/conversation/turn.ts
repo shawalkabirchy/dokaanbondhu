@@ -4,6 +4,7 @@ import {
   ASK_AGAIN,
   CANNOT_ANSWER_NOW,
   helpAnswer,
+  learnableWords,
   missingAnswer,
   isGrounded,
   matchConcept,
@@ -134,6 +135,11 @@ export interface TurnOutcome {
     fallbacks: string[];
   };
   trace: TurnTrace;
+  /**
+   * Words learned from an answered question (D102 B): a car or part name that needed a question, as the request had
+   * it, and what the answer resolved it to. The server records them as suggestions for the owner.
+   */
+  learned: { heard: string; concept: "vehicle_model" | "part_type"; value: string }[];
 }
 
 type Emit = (event: ReplyEvent) => void;
@@ -389,6 +395,7 @@ export async function runTurn(
   facts.allowed.addFromText(text); // values the user said
   if (state.context.vehicle?.year) facts.allowed.addNumber(state.context.vehicle.year);
   let questionsAsked = 0;
+  const learned: TurnOutcome["learned"] = [];
   let final:
     | { kind: "answer"; text: string }
     | { kind: "question"; text: string; slot: string; offers: Offer[] }
@@ -697,6 +704,9 @@ export async function runTurn(
   let request = text;
   if (frameOpen && state.frame) {
     const frame = state.frame;
+    // What the request had for the asked slot, before the answer replaces it (D102 B).
+    const asked = frame.asking;
+    const heardBefore = asked ? frame.slots[asked]?.value : undefined;
     const filled = answerFrame(frame, {
       ...(input.text ? { text: input.text } : {}),
       ...(input.choice ? { choice: input.choice } : {}),
@@ -718,6 +728,18 @@ export async function runTurn(
         arguments: query,
         result: outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"),
       });
+      // A car or part name that needed a question and is now resolved: how the request had it may be learned.
+      if ((filled === "vehicle" || filled === "part_type") && typeof heardBefore === "string") {
+        const resolved = trace.lookups.at(-1)?.resolved;
+        const value = filled === "vehicle" ? resolved?.vehicle : resolved?.part_type;
+        const words = value ? learnableWords(heardBefore, deps.dictionary) : null;
+        if (value && words)
+          learned.push({
+            heard: words,
+            concept: filled === "vehicle" ? "vehicle_model" : "part_type",
+            value,
+          });
+      }
     } else if (filled === "customer" && frame.intent === "resolve_customer") {
       const slot = frame.slots.customer!;
       const customer = deps.host.catalog.customers.find(
@@ -938,6 +960,7 @@ export async function runTurn(
       fallbacks,
     },
     trace,
+    learned,
   };
 }
 

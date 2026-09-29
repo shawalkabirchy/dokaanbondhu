@@ -1,10 +1,4 @@
-import {
-  buildDictionary,
-  GLOSSARY,
-  type AliasConcept,
-  type Dictionary,
-  type GlossaryEntry,
-} from "@dokaanbondhu/core";
+import { aliasEntries, buildDictionary, GLOSSARY, type Dictionary } from "@dokaanbondhu/core";
 import type { TurnHost } from "@dokaanbondhu/engine/conversation";
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
@@ -18,17 +12,17 @@ import {
   type ReportName,
 } from "@dokaanbondhu/engine/host";
 import { aliases, connections, fitmentExtra, rackExtra, reportFormulas } from "@dokaanbondhu/platform-db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, max } from "drizzle-orm";
 import { serverEnv } from "../env";
 import { logger, platform } from "./singletons";
 
 // The shop's host for a turn (spec 11.4): its active database connection, the schema map, the catalog, and
-// DokaanBondhu's own fitment and rack rows, kept in memory per shop. A turn checks the catalog's newest sync time when
-// the entry is older than 60 s and reloads it when that changed; a setup change clears the entry at once.
+// DokaanBondhu's own fitment and rack rows, kept in memory per shop. A turn checks the catalog's newest sync time and
+// the shop's newest alias (words learned, D102) when the entry is older than 60 s and reloads it when either changed;
+// a setup change clears the entry at once.
 
 const VERSION_CHECK_MS = 60_000;
 const SHOP_WORDS = 60;
-const BANGLA = /[ঀ-৿]/;
 
 export interface ShopHost {
   host: TurnHost;
@@ -40,9 +34,12 @@ export interface ShopHost {
 interface Entry {
   value: ShopHost;
   connectionId: string | null;
-  version: number | null;
+  /** The catalog's newest sync and the shop's newest alias: a change in either reloads the entry. */
+  version: string;
   checkedAt: number;
 }
+
+const versionOf = (synced: Date | null, words: number) => `${synced?.getTime() ?? 0}|${words}`;
 
 const holder = globalThis as { __dokaanHosts?: Map<string, Entry>; __dokaanHostPools?: HostPools };
 const cache = (holder.__dokaanHosts ??= new Map());
@@ -64,16 +61,8 @@ async function load(shopId: string): Promise<Entry> {
   const aesKey = parseAesKey(serverEnv().AES_KEY);
   return platform().withShop(shopId, async (tx) => {
     const own = await tx.select().from(aliases).where(eq(aliases.shopId, shopId));
-    const entries: GlossaryEntry[] = own.map((row) => {
-      const bangla = BANGLA.test(row.aliasText);
-      return {
-        target_concept: row.targetConcept as AliasConcept,
-        target_value: row.targetValue,
-        bn: bangla ? [row.aliasText] : [],
-        latin: bangla ? [] : [row.aliasText.toLowerCase()],
-      };
-    });
-    const dictionary = buildDictionary([...GLOSSARY, ...entries]);
+    const dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(own)]);
+    const wordsVersion = own.reduce((latest, row) => Math.max(latest, row.createdAt.getTime()), 0);
     const shopWords = own.slice(0, SHOP_WORDS).map((row) => `${row.aliasText} = ${row.targetValue}`);
 
     const [connection] = await tx
@@ -95,7 +84,7 @@ async function load(shopId: string): Promise<Entry> {
       return {
         value: { host, dictionary, shopWords },
         connectionId: null,
-        version: null,
+        version: versionOf(null, wordsVersion),
         checkedAt: Date.now(),
       };
     }
@@ -143,7 +132,7 @@ async function load(shopId: string): Promise<Entry> {
     return {
       value: { host, dictionary, shopWords },
       connectionId: connection.id,
-      version: catalog.syncedAt?.getTime() ?? null,
+      version: versionOf(catalog.syncedAt, wordsVersion),
       checkedAt: Date.now(),
     };
   });
@@ -153,10 +142,17 @@ export async function shopHost(shopId: string): Promise<ShopHost> {
   const entry = cache.get(shopId);
   const now = Date.now();
   if (entry && now - entry.checkedAt < VERSION_CHECK_MS) return entry.value;
-  if (entry?.connectionId) {
+  if (entry) {
     const connectionId = entry.connectionId;
-    const version = await platform().withShop(shopId, (tx) => catalogVersion(tx, connectionId));
-    if ((version?.getTime() ?? null) === entry.version) {
+    const version = await platform().withShop(shopId, async (tx) => {
+      const [words] = await tx
+        .select({ at: max(aliases.createdAt) })
+        .from(aliases)
+        .where(eq(aliases.shopId, shopId));
+      const synced = connectionId ? await catalogVersion(tx, connectionId) : null;
+      return versionOf(synced, words?.at?.getTime() ?? 0);
+    });
+    if (version === entry.version) {
       entry.checkedAt = now;
       return entry.value;
     }

@@ -178,6 +178,18 @@
       "Payment": "Payment",
       "Supplier": "Supplier",
       "Purchase": "Purchase"
+    },
+    "step_words": "Words the assistant learned",
+    "words_note": "Car and part names it did not understand at first and then learned from the answer. Add one and it is understood straight away next time.",
+    "words_none": "No words to review yet.",
+    "words_heard": "heard {{count}} times",
+    "words_add": "Add",
+    "words_dismiss": "Dismiss",
+    "words_checked": "Listening check: {{names}} names checked, {{words}} new spellings added.",
+    "word_concept": {
+      "vehicle_model": "Car",
+      "part_type": "Part",
+      "brand": "Brand"
     }
   }
 }

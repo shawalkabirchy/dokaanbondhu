@@ -4,6 +4,7 @@ export { AppError } from "./errors";
 export * from "./format";
 export * from "./glossary";
 export * from "./grounding";
+export * from "./learning";
 export * from "./numbers";
 export * from "./phonetic";
 export * from "./quantity";

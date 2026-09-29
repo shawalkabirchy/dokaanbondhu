@@ -13,7 +13,7 @@ import {
 } from "@dokaanbondhu/engine/conversation";
 import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
 import type { AsrResult } from "@dokaanbondhu/engine/providers";
-import { conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
+import { aliasSuggestions, conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { serverEnv } from "../env";
 import { appError } from "./errors";
@@ -288,6 +288,26 @@ async function answer(
         );
     }
     if (next) await saveFrame(tx, caller.shopId, conversation.id, next);
+    // Words learned from an answered question (D102 B): counted, and shown to the owner once seen twice.
+    for (const word of outcome.learned) {
+      await tx
+        .insert(aliasSuggestions)
+        .values({
+          shopId: caller.shopId,
+          heard: word.heard,
+          targetConcept: word.concept,
+          targetValue: word.value,
+        })
+        .onConflictDoUpdate({
+          target: [
+            aliasSuggestions.shopId,
+            aliasSuggestions.heard,
+            aliasSuggestions.targetConcept,
+            aliasSuggestions.targetValue,
+          ],
+          set: { seen: sql`${aliasSuggestions.seen} + 1`, lastSeenAt: now },
+        });
+    }
   });
   if (speaker) await speaker.drain();
   const done = held as DoneEvent | null;

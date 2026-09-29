@@ -22,6 +22,11 @@ export interface AsrRequest {
 
 export interface StubSpeech {
   asr: AsrStep[];
+  /**
+   * When set, /asr answers from the audio itself instead of the script: the stub's own /tts audio carries its text
+   * ("mp3:<text>"), so the listening check can be tested with how speech-to-text would write each name.
+   */
+  asrEcho: ((spoken: string) => string[]) | null;
   asrRequests: AsrRequest[];
   ttsTexts: string[];
   ttsFails: boolean;
@@ -45,6 +50,7 @@ function field(body: Buffer, name: string): Buffer | null {
 export async function startStubSpeech(): Promise<StubSpeech> {
   const stub: Omit<StubSpeech, "baseUrl" | "close"> = {
     asr: [],
+    asrEcho: null,
     asrRequests: [],
     ttsTexts: [],
     ttsFails: false,
@@ -62,7 +68,11 @@ export async function startStubSpeech(): Promise<StubSpeech> {
           keyterms: (field(body, "keyterms")?.toString("utf8") ?? "").split(",").filter(Boolean),
           nbest: field(body, "nbest")?.toString("utf8") ?? "",
         });
-        const step = stub.asr.shift() ?? { text: "" };
+        const spoken = audio.toString("utf8").replace(/^mp3:/, "");
+        const echoed = stub.asrEcho?.(spoken);
+        const step: AsrStep = echoed
+          ? { text: echoed[0] ?? "", nbest: echoed }
+          : (stub.asr.shift() ?? { text: "" });
         if (step.status) {
           response.writeHead(step.status).end("failed");
           return;

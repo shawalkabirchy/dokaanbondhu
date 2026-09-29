@@ -6,6 +6,7 @@ import type {
   EntityView,
   ReportsView,
   SchemaView,
+  WordsView,
 } from "@dokaanbondhu/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -18,7 +19,7 @@ import { useDeviceSettings } from "../../../src/lib/settings-store";
 import { Button, Chips, colors, Field, Heading, Note, Screen, styles } from "../../../src/ui";
 
 // Setup, the database half (spec 15.2, 11.3): the connection, the schema map review with sample values as they will be
-// spoken, the catalog sync and the stock-value formula. Owner only.
+// spoken, the catalog sync, the stock-value formula, and the words the assistant learned (D102). Owner only.
 
 type Language = "bn" | "en";
 
@@ -356,7 +357,60 @@ function ReportsSection({ connectionId, language }: { connectionId: string; lang
   );
 }
 
-/** The setup page: four steps, each shown once the one before it works. */
+/**
+ * Words the assistant learned (D102): a car or part name it did not understand at first and then got from the answer,
+ * seen twice; the owner adds it (understood straight away next time) or dismisses it. Also what the listening check did.
+ */
+function WordsSection() {
+  const { t } = useTranslation();
+  const message = useErrorText();
+  const queryClient = useQueryClient();
+  const key = ["setup", "words"];
+  const words = useQuery({ queryKey: key, queryFn: () => api<{ words: WordsView }>("/setup/words") });
+  const decide = useMutation({
+    mutationFn: (input: { id: string; action: "add" | "dismiss" }) =>
+      api<{ words: WordsView }>(`/setup/words/${input.id}`, {
+        method: "PUT",
+        body: { action: input.action },
+      }),
+    onSuccess: (data) => queryClient.setQueryData(key, data),
+  });
+  const view = words.data?.words;
+  return (
+    <View style={{ gap: 12 }}>
+      <Note>{t("setup.words_note")}</Note>
+      {view && view.suggestions.length === 0 ? <Note>{t("setup.words_none")}</Note> : null}
+      {view?.suggestions.map((word) => (
+        <View key={word.id} style={styles.card}>
+          <Text style={{ fontSize: 18, color: colors.ink }}>
+            “{word.heard}” → {word.value}
+          </Text>
+          <Note>
+            {t(`setup.word_concept.${word.concept}`, { defaultValue: word.concept })} ·{" "}
+            {t("setup.words_heard", { count: word.seen })}
+          </Note>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Button
+              label={t("setup.words_add")}
+              onPress={() => decide.mutate({ id: word.id, action: "add" })}
+              disabled={decide.isPending}
+            />
+            <Button
+              kind="plain"
+              label={t("setup.words_dismiss")}
+              onPress={() => decide.mutate({ id: word.id, action: "dismiss" })}
+              disabled={decide.isPending}
+            />
+          </View>
+        </View>
+      ))}
+      {decide.isError ? <Note tone="danger">{message(decide.error)}</Note> : null}
+      {view ? <Note>{t("setup.words_checked", view.checked)}</Note> : null}
+    </View>
+  );
+}
+
+/** The setup page: its steps, each shown once the one before it works. */
 export default function Setup() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
@@ -409,6 +463,8 @@ export default function Setup() {
           <CatalogSection connectionId={current.id} />
           <Heading>{t("setup.step_reports")}</Heading>
           <ReportsSection connectionId={current.id} language={language} />
+          <Heading>{t("setup.step_words")}</Heading>
+          <WordsSection />
         </>
       ) : null}
     </Screen>

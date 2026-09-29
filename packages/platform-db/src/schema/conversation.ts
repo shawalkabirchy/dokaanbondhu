@@ -22,6 +22,7 @@ import {
   MESSAGE_ROLES,
   PROVIDER_JOBS,
   PROVIDERS,
+  SUGGESTION_STATUSES,
   VERIFY_STATUSES,
 } from "./enums";
 import { capabilities } from "./host";
@@ -168,6 +169,61 @@ export const aliases = pgTable(
     check("aliases_target_concept_check", oneOf(t.targetConcept, ALIAS_TARGETS)),
     check("aliases_source_check", oneOf(t.source, ALIAS_SOURCES)),
     index("aliases_shop_id_idx").on(t.shopId),
+  ],
+);
+
+/**
+ * Words learned from answered questions (D102 B): what a request had for a car, part type or brand that needed a
+ * question, and what the answer was. Seen twice, it is offered to the owner, who adds it as an alias or dismisses it.
+ */
+export const aliasSuggestions = pgTable(
+  "alias_suggestions",
+  {
+    id: id(),
+    shopId: uuid("shop_id")
+      .notNull()
+      .references(() => shops.id),
+    heard: text("heard").notNull(),
+    targetConcept: text("target_concept").notNull(),
+    targetValue: text("target_value").notNull(),
+    seen: integer("seen").notNull().default(1),
+    status: text("status").notNull().default("open"),
+    lastSeenAt: timestamptz("last_seen_at")
+      .notNull()
+      .default(sql`now()`),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("alias_suggestions_target_concept_check", oneOf(t.targetConcept, ALIAS_TARGETS)),
+    check("alias_suggestions_status_check", oneOf(t.status, SUGGESTION_STATUSES)),
+    uniqueIndex("alias_suggestions_unique").on(t.shopId, t.heard, t.targetConcept, t.targetValue),
+  ],
+);
+
+/**
+ * The listening check's record (D102 A): each car model and part type of a shop spoken once by our voice and written
+ * down by our speech-to-text, so it is checked only once.
+ */
+export const speechChecks = pgTable(
+  "speech_checks",
+  {
+    id: id(),
+    shopId: uuid("shop_id")
+      .notNull()
+      .references(() => shops.id),
+    targetConcept: text("target_concept").notNull(),
+    targetValue: text("target_value").notNull(),
+    spoken: text("spoken").notNull(),
+    heard: jsonb("heard")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    added: integer("added").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check("speech_checks_target_concept_check", oneOf(t.targetConcept, ALIAS_TARGETS)),
+    uniqueIndex("speech_checks_unique").on(t.shopId, t.targetConcept, t.targetValue),
   ],
 );
 

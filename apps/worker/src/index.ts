@@ -1,5 +1,5 @@
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
-import { HostPools } from "@dokaanbondhu/engine/host";
+import { HostPools, runSpeechCheck } from "@dokaanbondhu/engine/host";
 import { createLogger } from "@dokaanbondhu/engine/log";
 import { createPlatform } from "@dokaanbondhu/platform-db";
 import { PgBoss } from "pg-boss";
@@ -47,6 +47,7 @@ await boss.start();
 await boss.createQueue("retention.nightly");
 await boss.createQueue("health.probe");
 await boss.createQueue("catalog.sync");
+await boss.createQueue("speech.calibrate");
 await boss.schedule("retention.nightly", "0 2 * * *", null, { tz: "Asia/Dhaka" });
 await boss.schedule("health.probe", "*/5 * * * *", null, { tz: "Asia/Dhaka" });
 await boss.schedule("catalog.sync", "*/10 * * * *", null, { tz: "Asia/Dhaka" });
@@ -63,11 +64,35 @@ await boss.work("health.probe", async () => {
 await boss.work("catalog.sync", async () => {
   const result = await runCatalogSync(admin, pools, aesKey);
   log.info({ job: "catalog.sync", synced: result.synced, failed: result.failed }, "catalog sync done");
+  // The listening check follows each sync; it returns at once when the shop has no unchecked name (D102 A).
+  for (const synced of result.results.filter((entry) => !entry.error)) {
+    await boss.send(
+      "speech.calibrate",
+      { shopId: synced.shopId, connectionId: synced.connectionId },
+      { singletonKey: synced.shopId },
+    );
+  }
   for (const failure of result.results.filter((entry) => entry.error)) {
     log.warn(
       { job: "catalog.sync", connectionId: failure.connectionId, error: failure.error },
       "catalog sync failed",
     );
+  }
+});
+await boss.work<{ shopId: string; connectionId: string }>("speech.calibrate", async (jobs) => {
+  for (const job of jobs) {
+    const result = await runSpeechCheck(
+      (fn) => admin.withAdmin(fn),
+      aesKey,
+      job.data.shopId,
+      job.data.connectionId,
+      {
+        log: (line) => log.debug({ job: "speech.calibrate", shopId: job.data.shopId }, line),
+      },
+    );
+    if (result.checked || result.stopped) {
+      log.info({ job: "speech.calibrate", shopId: job.data.shopId, ...result }, "listening check done");
+    }
   }
 });
 log.info("worker started");

@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
-import { HostPools, syncConnection } from "@dokaanbondhu/engine/host";
+import { HostPools, runSpeechCheck, syncConnection } from "@dokaanbondhu/engine/host";
 import { llmChain, llmStream, sidesFrom, type ToolDef } from "@dokaanbondhu/engine/providers";
 import {
   aiProviders,
@@ -338,6 +338,40 @@ const commands: Record<string, Command> = {
     } finally {
       await pools.closeAll();
     }
+  },
+
+  /**
+   * speech-check --shop <id> [--limit <n>]: the listening check now (D102 A), the same code as the worker's
+   * speech.calibrate job: our voice says each unchecked car model and part type, our speech-to-text writes it down,
+   * and new spellings become the shop's words. Test data only.
+   */
+  "speech-check": async (platform, args) => {
+    const { values } = parseArgs({
+      args,
+      options: { shop: { type: "string" }, limit: { type: "string" } },
+    });
+    const shopId = uuid.parse(values.shop);
+    const [connection] = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(
+          and(eq(connections.shopId, shopId), eq(connections.kind, "db"), eq(connections.status, "active")),
+        ),
+    );
+    if (!connection) throw new Error(`shop ${shopId} has no active database connection`);
+    if (!env.success) throw new Error("unreachable");
+    const result = await runSpeechCheck(
+      (fn) => platform.withAdmin(fn),
+      parseAesKey(env.data.AES_KEY),
+      shopId,
+      connection.id,
+      { ...(values.limit ? { limit: Number(values.limit) } : {}), log: out },
+    );
+    out(
+      `checked ${result.checked}, words added ${result.added}, skipped ${result.skipped}, left ${result.left}` +
+        (result.stopped ? `; stopped: ${result.stopped}` : ""),
+    );
   },
 
   /** disable-user --user <id> */

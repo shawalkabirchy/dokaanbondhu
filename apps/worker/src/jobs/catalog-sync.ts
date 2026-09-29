@@ -8,7 +8,7 @@ import { and, eq } from "drizzle-orm";
 export interface CatalogSyncResult {
   synced: number;
   failed: number;
-  results: { connectionId: string; counts?: SyncCounts; error?: string }[];
+  results: { connectionId: string; shopId: string; counts?: SyncCounts; error?: string }[];
 }
 
 export async function runCatalogSync(
@@ -27,11 +27,12 @@ export async function runCatalogSync(
     try {
       const counts = await syncConnection((fn) => admin.withAdmin(fn), pools, aesKey, row.shopId, row.id);
       result.synced++;
-      result.results.push({ connectionId: row.id, counts });
+      result.results.push({ connectionId: row.id, shopId: row.shopId, counts });
     } catch (error) {
       result.failed++;
       result.results.push({
         connectionId: row.id,
+        shopId: row.shopId,
         error: error instanceof Error ? error.message : String(error),
       });
     }

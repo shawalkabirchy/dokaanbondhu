@@ -141,3 +141,23 @@ export const reportsViewSchema = z.object({
 export type ReportsView = z.infer<typeof reportsViewSchema>;
 
 export const reportConfirmSchema = z.object({ connection_id: z.uuid(), name: z.literal("stock_value") });
+
+// Words the assistant learned (D102): suggestions from answered questions, seen at least twice, for the owner to add
+// or dismiss; and what the listening check has done.
+export const wordSuggestionSchema = z.object({
+  id: z.uuid(),
+  heard: z.string(),
+  concept: z.enum(["part_type", "vehicle_model", "quality", "position", "unit", "brand"]),
+  value: z.string(),
+  seen: z.number().int(),
+});
+export type WordSuggestion = z.infer<typeof wordSuggestionSchema>;
+
+export const wordsViewSchema = z.object({
+  suggestions: z.array(wordSuggestionSchema),
+  /** The listening check: names checked, and the words it added. */
+  checked: z.object({ names: z.number().int(), words: z.number().int() }),
+});
+export type WordsView = z.infer<typeof wordsViewSchema>;
+
+export const wordDecisionSchema = z.object({ action: z.enum(["add", "dismiss"]) }).strict();

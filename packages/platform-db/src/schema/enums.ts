@@ -30,7 +30,9 @@ export const REQUIRED_ROLES = ["staff", "owner"] as const;
 export const PARAM_LOCATIONS = ["body", "query", "path"] as const;
 export const CATALOG_CONCEPTS = ["part", "vehicle", "customer", "supplier"] as const;
 export const ALIAS_TARGETS = ["part_type", "vehicle_model", "quality", "position", "unit", "brand"] as const;
-export const ALIAS_SOURCES = ["global", "owner", "host"] as const;
+/** asr_check: the listening check's spellings; learned: words learned from answered questions, added by the owner (D102). */
+export const ALIAS_SOURCES = ["global", "owner", "host", "asr_check", "learned"] as const;
+export const SUGGESTION_STATUSES = ["open", "added", "dismissed"] as const;
 export const FITMENT_EXTRA_SOURCES = ["parsed", "owner"] as const;
 
 export const CHANNELS = ["voice", "chat"] as const;
