@@ -17,17 +17,23 @@ import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useDeviceSettings } from "../../src/lib/settings-store";
 import { streamTurn, uploadChunk } from "../../src/lib/stream";
 import { useVoice } from "../../src/lib/voice";
-import { MAX_RECORDING_MS, VoiceTurn } from "../../src/lib/voice-turn";
+import { MAX_RECORDING_MS, MIN_PRESS_MS, VoiceTurn } from "../../src/lib/voice-turn";
 
 /** How long release waits for the recorder's last chunk, and how much short of the held time counts as all of it. */
 const LAST_CHUNK_WAIT_MS = 600;
 const LAST_CHUNK_SLACK_MS = 250;
+/**
+ * The recorder keeps listening this long after the button is let go (D113): the sound of the last word is still on its
+ * way through the microphone when the finger lifts. Not after a tap, and never past the 30 s limit.
+ */
+const TAIL_MS = 500;
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
 // The voice page (spec 15.2, 15.3, 15.4): hold the button and speak; on release the clip is finished and the answer
 // streams in: the transcript as the user's words, then the reply as text with its audio, played in order. The recorder
 // is prepared before the press (on opening the page and after every stop), because unprepared it takes about 1.4 s
-// to start and loses the first words (P5). Pressing again while an answer plays stops it (barge-in).
+// to start and loses the first words (P5). Pressing again while an answer plays stops it (barge-in). After the release
+// the recorder listens for half a second more, so the last word is not cut (D113).
 
 export default function Voice() {
   const { t } = useTranslation();
@@ -106,20 +112,24 @@ export default function Voice() {
       void prepareRecording(config);
       return;
     }
-    limit.current = setTimeout(() => void onPressOut(), MAX_RECORDING_MS); // hard limit 30 s
+    limit.current = setTimeout(() => void onPressOut(true), MAX_RECORDING_MS); // hard limit 30 s
   }
 
-  async function onPressOut() {
+  async function onPressOut(atLimit = false) {
     const current = turn.current;
     if (!current) return;
     turn.current = null;
     current.markReleased();
     if (limit.current) clearTimeout(limit.current);
+    // Half a second more after the release (D113); a tap and the 30 s limit stop at once.
     const heldMs = Date.now() - recordingSince.current;
+    const tailMs = atLimit || heldMs < MIN_PRESS_MS ? 0 : Math.min(TAIL_MS, MAX_RECORDING_MS - heldMs);
+    if (tailMs > 0) await new Promise((resolve) => setTimeout(resolve, tailMs));
+    const recordedMs = Date.now() - recordingSince.current;
     await stopRecording().catch(() => undefined);
     // The recorder sends its last partial chunk a moment after it stops: wait for it (at most 0.6 s), so the end of
     // what was said is not lost, and it can never land in the next question (D103).
-    await current.waitForAudio(heldMs - LAST_CHUNK_SLACK_MS, LAST_CHUNK_WAIT_MS);
+    await current.waitForAudio(recordedMs - LAST_CHUNK_SLACK_MS, LAST_CHUNK_WAIT_MS);
     if (capturing.current === current) capturing.current = null;
     setRecording(false);
     void prepareRecording(config); // ready for the next press
@@ -172,7 +182,7 @@ export default function Voice() {
           // Never while recording: a question being asked is always finished and sent (D111).
           disabled={!micAllowed && !recording}
           onPressIn={onPressIn}
-          onPressOut={onPressOut}
+          onPressOut={() => void onPressOut()}
           style={[
             styles.button,
             { backgroundColor: recording ? colors.danger : micAllowed ? colors.green : colors.line },

@@ -97,18 +97,35 @@ describe("voice page", () => {
     await act(async () => jest.advanceTimersByTime(500));
     await act(async () => onChunk(loud()));
     await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => onChunk(loud()));
     mockRecorder.stopRecording.mockImplementationOnce(async () => {
       setTimeout(() => void onChunk(loud()), 100); // the last chunk, after the stop
       return {};
     });
-    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => void fireEvent(button, "pressOut")); // release; the rest runs on the clock below
+    // D113: the recorder keeps listening for half a second after the release, so the last word is not cut.
+    await act(async () => jest.advanceTimersByTime(499));
+    expect(mockRecorder.stopRecording).not.toHaveBeenCalled();
+    await act(async () => jest.advanceTimersByTime(1));
+    expect(mockRecorder.stopRecording).toHaveBeenCalledTimes(1);
     await act(async () => jest.advanceTimersByTime(150));
-    expect(uploadChunk).toHaveBeenCalledTimes(2);
+    expect(uploadChunk).toHaveBeenCalledTimes(3);
     expect(streamTurn).toHaveBeenCalledWith(
       expect.stringMatching(/\/finish$/),
-      expect.objectContaining({ chunk_count: 2 }),
+      expect.objectContaining({ chunk_count: 3, duration_ms: 1000 }), // the duration is the hold, without the tail
       expect.any(Function),
     );
+  });
+
+  it("stops at once after a tap, without the half second more", async () => {
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(100));
+    await act(async () => void fireEvent(button, "pressOut"));
+    expect(mockRecorder.stopRecording).toHaveBeenCalledTimes(1);
+    await act(async () => jest.advanceTimersByTime(700));
+    expect(streamTurn).not.toHaveBeenCalled();
   });
 
   it("drops a chunk that comes after the question was sent, so it never joins the next one", async () => {
@@ -117,7 +134,8 @@ describe("voice page", () => {
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(500));
     await act(async () => onChunk(loud()));
-    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => void fireEvent(button, "pressOut")); // release; the rest runs on the clock below
+    await act(async () => jest.advanceTimersByTime(500)); // the half second more (D113)
     await act(async () => jest.advanceTimersByTime(700)); // no last chunk: the wait gives up
     expect(streamTurn).toHaveBeenCalledTimes(1);
     const uploads = (uploadChunk as jest.Mock).mock.calls.length;
@@ -131,7 +149,8 @@ describe("voice page", () => {
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(1_000));
     await act(async () => onChunk(Buffer.alloc(16_000).toString("base64"))); // silence
-    await act(async () => void fireEvent(button, "pressOut")); // release; its wait runs on the clock below
+    await act(async () => void fireEvent(button, "pressOut")); // release; the rest runs on the clock below
+    await act(async () => jest.advanceTimersByTime(500)); // the half second more (D113)
     await act(async () => jest.advanceTimersByTime(700)); // no last chunk comes
     expect(streamTurn).not.toHaveBeenCalled();
     expect(jest.requireMock("./lib/audio").playAskAgain).toHaveBeenCalled();
@@ -166,6 +185,7 @@ describe("voice page", () => {
     mockHealth.micAllowed = false;
     await screen.rerender(<Voice />);
     await act(async () => void fireEvent(button, "pressOut"));
+    await act(async () => jest.advanceTimersByTime(500)); // the half second more (D113)
     await act(async () => jest.advanceTimersByTime(700));
     expect(streamTurn).toHaveBeenCalledWith(
       expect.stringMatching(/\/finish$/),
