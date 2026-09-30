@@ -90,6 +90,9 @@ export interface ChatState {
     userText: string,
     run: (conversationId: string, onEvent: OnEvent) => Promise<void>,
     tap?: OnEvent,
+    /** The label shown until the server's first status: searching for a typed question, understanding for a voice one
+     * (D115). */
+    firstStatus?: string,
   ) => Promise<void>;
   /**
    * A reply the app gives by itself, without the server: the voice page's "আবার বলবেন?" for a clip too quiet to send
@@ -131,7 +134,7 @@ export function createChatStore(deps: ChatDeps) {
       return opening;
     };
 
-    const runTurn: ChatState["runTurn"] = async (userText, run, tap) => {
+    const runTurn: ChatState["runTurn"] = async (userText, run, tap, firstStatus = "status.searching") => {
       if (get().busy) return;
       const userId = deps.newId();
       const replyId = deps.newId();
@@ -145,7 +148,7 @@ export function createChatStore(deps: ChatDeps) {
             kind: "assistant",
             id: replyId,
             turnId: null,
-            status: "status.searching",
+            status: firstStatus,
             texts: [],
             cards: [],
             tables: [],

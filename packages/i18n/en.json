@@ -53,7 +53,8 @@
   },
   "status": {
     "listening": "Listening…",
-    "searching": "Searching…"
+    "searching": "Searching…",
+    "understanding": "Understanding…"
   },
   "voice": {
     "hold": "Hold to talk",

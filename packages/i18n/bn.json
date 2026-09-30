@@ -53,7 +53,8 @@
   },
   "status": {
     "listening": "শুনছি…",
-    "searching": "খুঁজছি…"
+    "searching": "খুঁজছি…",
+    "understanding": "বুঝছি…"
   },
   "voice": {
     "hold": "চেপে ধরে বলুন",

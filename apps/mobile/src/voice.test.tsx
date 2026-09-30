@@ -120,6 +120,26 @@ describe("voice page", () => {
     );
   });
 
+  // D115: the reply showed "খুঁজছি…", then "শুনছি…", then "খুঁজছি…"; it now only moves forward.
+  it("shows the question being understood, not searched, until the server's first status", async () => {
+    let finish: () => void = () => undefined;
+    (streamTurn as jest.Mock).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => onChunk(loud()));
+    await act(async () => void fireEvent(button, "pressOut"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => jest.advanceTimersByTime(700));
+    expect(streamTurn).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("status.understanding")).toBeTruthy();
+    expect(screen.queryByText("status.searching")).toBeNull();
+    await act(async () => finish());
+  });
+
   it("stops at once after a tap, without the half second more", async () => {
     await render(<Voice />);
     const button = screen.getByRole("button", { name: "voice.hold" });

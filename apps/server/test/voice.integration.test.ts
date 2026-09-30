@@ -211,7 +211,7 @@ describe.skipIf(!allLocal)("voice turns", () => {
     const { conversationId, response, events, reply } = await say(pcm, {}, [2, 0, 1, 3, 4, 5, 6]);
     expect(response.status).toBe(200);
 
-    expect(events[0]).toMatchObject({ type: "status", label_key: "status.listening" });
+    expect(events[0]).toMatchObject({ type: "status", label_key: "status.understanding" }); // D115
     expect(events.find((event) => event.type === "transcript")).toMatchObject({ text: padsQuestion });
     expect(reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে");
     // every sentence has its audio, in order, after its text

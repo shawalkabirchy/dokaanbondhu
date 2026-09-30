@@ -401,7 +401,8 @@ export async function voiceTurn(
   const startedAt = Date.now();
   const { caller, conversation } = request;
   try {
-    emit({ type: "status", state: "UNDERSTANDING", label_key: "status.listening" });
+    // Turning the voice into words: "বুঝছি…"; "শুনছি…" is only the button while it is held (D115).
+    emit({ type: "status", state: "UNDERSTANDING", label_key: "status.understanding" });
     const [speech, voice] = await Promise.all([
       shopSpeech(caller.shopId, request.evalMode),
       shopVoice(caller.shopId),

@@ -154,6 +154,7 @@ export default function Voice() {
       (_conversationId, onEvent) =>
         current.send((turnId, body) => streamTurn(`/voice/turns/${turnId}/finish`, body, onEvent)),
       playerTap(),
+      "status.understanding", // turning the voice into words: "বুঝছি…", never "খুঁজছি…" first (D115)
     );
     if (speechTrouble) void refresh(); // a turn that worked clears the warning at once
   }

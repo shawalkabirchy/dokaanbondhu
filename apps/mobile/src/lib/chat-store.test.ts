@@ -157,6 +157,33 @@ describe("chat store", () => {
     expect(deps.stream).toHaveBeenCalledTimes(2);
   });
 
+  // D115: a voice question's reply starts as "understanding", a typed one's as "searching".
+  it("starts a reply with the label it is given until the server's first status", async () => {
+    let emit: ((event: ReplyEvent) => void) | null = null;
+    let finish: () => void = () => undefined;
+    const { useChat } = store([]);
+    const turn = useChat.getState().runTurn(
+      "",
+      (_conversationId, onEvent) =>
+        new Promise<void>((resolve) => {
+          emit = onEvent;
+          finish = resolve;
+        }),
+      undefined,
+      "status.understanding",
+    );
+    expect(reply(useChat)[0]?.status).toBe("status.understanding");
+    while (!emit) await Promise.resolve(); // the stream has started
+    (emit as (event: ReplyEvent) => void)({
+      type: "status",
+      state: "UNDERSTANDING",
+      label_key: "status.searching",
+    });
+    expect(reply(useChat)[0]?.status).toBe("status.searching");
+    finish();
+    await turn;
+  });
+
   // D114: the voice page's own "আবার বলবেন?" for a clip too quiet to send, shown as text.
   it("shows a note of the app's own as a finished reply, once in a row, without the server", () => {
     const { useChat, deps } = store([]);
