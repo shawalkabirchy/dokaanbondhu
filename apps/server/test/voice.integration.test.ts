@@ -374,4 +374,50 @@ describe.skipIf(!allLocal)("voice turns", () => {
       delete cached.__dokaanServerEnv;
     }
   });
+
+  // D114: the developer's switch for reading aloud.
+  it("reads nothing aloud with AI_SPEAK=off: text only, no text-to-speech call, no error, and /me says so", async () => {
+    const cached = globalThis as { __dokaanServerEnv?: unknown };
+    const before = process.env.AI_SPEAK;
+    process.env.AI_SPEAK = "off";
+    delete cached.__dokaanServerEnv;
+    const spokenOrFailed = (events: ReplyEvent[]) =>
+      events.filter((event) => event.type === "audio" || event.type === "error");
+    try {
+      speech.asr.push({ text: padsQuestion });
+      llm.script.push(padsCall);
+      const voice = await say(spoken());
+      expect(voice.reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে");
+      expect(spokenOrFailed(voice.events)).toEqual([]);
+      expect(speech.asrRequests).toHaveLength(1); // asking by voice still works
+
+      llm.script.push(padsCall);
+      const typed = await chatCall(routes.chat.POST, shop.owner.auth, {
+        conversation_id: await newConversation(),
+        text: padsQuestion,
+        speak: true,
+      });
+      expect(typed.reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে");
+      expect(spokenOrFailed(typed.events)).toEqual([]);
+      expect(speech.ttsTexts).toEqual([]);
+
+      const { GET } = await import("../app/api/v1/me/route");
+      const me = await (GET as (request: Request, context: unknown) => Promise<Response>)(
+        new Request("http://localhost:3100/api/v1/me", {
+          headers: { authorization: `Bearer ${await token(shop.owner.auth)}` },
+        }),
+        { params: Promise.resolve({}) },
+      );
+      expect(((await me.json()) as { providers: { speaks: boolean; tts: unknown } }).providers).toMatchObject(
+        {
+          speaks: false,
+          tts: null,
+        },
+      );
+    } finally {
+      if (before === undefined) delete process.env.AI_SPEAK;
+      else process.env.AI_SPEAK = before;
+      delete cached.__dokaanServerEnv;
+    }
+  });
 });

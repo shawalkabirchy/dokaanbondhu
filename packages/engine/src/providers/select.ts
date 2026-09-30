@@ -2,18 +2,22 @@
 // our own models or the paid APIs. For a shop, a job and a side the candidates are the enabled rows of that side:
 // the shop's own rows if it has any there, otherwise the global ones. The LLM chain is the chosen side's candidates
 // in priority order, then the other side's, so the other side is always the backup; a speech job uses one row of
-// the chosen side, the other side's only when the chosen side has none.
+// the chosen side, the other side's only when the chosen side has none. Speaking can also be switched off (D114):
+// answers are then text only and no text-to-speech provider is used.
 
 export type ProviderJob = "llm" | "stt" | "tts";
 
 /** "own": our models (Gemma 4, the speech worker); "api": the paid services. */
 export type Side = "own" | "api";
 
+/** AI_SPEAK: a side, or "off" for no reading aloud at all (D114). */
+export type SpeakSide = Side | "off";
+
 /** The developer's switches: AI_CHAT, AI_LISTEN and AI_SPEAK. */
 export interface Sides {
   chat: Side;
   listen: Side;
-  speak: Side;
+  speak: SpeakSide;
 }
 
 export const OWN_SIDE: Sides = { chat: "own", listen: "own", speak: "own" };
@@ -23,14 +27,18 @@ const OWN_PROVIDERS = new Set(["vllm", "cloudflare", "speech_worker"]);
 /** vllm, cloudflare and speech_worker are our models; deepseek, openai, openrouter and elevenlabs are paid APIs. */
 export const sideOf = (provider: string): Side => (OWN_PROVIDERS.has(provider) ? "own" : "api");
 
-/** Reads AI_CHAT, AI_LISTEN and AI_SPEAK: unset or empty means own; any other value than own or api is refused. */
+/**
+ * Reads AI_CHAT, AI_LISTEN and AI_SPEAK: unset or empty means own; any other value than own or api is refused, except
+ * AI_SPEAK=off (D114).
+ */
 export function sidesFrom(env: Record<string, string | undefined>): Sides {
   const read = (name: string): Side => {
     const value = env[name]?.trim() || "own";
     if (value !== "own" && value !== "api") throw new Error(`${name} must be own or api, not "${value}"`);
     return value;
   };
-  return { chat: read("AI_CHAT"), listen: read("AI_LISTEN"), speak: read("AI_SPEAK") };
+  const speak = env.AI_SPEAK?.trim() === "off" ? "off" : read("AI_SPEAK");
+  return { chat: read("AI_CHAT"), listen: read("AI_LISTEN"), speak };
 }
 
 const other = (side: Side): Side => (side === "own" ? "api" : "own");
@@ -83,6 +91,6 @@ export function selectProviders<T extends ProviderRow>(
   return {
     llm: [...chain(sides.chat), ...chain(other(sides.chat))],
     stt: speech("stt", sides.listen),
-    tts: speech("tts", sides.speak),
+    tts: sides.speak === "off" ? null : speech("tts", sides.speak),
   };
 }

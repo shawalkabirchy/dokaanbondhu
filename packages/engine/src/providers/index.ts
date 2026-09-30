@@ -20,6 +20,7 @@ export {
   type ProvidersInUse,
   type Side,
   type Sides,
+  type SpeakSide,
 } from "./select";
 export {
   SpeechError,

@@ -91,6 +91,11 @@ export interface ChatState {
     run: (conversationId: string, onEvent: OnEvent) => Promise<void>,
     tap?: OnEvent,
   ) => Promise<void>;
+  /**
+   * A reply the app gives by itself, without the server: the voice page's "আবার বলবেন?" for a clip too quiet to send
+   * (D114). The same note is not shown twice in a row.
+   */
+  note: (text: string) => void;
   reset: () => void;
 }
 
@@ -178,12 +183,33 @@ export function createChatStore(deps: ChatDeps) {
       }
     };
 
+    const note: ChatState["note"] = (text) =>
+      set((state) => {
+        const last = state.messages.at(-1);
+        if (last?.kind === "assistant" && last.turnId === null && last.done && last.texts.join("") === text)
+          return state;
+        const message: AssistantMessage = {
+          kind: "assistant",
+          id: deps.newId(),
+          turnId: null,
+          status: null,
+          texts: [text],
+          cards: [],
+          tables: [],
+          choices: null,
+          error: null,
+          done: true,
+        };
+        return { messages: [...state.messages, message] };
+      });
+
     return {
       conversationId: null,
       messages: [],
       busy: false,
       ensureConversation,
       runTurn,
+      note,
       reset: () => {
         active = null;
         set({ conversationId: null, messages: [], busy: false });

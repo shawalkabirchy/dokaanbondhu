@@ -156,4 +156,17 @@ describe("chat store", () => {
     expect(useChat.getState().busy).toBe(false);
     expect(deps.stream).toHaveBeenCalledTimes(2);
   });
+
+  // D114: the voice page's own "আবার বলবেন?" for a clip too quiet to send, shown as text.
+  it("shows a note of the app's own as a finished reply, once in a row, without the server", () => {
+    const { useChat, deps } = store([]);
+    useChat.getState().note("আবার বলবেন?");
+    useChat.getState().note("আবার বলবেন?");
+    expect(reply(useChat)).toEqual([
+      expect.objectContaining({ texts: ["আবার বলবেন?"], done: true, status: null }),
+    ]);
+    expect(useChat.getState().busy).toBe(false);
+    expect(deps.stream).not.toHaveBeenCalled();
+    expect(deps.createConversation).not.toHaveBeenCalled();
+  });
 });

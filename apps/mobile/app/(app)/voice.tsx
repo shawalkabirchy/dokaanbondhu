@@ -1,4 +1,5 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import { ASK_AGAIN } from "@dokaanbondhu/core";
 import {
   AudioStudioModule,
   useAudioRecorder,
@@ -14,6 +15,7 @@ import { phonePlayer, playAskAgain, stopPlayback } from "../../src/lib/audio";
 import { useHealth } from "../../src/lib/health";
 import { base64ToBytes } from "../../src/lib/pcm";
 import { ReplyPlayer } from "../../src/lib/reply-player";
+import { useMe } from "../../src/lib/session";
 import { useDeviceSettings } from "../../src/lib/settings-store";
 import { streamTurn, uploadChunk } from "../../src/lib/stream";
 import { useVoice } from "../../src/lib/voice";
@@ -39,7 +41,9 @@ export default function Voice() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const { micAllowed, speechTrouble, refresh } = useHealth();
-  const { messages, busy, runTurn, ensureConversation, send, reset } = useVoice();
+  const { messages, busy, runTurn, ensureConversation, send, reset, note } = useVoice();
+  /** False when the developer has switched reading aloud off (AI_SPEAK=off, D114). */
+  const speaks = useMe().data?.providers.speaks ?? true;
   const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
   const [recording, setRecording] = useState(false);
   const turn = useRef<VoiceTurn | null>(null);
@@ -86,6 +90,12 @@ export default function Voice() {
     };
   }
 
+  /** A clip too quiet to send: "আবার বলবেন?" as text, and as the bundled sound unless speaking is off (D114). */
+  function askAgain() {
+    note(ASK_AGAIN);
+    if (speaks) playAskAgain();
+  }
+
   async function onPressIn() {
     player.current?.stop(); // barge-in
     stopPlayback();
@@ -97,7 +107,12 @@ export default function Voice() {
       await prepareRecording(config);
     }
     const started = new VoiceTurn(
-      { upload: uploadChunk, playAskAgain, newId: () => Crypto.randomUUID(), now: () => Date.now() },
+      {
+        upload: uploadChunk,
+        playAskAgain: askAgain,
+        newId: () => Crypto.randomUUID(),
+        now: () => Date.now(),
+      },
       ensureConversation(),
     );
     turn.current = started;

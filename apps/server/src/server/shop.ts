@@ -89,6 +89,7 @@ export function providersInUse(rows: ProviderRowDb[], shopId: string): Providers
     llm: used.llm.map(providerView),
     stt: used.stt ? providerView(used.stt) : null,
     tts: used.tts ? providerView(used.tts) : null,
+    speaks: serverSides().speak !== "off",
   };
 }
 
@@ -99,21 +100,24 @@ export async function shopLlm(shopId: string): Promise<LlmProvider[]> {
 
 /**
  * The shop's speech providers for a turn (spec 13.2, D98): the developer's sides; requests with the evaluation key
- * always use our own speech models, because the recordings' consent covers only those (D41).
+ * always use our own speech models, because the recordings' consent covers only those (D41). With AI_SPEAK=off
+ * nothing is read aloud, for evaluation requests too (D114): `speaks` is false and there is no text-to-speech.
  */
 export async function shopSpeech(
   shopId: string,
   evalMode: boolean,
-): Promise<{ stt: SttProvider | null; tts: TtsProvider | null }> {
+): Promise<{ stt: SttProvider | null; tts: TtsProvider | null; speaks: boolean }> {
   const sides = serverSides();
+  const speaks = sides.speak !== "off";
   const used = selectProviders(
     await providerRows(shopId),
     shopId,
-    evalMode ? { ...sides, listen: "own", speak: "own" } : sides,
+    evalMode ? { ...sides, listen: "own", speak: speaks ? "own" : "off" } : sides,
   );
   const key = parseAesKey(serverEnv().AES_KEY);
   return {
     stt: used.stt ? sttAdapter(used.stt, key) : null,
     tts: used.tts ? ttsAdapter(used.tts, key) : null,
+    speaks,
   };
 }

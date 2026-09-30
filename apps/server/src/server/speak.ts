@@ -6,7 +6,8 @@ import { logger } from "./singletons";
 // Spoken replies (spec 12.3, 15.4): the first sentence goes to text-to-speech at once, the others follow in order, one
 // at a time, and each audio event carries its sentence's seq. Audio is cached in server memory (least recently used,
 // 200 clips per voice and provider). If text-to-speech fails, the turn goes on as text only, with one non-fatal
-// TTS_UNAVAILABLE error event.
+// TTS_UNAVAILABLE error event. With speaking switched off (AI_SPEAK=off, D114) the speaker says nothing and reports
+// no error.
 
 const CACHE_CLIPS = 200;
 const holder = globalThis as { __dokaanTtsCache?: Map<string, Map<string, Uint8Array>> };
@@ -30,6 +31,7 @@ export class Speaker {
     private readonly emit: (event: ReplyEvent) => void,
     private readonly startedAt: number,
     private readonly context: Record<string, unknown> = {},
+    private readonly speaks = true,
   ) {}
 
   /** Queues one sentence; its audio event follows every earlier sentence's. */
@@ -43,7 +45,7 @@ export class Speaker {
   }
 
   private async speak(seq: number, text: string): Promise<void> {
-    if (this.failed || !text.trim()) return;
+    if (this.failed || !this.speaks || !text.trim()) return;
     if (!this.tts) return this.fail(new Error("no text-to-speech provider"));
     const cache = cached(this.tts.id, this.voice);
     let bytes = cache.get(text);

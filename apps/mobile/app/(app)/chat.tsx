@@ -7,12 +7,14 @@ import { AssistantBubble, UserBubble } from "../../src/chat-ui";
 import { phonePlayer } from "../../src/lib/audio";
 import { useChat } from "../../src/lib/chat";
 import { ReplyPlayer } from "../../src/lib/reply-player";
+import { useMe } from "../../src/lib/session";
 import { useDeviceSettings } from "../../src/lib/settings-store";
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
 /**
  * The chat page (spec 15.2): the message list with cards, tables and chips, and the input at the bottom. The speaker
- * switch asks for the spoken reply too (speak: true, D88), played in sentence order.
+ * switch asks for the spoken reply too (speak: true, D88), played in sentence order; it is hidden when the developer
+ * has switched reading aloud off (AI_SPEAK=off, D114).
  */
 export default function Chat() {
   const { t } = useTranslation();
@@ -20,6 +22,7 @@ export default function Chat() {
   const { messages, busy, send, reset } = useChat();
   const [text, setText] = useState("");
   const [speak, setSpeak] = useState(false);
+  const speaks = useMe().data?.providers.speaks ?? true;
   const player = useRef<ReplyPlayer | null>(null);
   const [top, setTop] = useState(0);
   const box = useRef<View>(null);
@@ -31,7 +34,7 @@ export default function Chat() {
   /** Sending options: with the speaker on, the reply's audio is played by a new player. */
   const options = () => {
     player.current?.stop();
-    if (!speak) return {};
+    if (!speak || !speaks) return {};
     const current = new ReplyPlayer(phonePlayer, Crypto.randomUUID());
     player.current = current;
     const tap = (event: ReplyEvent) => {
@@ -93,10 +96,14 @@ export default function Chat() {
           <Button label={t("chat.send")} onPress={submit} disabled={busy || !text.trim()} />
         </View>
         <View style={styles.newRow}>
-          <View style={styles.speakRow}>
-            <Switch value={speak} onValueChange={setSpeak} accessibilityLabel={t("chat.speak")} />
-            <Text style={styles.speakText}>{t("chat.speak")}</Text>
-          </View>
+          {speaks ? (
+            <View style={styles.speakRow}>
+              <Switch value={speak} onValueChange={setSpeak} accessibilityLabel={t("chat.speak")} />
+              <Text style={styles.speakText}>{t("chat.speak")}</Text>
+            </View>
+          ) : (
+            <View />
+          )}
           {messages.length > 0 && !busy ? (
             <Button label={t("chat.new")} kind="plain" onPress={reset} />
           ) : null}

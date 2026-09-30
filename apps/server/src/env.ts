@@ -9,6 +9,12 @@ const side = z.preprocess(
   z.enum(["own", "api"]).default("own"),
 );
 
+/** own, api, or off for no reading aloud at all (D114). */
+const speakSide = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.enum(["own", "api", "off"]).default("own"),
+);
+
 const schema = z.object({
   PLATFORM_DATABASE_URL: z.string().min(1),
   SUPABASE_URL: z.url(),
@@ -24,10 +30,11 @@ const schema = z.object({
   EVAL_MODE_SECRET: z.string().min(16).optional(),
   JWT_TEST_SECRET: z.string().min(16).optional(), // CI only: HS256 test tokens instead of the JWKS (D20)
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
-  // The developer's switches (D98): our own models or the paid APIs, for chat, listening and speaking.
+  // The developer's switches (D98): our own models or the paid APIs, for chat, listening and speaking; speaking can
+  // also be off (D114).
   AI_CHAT: side,
   AI_LISTEN: side,
-  AI_SPEAK: side,
+  AI_SPEAK: speakSide,
 });
 
 export type ServerEnv = z.infer<typeof schema>;

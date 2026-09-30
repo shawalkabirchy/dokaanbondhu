@@ -62,6 +62,17 @@ describe("which provider answers (spec 13.2, D98)", () => {
     expect(sideOf("cloudflare")).toBe("own");
     expect(sideOf("elevenlabs")).toBe("api");
   });
+
+  // D114: the developer can switch reading aloud off; listening and chat are not touched.
+  it("uses no text-to-speech at all with AI_SPEAK=off, and refuses off for chat and listening", () => {
+    expect(sidesFrom({ AI_SPEAK: " off " })).toEqual({ chat: "own", listen: "own", speak: "off" });
+    const off = selectProviders(rows, SHOP, { chat: "own", listen: "own", speak: "off" });
+    expect(off.tts).toBeNull();
+    expect(off.stt?.id).toBe("a-stt");
+    expect(off.llm.map((r) => r.id)).toEqual(["g-cf", "g-ds"]);
+    expect(() => sidesFrom({ AI_LISTEN: "off" })).toThrow('AI_LISTEN must be own or api, not "off"');
+    expect(() => sidesFrom({ AI_CHAT: "off" })).toThrow('AI_CHAT must be own or api, not "off"');
+  });
 });
 
 describe("provider health", () => {

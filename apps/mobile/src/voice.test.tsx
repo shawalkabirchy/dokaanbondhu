@@ -32,6 +32,8 @@ const mockHealth = {
   refresh: jest.fn(),
 };
 jest.mock("./lib/health", () => ({ useHealth: () => mockHealth }));
+const mockMe = { data: { providers: { speaks: true } } };
+jest.mock("./lib/session", () => ({ useMe: () => mockMe }));
 jest.mock("./lib/audio", () => ({
   phonePlayer: {
     save: () => "file://x.mp3",
@@ -68,6 +70,7 @@ describe("voice page", () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     Object.assign(mockHealth, { online: true, micAllowed: true, speechTrouble: false });
+    mockMe.data.providers.speaks = true;
   });
   afterEach(() => jest.useRealTimers());
 
@@ -154,7 +157,24 @@ describe("voice page", () => {
     await act(async () => jest.advanceTimersByTime(700)); // no last chunk comes
     expect(streamTurn).not.toHaveBeenCalled();
     expect(jest.requireMock("./lib/audio").playAskAgain).toHaveBeenCalled();
+    expect(screen.getByText("আবার বলবেন?")).toBeTruthy(); // as text too (D114)
     expect(uploadChunk).toHaveBeenCalled(); // the press was long enough to upload, just too quiet to finish
+  });
+
+  // D114: with reading aloud switched off by the developer (AI_SPEAK=off) the app makes no sound at all.
+  it("asks again as text only when speaking is switched off", async () => {
+    mockMe.data.providers.speaks = false;
+    await render(<Voice />);
+    const button = screen.getByRole("button", { name: "voice.hold" });
+    await act(async () => fireEvent(button, "pressIn"));
+    await act(async () => jest.advanceTimersByTime(1_000));
+    await act(async () => onChunk(Buffer.alloc(16_000).toString("base64"))); // silence
+    await act(async () => void fireEvent(button, "pressOut"));
+    await act(async () => jest.advanceTimersByTime(500));
+    await act(async () => jest.advanceTimersByTime(700));
+    expect(screen.getByText("আবার বলবেন?")).toBeTruthy();
+    expect(jest.requireMock("./lib/audio").playAskAgain).not.toHaveBeenCalled();
+    expect(streamTurn).not.toHaveBeenCalled();
   });
 
   // From the owner's test on 30 Sep (D111): one "audio too short" locked the microphone for five minutes.

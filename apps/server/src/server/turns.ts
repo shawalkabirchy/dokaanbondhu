@@ -349,7 +349,14 @@ export async function chatTurn(request: TurnRequest, emit: (event: ReplyEvent) =
         shopSpeech(request.caller.shopId, request.evalMode),
         shopVoice(request.caller.shopId),
       ]);
-      speaker = new Speaker(speech.tts, voice, emit, startedAt, { request_id: request.requestId });
+      speaker = new Speaker(
+        speech.tts,
+        voice,
+        emit,
+        startedAt,
+        { request_id: request.requestId },
+        speech.speaks,
+      );
     }
     await answer(
       request,
@@ -399,7 +406,14 @@ export async function voiceTurn(
       shopSpeech(caller.shopId, request.evalMode),
       shopVoice(caller.shopId),
     ]);
-    const speaker = new Speaker(speech.tts, voice, emit, startedAt, { request_id: request.requestId });
+    const speaker = new Speaker(
+      speech.tts,
+      voice,
+      emit,
+      startedAt,
+      { request_id: request.requestId },
+      speech.speaks,
+    );
     const upload = { duration_ms: clip.durationMs, rms: clip.rms, bytes: clip.pcm.byteLength };
     const again = (voiceMeta: Record<string, unknown>, timings: Record<string, number>, heard?: string) =>
       askAgain(request, emit, speaker, startedAt, { upload, ...voiceMeta }, timings, heard ?? null);

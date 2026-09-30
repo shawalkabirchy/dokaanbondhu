@@ -47,6 +47,8 @@ export const providersInUseSchema = z.object({
   llm: z.array(providerViewSchema), // in fallback order
   stt: providerViewSchema.nullable(),
   tts: providerViewSchema.nullable(),
+  /** Whether answers are read aloud at all: false when the developer has switched speaking off (D114). */
+  speaks: z.boolean().default(true),
 });
 export type ProvidersInUse = z.infer<typeof providersInUseSchema>;
 
