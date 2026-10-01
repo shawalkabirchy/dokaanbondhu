@@ -1,0 +1,35 @@
+# The server's hosted demo copy on Render (spec D116, D117): the development setup (dokaan-dev, shop-dev, Cloudflare,
+# Modal; seed data only) reachable from the phone without the laptop. Not production: that is the RunPod pod of step 9.
+# Deploys only with "Manual Deploy" before a demo, never on a push of unfinished work.
+# A card later: change plan to starter (always on, 0.5 CPU); the address stays the same, so the demo APK keeps working.
+services:
+  - type: web
+    name: dokaanbondhu-server
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci && npm run build -w apps/server
+    startCommand: npm run start -w apps/server -- -p $PORT
+    healthCheckPath: /api/v1/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: LOG_LEVEL
+        value: info
+      - key: AI_CHAT
+        value: own
+      - key: AI_LISTEN
+        value: own
+      - key: AI_SPEAK
+        value: own
+      # Typed into Render, never committed. sslrootcert points at certs/ in the checkout:
+      # /opt/render/project/src/certs/supabase-root-2021.crt. EVAL_MODE_SECRET is deliberately not set (D117).
+      - key: PLATFORM_DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: AES_KEY
+        sync: false
