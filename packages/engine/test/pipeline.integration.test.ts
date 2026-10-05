@@ -462,4 +462,60 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       expect(second.reply).toContain("নোয়া ২০১৬-এর");
     },
   );
+
+  // D118: the mistakes seen in the voice test of 5 Oct, as the LLM made them.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও দুই হাজার দশ সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      text: "Axio dui hajar dosh shamner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "Axio", position: "front" },
+    },
+  ])(
+    "takes the year from the request when the LLM leaves it out of find_parts (D118; $style)",
+    async ({ text, args }) => {
+      const { outcome, reply } = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(outcome.meta.questions).toBe(0);
+      expect(reply).toContain("এক্সিও ২০১০-এর");
+      expect(reply).toContain("B-2");
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "নোয়া সেল মোটর আছে?", args: { vehicle: "Toyota Noah", year: "noa" } },
+    { style: "Banglish", text: "noah sel motor ache?", args: { vehicle: "Toyota Noah", year: "noa" } },
+  ])(
+    "fills a part type the LLM left out from the request and asks a year it gave as noise (D118; $style)",
+    async ({ text, args }) => {
+      const { outcome, reply } = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(reply).toBe("কোন বছরের নোয়া?");
+      expect(outcome.trace.lookups[0]?.resolved).toMatchObject({ part_type: "Starter Motor", year: null });
+    },
+  );
+
+  const karimAutoDue = {
+    name: "run_read_query",
+    arguments: {
+      sql: "SELECT name, due_balance FROM customers WHERE name = 'Karim Auto'",
+      purpose: "বাকি",
+    },
+  };
+
+  it.each([
+    { style: "Bangla", text: "করিম অটোর বাকি কত?" },
+    { style: "Banglish", text: "Karim Auto er baki koto?" },
+  ])("writes an amount the LLM gave in ASCII digits with Bangla digits (D118; $style)", async ({ text }) => {
+    const llm = scripted([{ calls: [karimAutoDue] }, { text: "Karim Auto এর বাকি আছে 21,900 টাকা।" }]);
+    const { outcome, reply } = await turn(text, fresh(), [llm]);
+    expect(outcome.meta.grounding_failures).toBe(0);
+    expect(reply).toBe("Karim Auto এর বাকি আছে ২১,৯০০ টাকা।");
+  });
 });

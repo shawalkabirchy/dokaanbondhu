@@ -12,6 +12,7 @@ import {
   namesInText,
   noFitmentAnswer,
   normalize,
+  parseYear,
   partPhrase,
   racksInText,
   partsAnswer,
@@ -24,6 +25,7 @@ import {
   slotChips,
   splitSentences,
   banglaOf,
+  banglaNumbers,
   formatTaka,
   type Dictionary,
   type PartRow,
@@ -377,6 +379,9 @@ export async function runTurn(
     ...racksInText(text, rackLabels(deps.host.catalog)),
   ];
   const inName = (heard: string) => named.some((name) => ` ${name.heard} `.includes(` ${heard} `));
+  // The part type, car, quality and position the request names by itself; they also complete a find_parts call
+  // that leaves one out (D118).
+  const heardSlots = new Map<string, string>();
   const candidates = (["part_type", "vehicle_model", "quality", "position"] as const)
     .map((concept) => {
       const best = hypotheses[0]
@@ -384,10 +389,13 @@ export async function runTurn(
             (candidate) => !inName(candidate.heard),
           )
         : undefined;
-      return best && best.score >= 0.7 ? `${concept} ${best.value} (${best.score.toFixed(2)})` : null;
+      if (!best || best.score < 0.7) return null;
+      heardSlots.set(concept, best.value);
+      return `${concept} ${best.value} (${best.score.toFixed(2)})`;
     })
     .filter(Boolean) as string[];
   candidates.push(...named.map((name) => `${name.kind} ${name.name}`));
+  const saidYear = text ? parseYear(normalize(text, deps.dictionary.variants).tokens, { now }) : null;
   mark("candidates", since);
 
   const facts: Facts = { allowed: new AllowedFacts() };
@@ -518,6 +526,27 @@ export async function runTurn(
     return "facts";
   };
 
+  /**
+   * The LLM's find_parts query completed from the request (D118): a part type, car, position or quality it left out
+   * is the request's candidate, and a year it left out or gave in a form that cannot be read is the request's own;
+   * an unreadable year the request does not have is dropped, so it is asked.
+   */
+  const completed = (query: PartQuery): PartQuery => {
+    const out = { ...query };
+    if (out.year && parseYear(normalize(out.year).tokens, { now, bare: true }) === null) delete out.year;
+    if (!out.year && saidYear !== null) out.year = String(saidYear);
+    for (const [slot, concept] of [
+      ["part_type", "part_type"],
+      ["vehicle", "vehicle_model"],
+      ["position", "position"],
+      ["quality", "quality"],
+    ] as const) {
+      const heard = heardSlots.get(concept);
+      if (!out[slot] && heard) out[slot] = heard;
+    }
+    return out;
+  };
+
   /** Runs one tool call; returns the tool result for the LLM, or "stop" when the turn has its reply. */
   const runTool = async (call: ToolCall): Promise<string | "stop"> => {
     const args = parseArgs(call);
@@ -529,7 +558,7 @@ export async function runTurn(
           return JSON.stringify({ error: "no shop database connected" });
         }
         const frame = newFrame(deps.newId(), "find_parts", now, text);
-        const outcome = await findAndDecide(partQueryOf(args), frame);
+        const outcome = await findAndDecide(completed(partQueryOf(args)), frame);
         record(outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"));
         if (outcome === "asked") return "stop";
         const result = facts.parts!.result;
@@ -906,12 +935,13 @@ export async function runTurn(
       // questions are templates, never the LLM's own words (spec 9.4, 12.2).
       reply = helpAnswer();
     } else if (llmText) {
-      // Stage 8: sentence by sentence, each grounded; a failing one ends the LLM text for this turn.
+      // Stage 8: sentence by sentence, each grounded; a failing one ends the LLM text for this turn. A kept sentence
+      // writes its numbers as the answers do, in Bangla digits (D118).
       const kept: string[] = [];
       let failed = false;
       for (const sentence of splitSentences(llmText)) {
         if (isGrounded(sentence, facts.allowed).ok) {
-          kept.push(sentence);
+          kept.push(banglaNumbers(sentence));
           continue;
         }
         failed = true;

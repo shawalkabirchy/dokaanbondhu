@@ -51,4 +51,26 @@ describe("racks in a request", () => {
     expect(racksInText("এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে?", racks)).toEqual([]);
     expect(racksInText("axio 2014 front brake pad ache?", racks)).toEqual([]);
   });
+
+  // D118: from the voice test of 5 Oct and the Banglish typed check.
+  it.each([
+    { style: "Bangla", text: "সি দুই তাকে কী কী আছে?", heard: "সি দুই" },
+    { style: "Banglish", text: "C dui rack e ki ki ache?", heard: "c dui" },
+    { style: "Bangla", text: "সিধুই তাকে কি কি আছে", heard: "সিধুই" },
+    { style: "Banglish", text: "sidui take ki ki ache", heard: "sidui" },
+  ])("finds a rack said with digit words or written as one word ($style: $text)", ({ text, heard }) => {
+    expect(racksInText(text, racks)).toEqual([{ kind: "rack", name: "C-2", heard, score: 1 }]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "সিধুই কি আছে?" },
+    { style: "Banglish", text: "sidui ki ache?" },
+    { style: "Bangla", text: "তাকে কী কী আছে?" },
+    { style: "Banglish", text: "take ki ki ache?" },
+  ])(
+    "takes one word as a rack only next to a rack word, and never a one-letter sound ($style: $text)",
+    ({ text }) => {
+      expect(racksInText(text, [...racks, "C-1"])).toEqual([]);
+    },
+  );
 });

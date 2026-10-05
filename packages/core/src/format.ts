@@ -110,17 +110,37 @@ function spokenNumber(written: string): string | null {
 }
 
 /**
+ * A number of an answer that is not inside a label or a code (B-3, 04465-10047, 01711-000104, 1NZ), in either script,
+ * with the dash of a Bangla ending ("২০১৪-এর") as its group.
+ */
+const NUMBER_IN_ANSWER =
+  /(?<![\p{L}\p{N}.,/-])[0-9০-৯]+(?:,[0-9০-৯]{2,3})*(?:\.[0-9০-৯]+)?(?![\p{N}/]|[A-Za-z]|[.,-][\p{N}A-Za-z])(-(?=\p{Script=Bengali}))?/gu;
+
+/**
  * The text sent to text-to-speech (spec 10.8, P7, D109): amounts, years and quantities in Bangla words, because
  * Parler-TTS misreads digits ("৪,২০০ টাকা" came out as "দুশো টাকা"). Numbers inside a label or a code (B-3,
  * 04465-10047, 01711-000104, 1NZ) stay as written. The screen keeps the digits.
  */
 export function spokenText(text: string): string {
-  return text.replace(
-    /(?<![\p{L}\p{N}.,/-])[0-9০-৯]+(?:,[0-9০-৯]{2,3})*(?:\.[0-9০-৯]+)?(?![\p{N}/]|[A-Za-z]|[.,-][\p{N}A-Za-z])(-(?=\p{Script=Bengali}))?/gu,
-    (match, dash: string | undefined) => {
-      const number = dash ? match.slice(0, -1) : match;
-      const words = spokenNumber(number);
-      return words === null ? match : `${words}${dash ? " " : ""}`;
-    },
-  );
+  return text.replace(NUMBER_IN_ANSWER, (match, dash: string | undefined) => {
+    const number = dash ? match.slice(0, -1) : match;
+    const words = spokenNumber(number);
+    return words === null ? match : `${words}${dash ? " " : ""}`;
+  });
+}
+
+/**
+ * The LLM's sentence with its numbers written as the answers write them (spec 10.8, D118): a number in ASCII digits
+ * that is not inside a label or a code in Bangla digits, and an amount before টাকা, taka or tk with Bangladeshi
+ * grouping ("21900 টাকা" -> "২১,৯০০ টাকা"). A number starting with 0 is a code and stays as written.
+ */
+export function banglaNumbers(sentence: string): string {
+  return sentence.replace(NUMBER_IN_ANSWER, (match, dash: string | undefined, offset: number) => {
+    const number = dash ? match.slice(0, -1) : match;
+    const digits = number.replace(/,/g, "");
+    if (!/[0-9]/.test(number) || (digits.length > 1 && digits.startsWith("0"))) return match;
+    const amount =
+      !number.includes(".") && /^\s*(?:টাকা|taka|tk)/iu.test(sentence.slice(offset + match.length));
+    return `${amount ? formatTaka(BigInt(asciiDigits(digits))) : banglaDigits(number)}${dash ?? ""}`;
+  });
 }

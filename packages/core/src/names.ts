@@ -1,5 +1,6 @@
+import spelled from "../data/spelled-letters.json";
 import type { Dictionary } from "./glossary";
-import { normalizePartNumber, spokenSign } from "./numbers";
+import { NUMBER_WORDS, normalizePartNumber, spokenSign, wordNumber } from "./numbers";
 import { keySimilarity, phoneticKey } from "./phonetic";
 import { asciiDigits, normalize } from "./text";
 
@@ -71,9 +72,66 @@ export function namesInText(
 /** A rack label for comparing: upper case, without spaces, dashes, dots or slashes ("C-2", "c 2" -> "C2"). */
 const rackKey = (label: string) => normalizePartNumber(label);
 
+/** Words that say "rack", next to which a label written as one word is looked for (D118). */
+const RACK_WORDS = new Set(
+  [
+    "তাক",
+    "তাকে",
+    "তাকের",
+    "তাকটা",
+    "র‍্যাক",
+    "র‍্যাকে",
+    "র‍্যাকের",
+    "rack",
+    "racke",
+    "take",
+    "tak",
+    "taker",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
+
 /**
- * The shop's rack labels said in the text, written ("C-2", "c2", "c 2") or spelled ("সি ২", "see two"): a run of up to
- * three signs whose letters and digits are a label's. Only labels with a letter and a digit are looked for.
+ * One sign of a rack label as said: a spelled letter or digit, a number word from zero to nine in either script
+ * ("দুই", "dui", D118), or the written letters and digits themselves.
+ */
+function rackSign(token: string): string | null {
+  const sign = spokenSign(token);
+  if (sign !== null) return sign;
+  const ascii = asciiDigits(token);
+  const value = /^\d+$/.test(ascii) ? null : wordNumber(token);
+  if (value !== null && value <= 9) return String(value);
+  return /^[a-z0-9][a-z0-9./-]*$/.test(ascii) ? token : null;
+}
+
+/** Every way to say each letter and digit, from the spelling table and the number words (D118). */
+const SAID_AS = (() => {
+  const said = new Map<string, string[]>();
+  const add = (sign: string, word: string) => said.set(sign, [...(said.get(sign) ?? [sign]), word]);
+  for (const [letter, words] of Object.entries(spelled.letters)) for (const word of words) add(letter, word);
+  for (const [digit, words] of Object.entries(spelled.digits)) for (const word of words) add(digit, word);
+  for (const [word, value] of NUMBER_WORDS) if (value <= 9) add(String(value), word);
+  return said;
+})();
+
+/**
+ * The phonetic keys of a label said one sign at a time ("সি দুই", "si dui", "see two" for C2), for a label that
+ * speech-to-text wrote as one word ("সিধুই"). Labels of more than three signs are left out.
+ */
+function saidKeys(key: string): string[] {
+  const signs = [...key.toLowerCase()];
+  if (signs.length > 3) return [];
+  let combos: string[][] = [[]];
+  for (const sign of signs)
+    combos = combos.flatMap((combo) => (SAID_AS.get(sign) ?? [sign]).map((word) => [...combo, word]));
+  // A one-letter key is too little to go on: "কি" next to "তাকে" is "k", like C-1 said "c ek".
+  return combos.map((combo) => phoneticKey(combo.join(" "))).filter((said) => said.length >= 2);
+}
+
+/**
+ * The shop's rack labels said in the text, written ("C-2", "c2", "c 2") or spelled ("সি ২", "see two", "si dui"): a run
+ * of up to three signs whose letters and digits are a label's; or one word next to a rack word ("সিধুই তাকে") whose
+ * phonetic key is that of exactly one label said sign by sign (D118). Only labels with a letter and a digit are looked
+ * for.
  */
 export function racksInText(text: string, racks: readonly string[]): NamedInText[] {
   const byKey = new Map<string, string>();
@@ -83,10 +141,25 @@ export function racksInText(text: string, racks: readonly string[]): NamedInText
   }
   if (!byKey.size) return [];
   const tokens = normalize(text).tokens;
-  const signs = tokens.map(
-    (token) => spokenSign(token) ?? (/^[a-z0-9][a-z0-9./-]*$/.test(asciiDigits(token)) ? token : null),
-  );
+  const signs = tokens.map(rackSign);
   const found = new Map<string, NamedInText>();
+  if (tokens.some((token) => RACK_WORDS.has(token))) {
+    const bySaidKey = new Map<string, string | null>(); // null: the key of more than one label
+    for (const [key, rack] of byKey) {
+      for (const said of new Set(saidKeys(key))) {
+        const known = bySaidKey.get(said);
+        bySaidKey.set(said, known === undefined || known === rack ? rack : null);
+      }
+    }
+    tokens.forEach((token, index) => {
+      // A spelled sign, a number word or a written label is read sign by sign below, not as one word.
+      const sign = spokenSign(token) !== null || wordNumber(token) !== null || byKey.has(rackKey(token));
+      if (sign || RACK_WORDS.has(token)) return;
+      if (!RACK_WORDS.has(tokens[index - 1] ?? "") && !RACK_WORDS.has(tokens[index + 1] ?? "")) return;
+      const rack = bySaidKey.get(phoneticKey(token));
+      if (rack && !found.has(rack)) found.set(rack, { kind: "rack", name: rack, heard: token, score: 1 });
+    });
+  }
   for (let start = 0; start < signs.length; start += 1) {
     let run = "";
     for (let size = 1; size <= 3 && start + size <= signs.length; size += 1) {
