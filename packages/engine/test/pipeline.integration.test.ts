@@ -501,6 +501,31 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
+  it.each([
+    { style: "Bangla", text: "নোয়া সেল মোটর আছে?", name: "নোয়া সেল মোটর" },
+    { style: "Banglish", text: "noah sel motor ache?", name: "noah sel motor" },
+  ])(
+    "searches the part when the LLM looks up a customer that a part and a car were taken for (D118; $style)",
+    async ({ text, name }) => {
+      const { outcome, reply } = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "resolve_customer", arguments: { name } }] }]),
+      ]);
+      expect(reply).toBe("কোন বছরের নোয়া?");
+      expect(outcome.trace.lookups[0]?.resolved).toMatchObject({ part_type: "Starter Motor" });
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "করিম অটোর বাকি কত?", name: "করিম অটো" },
+    { style: "Banglish", text: "karim auto er baki koto?", name: "karim auto" },
+  ])("still resolves a real customer's name as a customer (D118; $style)", async ({ text, name }) => {
+    const { outcome } = await turn(text, fresh(), [
+      scripted([{ calls: [{ name: "resolve_customer", arguments: { name } }] }, { text: "ঠিক আছে।" }]),
+    ]);
+    expect(outcome.trace.lookups).toEqual([]);
+    expect(outcome.state.context.customer).toMatchObject({ name: "Karim Auto" });
+  });
+
   const karimAutoDue = {
     name: "run_read_query",
     arguments: {

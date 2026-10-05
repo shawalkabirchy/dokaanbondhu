@@ -547,6 +547,27 @@ export async function runTurn(
     return out;
   };
 
+  /** find_parts for the LLM: the tool result, or "stop" when the turn asks a question. */
+  const partsTool = async (query: PartQuery, record: (result: string) => void): Promise<string | "stop"> => {
+    const frame = newFrame(deps.newId(), "find_parts", now, text);
+    const outcome = await findAndDecide(completed(query), frame);
+    record(outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"));
+    if (outcome === "asked") return "stop";
+    const result = facts.parts!.result;
+    return result.kind === "rows"
+      ? JSON.stringify({
+          asked_for: partPhrase(facts.parts!.context, result.pairUsed ?? undefined),
+          kinds: result.rows.length,
+          parts: rowsForLlm(result.rows),
+          pair_used: result.pairUsed,
+        })
+      : JSON.stringify({
+          found: 0,
+          fitment_recorded: false,
+          offers_not_recorded_for_this_car: rowsForLlm([...result.closeVehicle, ...result.mentioned]),
+        });
+  };
+
   /** Runs one tool call; returns the tool result for the LLM, or "stop" when the turn has its reply. */
   const runTool = async (call: ToolCall): Promise<string | "stop"> => {
     const args = parseArgs(call);
@@ -557,23 +578,7 @@ export async function runTurn(
           record("no_connection");
           return JSON.stringify({ error: "no shop database connected" });
         }
-        const frame = newFrame(deps.newId(), "find_parts", now, text);
-        const outcome = await findAndDecide(completed(partQueryOf(args)), frame);
-        record(outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"));
-        if (outcome === "asked") return "stop";
-        const result = facts.parts!.result;
-        return result.kind === "rows"
-          ? JSON.stringify({
-              asked_for: partPhrase(facts.parts!.context, result.pairUsed ?? undefined),
-              kinds: result.rows.length,
-              parts: rowsForLlm(result.rows),
-              pair_used: result.pairUsed,
-            })
-          : JSON.stringify({
-              found: 0,
-              fitment_recorded: false,
-              offers_not_recorded_for_this_car: rowsForLlm([...result.closeVehicle, ...result.mentioned]),
-            });
+        return partsTool(partQueryOf(args), record);
       }
       case "run_read_query": {
         if (!deps.host.map || !deps.host.run) {
@@ -668,6 +673,17 @@ export async function runTurn(
           return "stop";
         }
         if (!first || match.decision === "unclear") {
+          // No such customer, and the request names a part and a car but no customer: the LLM took the part for a
+          // name ("নোয়া সেল মোটর আছে"), so it is the part search (D118).
+          const customerNamed = named.some((name) => name.kind === "customer");
+          if (
+            !customerNamed &&
+            heardSlots.has("part_type") &&
+            heardSlots.has("vehicle_model") &&
+            deps.host.map &&
+            deps.host.run
+          )
+            return partsTool({}, (result) => record(`part_search: ${result}`));
           record("unclear");
           return JSON.stringify({ found: false });
         }
