@@ -38,6 +38,14 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      mysql: # test shop B, a second host shaped unlike GearGrid (D122)
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: shopb
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pci" --health-interval 5s --health-timeout 5s --health-retries 20
     env: # throwaway values, local to the job's container
       PLATFORM_MIGRATION_DATABASE_URL: postgres://postgres:ci@localhost:5432/platform
       PLATFORM_DATABASE_URL: postgres://platform_api:ci-platform-api@localhost:5432/platform
@@ -48,6 +56,8 @@ jobs:
       MIGRATION_DATABASE_URL: postgres://postgres:ci@localhost:5432/geargrid # GearGrid's own scripts
       APP_API_PASSWORD: ci-app-api
       DOKAAN_RO_PASSWORD: ci-dokaan-ro
+      SHOPB_DATABASE_URL: mysql://root:ci@127.0.0.1:3306/shopb
+      SHOPB_RO_PASSWORD: ci-shopb-ro
     steps:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5 # GearGrid is public, so no key is needed (D66)
@@ -77,6 +87,11 @@ jobs:
           npm ci
           psql "$PLATFORM_MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f packages/platform-db/bootstrap.sql
           npm run db:migrate && npm run db:roles
+      - name: Test shop B (schema, seed, read-only user)
+        run: |
+          mysql -h 127.0.0.1 -uroot -pci shopb < tools/fixtures/shop-b/schema.sql
+          mysql -h 127.0.0.1 -uroot -pci --default-character-set=utf8mb4 shopb < tools/fixtures/shop-b/seed.sql
+          mysql -h 127.0.0.1 -uroot -pci -e "CREATE USER 'shopb_ro'@'%' IDENTIFIED BY '$SHOPB_RO_PASSWORD'; GRANT SELECT ON shopb.* TO 'shopb_ro'@'%';"
       - run: npm run test:integration
 
   python: # the speech worker's tests with fake models (spec 14.1): no GPU, no model download
