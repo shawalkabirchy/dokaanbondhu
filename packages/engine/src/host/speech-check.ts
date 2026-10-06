@@ -1,10 +1,13 @@
 import {
   aliasEntries,
   buildDictionary,
+  catalogEntries,
   checkedSpellings,
   GLOSSARY,
   isBangla,
   learnableWords,
+  partsOfType,
+  vehicleValue,
   type Dictionary,
 } from "@dokaanbondhu/core";
 import { aiProviders, aliases, aliasSuggestions, speechChecks, type Tx } from "@dokaanbondhu/platform-db";
@@ -40,21 +43,23 @@ export interface NameToCheck {
   spoken: string | null;
 }
 
-/** The shop's car models and the part types it stocks (a type whose word is in a part's name), with their Bangla word. */
+/**
+ * The shop's car models and the part types it stocks, as the dictionary names them (the app's own names too, D122),
+ * with their Bangla word.
+ */
 export function namesToCheck(catalog: Catalog, dictionary: Dictionary): NameToCheck[] {
   const firstBangla = (concept: NameToCheck["concept"], value: string) =>
     dictionary.terms.find((term) => term.concept === concept && term.value === value && isBangla(term.text))
       ?.text ?? null;
   const names: NameToCheck[] = [];
-  const models = new Set(catalog.vehicles.map((vehicle) => `${vehicle.make} ${vehicle.model}`.trim()));
+  const models = new Set(catalog.vehicles.map((vehicle) => vehicleValue(vehicle, dictionary)));
   for (const value of models)
     names.push({ concept: "vehicle_model", value, spoken: firstBangla("vehicle_model", value) });
   const types = new Set(
     dictionary.terms.filter((term) => term.concept === "part_type").map((term) => term.value),
   );
   for (const value of types) {
-    const needle = value.toLowerCase();
-    if (catalog.parts.some((part) => part.name.toLowerCase().includes(needle)))
+    if (partsOfType(value, catalog.parts, dictionary).length)
       names.push({ concept: "part_type", value, spoken: firstBangla("part_type", value) });
   }
   return names;
@@ -116,7 +121,7 @@ export async function runSpeechCheck(
       .from(speechChecks)
       .where(eq(speechChecks.shopId, shopId)),
   }));
-  const dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(own)]);
+  const dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog), ...aliasEntries(own)]);
   const done = new Set(checked.map((row) => `${row.concept}|${row.value}`));
   const todo = namesToCheck(catalog, dictionary).filter((name) => !done.has(`${name.concept}|${name.value}`));
   const room = Math.max(0, MAX_CHECKS_PER_SHOP - checked.length);

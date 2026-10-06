@@ -21,6 +21,8 @@ export interface CatalogPart {
   name: string;
   nameBn: string | null;
   partNumbers: string[];
+  /** The app's category or group, when it has one ("Brake Pad", "AC Compressor"); counts like the name (D122). */
+  category?: string | null;
 }
 
 export interface CatalogCustomer {
@@ -77,7 +79,7 @@ function containsRun(haystack: readonly string[], needle: readonly string[]): bo
   return false;
 }
 
-/** The catalog parts of a part type: those whose name (English or Bangla) contains one of the type's spellings. */
+/** The catalog parts of a part type: those whose name (English or Bangla) or category contains one of its spellings. */
 export function partsOfType(
   type: string,
   parts: readonly CatalogPart[],
@@ -87,7 +89,9 @@ export function partsOfType(
     .filter((term) => term.concept === "part_type" && term.value === type)
     .map((term) => term.text.split(" "));
   return parts.filter((part) => {
-    const names = [part.name, part.nameBn ?? ""].map((name) => tokensOf(name, dictionary));
+    const names = [part.name, part.nameBn ?? "", part.category ?? ""].map((name) =>
+      tokensOf(name, dictionary),
+    );
     return spellings.some((spelling) => names.some((name) => containsRun(name, spelling)));
   });
 }

@@ -1,5 +1,6 @@
 import {
   isModel,
+  isNumberWord,
   matchConcept,
   matchPartNumber,
   matchVehicles,
@@ -136,7 +137,7 @@ function understood(
   if (!said) return { value: null as string | null, unclear: false, options: [] as string[] };
   const match = matchConcept(concept, said, input.hypotheses, input.dictionary);
   const best = match.candidates[0];
-  if (!best || match.decision === "unclear") {
+  if (!best || match.decision === "unclear" || (concept === "part_type" && !soundsRight(best, said, input))) {
     return {
       value: null,
       unclear: true,
@@ -145,6 +146,29 @@ function understood(
   }
   if (match.decision === "understood_bold") bold.push(concept);
   return { value: best.value, unclear: false, options: [] };
+}
+
+/**
+ * A part type understood only by sound is taken when the shop stocks it and the rest of the said words are known
+ * ones (a side, a grade, a car, a number); "power steering pump" is never Piston Ring for its "steering" (D122).
+ */
+function soundsRight(
+  best: { value: string; exact: boolean; heard: string },
+  said: string,
+  input: FindPartsInput,
+) {
+  if (best.exact) return true;
+  if (!partsOfType(best.value, input.catalog.parts, input.dictionary).length) return false;
+  const heard = new Set(normalize(best.heard).tokens);
+  // Words of other part types do not count: a "pump" left over is about another part.
+  const known = new Set(
+    input.dictionary.terms
+      .filter((term) => term.concept !== "part_type")
+      .flatMap((term) => term.text.split(" ")),
+  );
+  return normalize(said, input.dictionary.variants).tokens.every(
+    (word) => heard.has(word) || known.has(word) || isNumberWord(word) || /\d/.test(word),
+  );
 }
 
 /**

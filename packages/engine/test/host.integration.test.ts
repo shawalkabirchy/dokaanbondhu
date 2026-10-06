@@ -121,6 +121,15 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
       expect(result.rows.map((row) => row.hostPartId)).toEqual([byNumber("AN-108WK")]);
   });
 
+  // D122: a part type that only sounds like one ("power steering pump" like Piston Ring) is asked, never taken.
+  it.each([
+    { style: "Bangla", part_type: "পাওয়ার স্টিয়ারিং পাম্প" },
+    { style: "Banglish", part_type: "power steering pump" },
+  ])("asks the part when a name only sounds like a type it stocks ($style)", async ({ part_type }) => {
+    const result = await findParts(input({ part_type, vehicle: "axio", year: "2014" }));
+    expect(result).toMatchObject({ kind: "ask", slot: "part_type" });
+  });
+
   it("asks the year for a Noah starter, and finds the one for a 2016 Noah", async () => {
     expect(await findParts(input({ part_type: "সেলফ", vehicle: "নোয়া" }))).toMatchObject({
       kind: "ask",

@@ -1,4 +1,4 @@
-import { aliasEntries, buildDictionary, GLOSSARY, type Dictionary } from "@dokaanbondhu/core";
+import { aliasEntries, buildDictionary, catalogEntries, GLOSSARY, type Dictionary } from "@dokaanbondhu/core";
 import type { TurnHost } from "@dokaanbondhu/engine/conversation";
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
@@ -62,7 +62,6 @@ async function load(shopId: string): Promise<Entry> {
   const aesKey = parseAesKey(serverEnv().AES_KEY);
   return platform().withShop(shopId, async (tx) => {
     const own = await tx.select().from(aliases).where(eq(aliases.shopId, shopId));
-    const dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(own)]);
     const wordsVersion = own.reduce((latest, row) => Math.max(latest, row.createdAt.getTime()), 0);
     const shopWords = own.slice(0, SHOP_WORDS).map((row) => `${row.aliasText} = ${row.targetValue}`);
 
@@ -73,6 +72,7 @@ async function load(shopId: string): Promise<Entry> {
       .orderBy(asc(connections.createdAt))
       .limit(1);
     if (!connection) {
+      const dictionary = buildDictionary([...GLOSSARY, ...aliasEntries(own)]);
       const host: TurnHost = {
         map: null,
         run: null,
@@ -93,6 +93,8 @@ async function load(shopId: string): Promise<Entry> {
     const db = await loadHostDb(tx, connection.id, aesKey);
     const map = await loadSchemaMap(tx, connection.id, db.dialect);
     const catalog = await loadCatalog(tx, connection.id);
+    // The app's own car models, categories and part kinds are words too (D122), before the shop's aliases.
+    const dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog), ...aliasEntries(own)]);
     const fitments = await tx.select().from(fitmentExtra).where(eq(fitmentExtra.connectionId, connection.id));
     const racks = await tx.select().from(rackExtra).where(eq(rackExtra.connectionId, connection.id));
     const formulas = await tx

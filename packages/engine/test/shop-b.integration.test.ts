@@ -1,4 +1,12 @@
-import { buildDictionary, matchVehicles, partsAnswer, type PartsContext } from "@dokaanbondhu/core";
+import {
+  buildDictionary,
+  catalogEntries,
+  GLOSSARY,
+  matchVehicles,
+  partsAnswer,
+  type Dictionary,
+  type PartsContext,
+} from "@dokaanbondhu/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput } from "../src/host/find-parts";
@@ -25,7 +33,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
   const pools = new HostPools();
   let db: HostDb;
   let catalog: Catalog;
-  const dictionary = buildDictionary();
+  let dictionary: Dictionary;
 
   const input = (query: FindPartsInput["query"]): FindPartsInput => ({
     query,
@@ -53,6 +61,8 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       poolMax: 2,
     };
     catalog = toCatalog(await pools.readOnly(db, (run) => readCatalog(run, shopBMap)));
+    // As the server builds it: the glossary, then the app's own car models, categories and part kinds (D122).
+    dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
   });
 
   afterAll(async () => {
@@ -129,7 +139,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
     },
   ])(
-    "answers Axio 2014 front pads in the app's words, a pad fitting two chassis said once ($style)",
+    "answers Axio 2014 front pads: one only its group calls a pad, one fitting two chassis said once ($style)",
     async ({ args }) => {
       const result = await findParts(input(args));
       if (result.kind !== "rows") throw new Error(result.kind);
@@ -141,10 +151,30 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
         tier: "retail",
       };
       expect(partsAnswer(result.rows, context)).toBe(
-        "এক্সিও ২০১৪-এর সামনের নন-জেনুইন ব্রেক প্যাড ৬ সেট আছে, ১,৯৯১ টাকা, B-3 তাকে।",
+        "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৫ সেট, ৪,৫০০ টাকা, B-3 আর G-1 তাকে; নন-জেনুইন ৬ সেট, ১,৯৯১ টাকা, B-3 তাকে।",
       );
     },
   );
+
+  it.each([
+    { style: "Bangla", part_type: "পাওয়ার স্টিয়ারিং পাম্প", vehicle: "এক্সিও" },
+    { style: "Banglish", part_type: "power steering pump", vehicle: "axio" },
+  ])(
+    "knows the app's own part kinds, never a sound-alike glossary type ($style)",
+    async ({ part_type, vehicle }) => {
+      const result = await findParts(input({ part_type, vehicle, year: "2014" }));
+      expect(result.resolved.partType).toBe("Power Steering Pump");
+    },
+  );
+
+  it("knows the app's own car models, typed as it writes them", async () => {
+    const result = await findParts(input({ part_type: "shock absorber", vehicle: "tucson", year: "2018" }));
+    expect(result.resolved.vehicle).toBe("Tucson");
+    const compressor = await findParts(
+      input({ part_type: "ac compressor", vehicle: "fielder", year: "2014" }),
+    );
+    expect(compressor.resolved).toMatchObject({ partType: "AC Compressor", vehicle: "Toyota Fielder" });
+  });
 
   it("values the stock per part with the newest cost, over both branches", async () => {
     // 5 x 3,200 + 6 x 1,400 + 2 x 4,000 + 1 x 15,000 + 1 x 7,000 + 12.5 x 700 + 3 x 1,100
