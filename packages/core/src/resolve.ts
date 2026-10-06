@@ -43,6 +43,8 @@ export interface PartRow {
   garageTaka: bigint | null;
   wholesaleTaka: bigint | null;
   rack: string | null;
+  /** Every rack the part is kept on when there are several (branches, godowns; D122); rack is the first. */
+  racks?: string[];
   fitmentVerified: boolean;
   /** The vehicle the row's fitment names (its year range and engine separate generations). */
   vehicle?: { hostId: string; yearFrom: number; yearTo: number | null; engineCode: string | null };

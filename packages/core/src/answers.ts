@@ -93,6 +93,13 @@ function stockText(row: PartRow): string {
   return quantityText(row.stock, row.unit ?? "piece");
 }
 
+/** Where a part is kept: "B-3", or "B-3 আর G-1" when it is on several racks (D122). */
+export function rackText(row: PartRow): string | null {
+  const racks = row.racks?.length ? row.racks : row.rack ? [row.rack] : [];
+  if (!racks.length) return null;
+  return racks.length === 1 ? racks[0]! : `${racks.slice(0, -1).join(", ")} আর ${racks.at(-1)}`;
+}
+
 /** One kind: "জেনুইন ৩ সেট, ৪,৫০০ টাকা" (rack added by the caller when it differs); the brand when two kinds share
  * a quality, "নন-জেনুইন (Denso) ১০টা", so they can be told apart. */
 function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, withBrand = false): string {
@@ -104,7 +111,8 @@ function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, w
   if (head) bits.push(head);
   const price = priceOf(row, tier);
   if (price !== null && (row.stock ?? 1) > 0) bits.push(money(price));
-  if (withRack && row.rack && (row.stock ?? 1) > 0) bits.push(`${row.rack} তাকে`);
+  const rack = rackText(row);
+  if (withRack && rack && (row.stock ?? 1) > 0) bits.push(`${rack} তাকে`);
   return bits.join(", ");
 }
 
@@ -146,11 +154,11 @@ export function partsAnswer(rows: PartRow[], asked: PartsContext, pairUsed: stri
     const [head, ...tail] = [
       `${possessive(vehiclePhrase(context))} ${context.position ? `${banglaOf("position", context.position)} ` : ""}${quality}${banglaOf("part_type", pairUsed ?? context.partType)} ${stockText(row)} আছে`,
       ...(priceOf(row, context.tier) !== null ? [money(priceOf(row, context.tier)!)] : []),
-      ...(row.rack ? [`${row.rack} তাকে`] : []),
+      ...(rackText(row) ? [`${rackText(row)} তাকে`] : []),
     ];
     return `${[head, ...tail].join(", ")}।${rate}`;
   }
-  const racks = new Set(inStock.map((row) => row.rack));
+  const racks = new Set(inStock.map((row) => rackText(row)));
   const sharedRack = racks.size === 1 ? [...racks][0] : null;
   const qualities = rows.map((row) => row.quality ?? "");
   const shared = (row: PartRow) => qualities.filter((quality) => quality === (row.quality ?? "")).length > 1;

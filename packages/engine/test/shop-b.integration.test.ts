@@ -1,9 +1,11 @@
-import { matchVehicles } from "@dokaanbondhu/core";
+import { buildDictionary, matchVehicles, partsAnswer, type PartsContext } from "@dokaanbondhu/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
+import { findParts, type FindPartsInput } from "../src/host/find-parts";
 import { introspect } from "../src/host/introspect";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
+import { stockValue } from "../src/host/reports";
 import { shopBMap } from "./shop-b-map";
 
 // Host integration against test shop B (D122; tools/fixtures/shop-b): a MySQL 8 shop app shaped unlike GearGrid, read
@@ -23,6 +25,18 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
   const pools = new HostPools();
   let db: HostDb;
   let catalog: Catalog;
+  const dictionary = buildDictionary();
+
+  const input = (query: FindPartsInput["query"]): FindPartsInput => ({
+    query,
+    hypotheses: [],
+    map: shopBMap,
+    run: (built) => pools.readOnly(db, (run) => run(built)),
+    catalog,
+    dictionary,
+    fitmentExtra: [],
+    rackExtra: new Map(),
+  });
 
   beforeAll(async () => {
     const url = new URL(shopUrl);
@@ -61,7 +75,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
 
   it("reads the catalog without deleted rows: parts with their group, all their racks, cars and customers", () => {
     expect(catalog.parts).toHaveLength(7);
-    expect(catalog.vehicles).toHaveLength(4);
+    expect(catalog.vehicles).toHaveLength(5);
     expect(catalog.customers).toHaveLength(4);
     expect(catalog.suppliers).toHaveLength(1);
     const pad = catalog.parts.find((part) => part.partNumbers.includes("04465-12610"))!;
@@ -89,10 +103,52 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
 
   it("finds its cars without a make column, with years written as text; two Axio generations ask the year (D122)", () => {
     const axio = matchVehicles("Toyota Axio", 2014, null, catalog.vehicles);
-    expect(axio.vehicles.map((vehicle) => vehicle.model)).toEqual(["Axio NZE141"]);
+    expect(axio.vehicles.map((vehicle) => vehicle.model).sort()).toEqual(["Axio NZE141", "Axio NZE144"]);
     expect(axio.vehicles[0]).toMatchObject({ yearFrom: 2012, yearTo: 2017 });
     expect(matchVehicles("Toyota Axio", null, null, catalog.vehicles)).toMatchObject({ needsYear: true });
     expect(matchVehicles("Toyota Fielder", 2014, null, catalog.vehicles).vehicles).toHaveLength(1);
+  });
+
+  it("lists a part once: stock added up over both branches, every rack, the newest price (D122)", async () => {
+    const result = await findParts(input({ part_number: "04465-12610" }));
+    if (result.kind !== "rows") throw new Error(result.kind);
+    expect(result.rows).toHaveLength(1);
+    const [pad] = result.rows;
+    expect(pad).toMatchObject({ stock: 5, retailTaka: 4500n, garageTaka: 4200n, wholesaleTaka: 4000n });
+    expect(pad).toMatchObject({ quality: "genuine", position: "front", unit: "set" });
+    expect([...(pad!.racks ?? [])].sort()).toEqual(["B-3", "G-1"]);
+  });
+
+  it.each([
+    {
+      style: "Bangla",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
+    },
+  ])(
+    "answers Axio 2014 front pads in the app's words, a pad fitting two chassis said once ($style)",
+    async ({ args }) => {
+      const result = await findParts(input(args));
+      if (result.kind !== "rows") throw new Error(result.kind);
+      const context: PartsContext = {
+        vehicle: "Toyota Axio",
+        year: 2014,
+        partType: "Brake Pad",
+        position: result.resolved.position,
+        tier: "retail",
+      };
+      expect(partsAnswer(result.rows, context)).toBe(
+        "এক্সিও ২০১৪-এর সামনের নন-জেনুইন ব্রেক প্যাড ৬ সেট আছে, ১,৯৯১ টাকা, B-3 তাকে।",
+      );
+    },
+  );
+
+  it("values the stock per part with the newest cost, over both branches", async () => {
+    // 5 x 3,200 + 6 x 1,400 + 2 x 4,000 + 1 x 15,000 + 1 x 7,000 + 12.5 x 700 + 3 x 1,100
+    expect(await pools.readOnly(db, (run) => stockValue(shopBMap, run))).toBe(66450n);
   });
 
   it("answers a due through the MySQL guard, and refuses a write", async () => {

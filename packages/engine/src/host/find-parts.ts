@@ -169,7 +169,32 @@ function vehicleLabel(vehicle: CatalogVehicle): string {
   return `${vehicle.yearFrom}-${vehicle.yearTo ?? ""}`;
 }
 
-/** Runs the part query for part IDs, optionally through the fitments of the given vehicles. */
+/** A host list value: an array (PostgreSQL), or a JSON array as text (MySQL), without empty entries. */
+function listOf(value: unknown): string[] {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? (JSON.parse(value) as unknown[])
+      : [];
+  return [...new Set(items.filter((item) => item !== null && item !== "").map(String))];
+}
+
+/** The newer of two price rows: by valid_from when the app keeps a price history (D122), else the first one read. */
+export function newerPrice(current: Row | undefined, candidate: Row): Row {
+  if (!current) return candidate;
+  const date = (row: Row) => {
+    const value = row.valid_from;
+    if (value instanceof Date) return value.toISOString();
+    return value === null || value === undefined ? "" : String(value);
+  };
+  return date(candidate) > date(current) ? candidate : current;
+}
+
+/**
+ * Runs the part query for part IDs, optionally through the fitments of the given vehicles. Three queries, so nothing
+ * repeats a part (D122): the parts (once each, whatever number of matching cars), their stock added up over every
+ * stock row (branches, godowns) with every rack, and their price (the newest row of a price history).
+ */
 async function queryRows(
   input: FindPartsInput,
   partIds: string[],
@@ -178,14 +203,6 @@ async function queryRows(
   const { map } = input;
   const part = (field: string, as = field): SelectItem[] =>
     hasField(map, "Part", field) ? [{ ref: { alias: "p", field }, as }] : [];
-  const stock = (field: string, as: string): SelectItem[] =>
-    hasField(map, "StockItem", field) && hasField(map, "StockItem", "part_id")
-      ? [{ ref: { alias: "s", field }, as }]
-      : [];
-  const price = (field: string): SelectItem[] =>
-    hasField(map, "Price", field) && hasField(map, "Price", "part_id")
-      ? [{ ref: { alias: "pr", field }, as: field }]
-      : [];
   const select: SelectItem[] = [
     { ref: { alias: "p", field: "id" }, as: "part_id" },
     { ref: { alias: "p", field: "name" }, as: "name" },
@@ -194,11 +211,6 @@ async function queryRows(
     ...part("position"),
     ...part("unit"),
     ...part("brand"),
-    ...stock("quantity", "stock"),
-    ...stock("rack_location", "rack"),
-    ...price("retail_price"),
-    ...price("garage_price"),
-    ...price("wholesale_price"),
   ];
   const joins = [];
   const where: Condition[] = [{ ref: { alias: "p", field: "id" }, op: "in", values: partIds }];
@@ -213,32 +225,72 @@ async function queryRows(
       select.push({ ref: { alias: "f", field: "verified" }, as: "verified" });
     where.push({ ref: { alias: "f", field: "vehicle_id" }, op: "in", values: vehicleIds });
   }
-  if (select.some((item) => item.ref.alias === "s")) {
-    joins.push({
-      entity: { concept: "StockItem" as const, alias: "s" },
-      kind: "left" as const,
-      on: [{ left: { alias: "s", field: "part_id" }, right: { alias: "p", field: "id" } }],
-    });
+  const found: Row[] = await input.run(
+    buildQuery(map, { from: { concept: "Part", alias: "p" }, joins, select, where, limit: FETCH_LIMIT }),
+  );
+  // One row per part: the first matching car, and its fit verified when any of its rows is.
+  const parts = new Map<string, { row: Row; verified: boolean }>();
+  const verifiedRow = (row: Row) =>
+    row.verified === undefined || row.verified === true || row.verified === "true" || row.verified === 1;
+  for (const row of found) {
+    const id = String(row.part_id);
+    const seen = parts.get(id);
+    if (seen) seen.verified ||= verifiedRow(row);
+    else parts.set(id, { row, verified: verifiedRow(row) });
   }
-  if (select.some((item) => item.ref.alias === "pr")) {
-    joins.push({
-      entity: { concept: "Price" as const, alias: "pr" },
-      kind: "left" as const,
-      on: [{ left: { alias: "pr", field: "part_id" }, right: { alias: "p", field: "id" } }],
-    });
+  const ids = [...parts.keys()];
+  if (!ids.length) return [];
+
+  const stock = new Map<string, { quantity: unknown; racks: string[] }>();
+  const hasStock = ["quantity", "rack_location"].some((field) => hasField(map, "StockItem", field));
+  if (hasField(map, "StockItem", "part_id") && hasStock) {
+    const rows = await input.run(
+      buildQuery(map, {
+        from: { concept: "StockItem", alias: "s" },
+        select: [
+          { ref: { alias: "s", field: "part_id" }, as: "part_id" },
+          ...(hasField(map, "StockItem", "quantity")
+            ? [{ ref: { alias: "s", field: "quantity" }, as: "stock", aggregate: "sum" as const }]
+            : []),
+          ...(hasField(map, "StockItem", "rack_location")
+            ? [{ ref: { alias: "s", field: "rack_location" }, as: "racks", aggregate: "list" as const }]
+            : []),
+        ],
+        where: [{ ref: { alias: "s", field: "part_id" }, op: "in", values: ids }],
+        groupBy: [{ alias: "s", field: "part_id" }],
+      }),
+    );
+    for (const row of rows) stock.set(String(row.part_id), { quantity: row.stock, racks: listOf(row.racks) });
   }
-  const built = buildQuery(map, {
-    from: { concept: "Part", alias: "p" },
-    joins,
-    select,
-    where,
-    limit: FETCH_LIMIT,
-  });
-  const rows: Row[] = await input.run(built);
+
+  const prices = new Map<string, Row>();
+  const priceFields = ["retail_price", "garage_price", "wholesale_price"].filter((field) =>
+    hasField(map, "Price", field),
+  );
+  if (hasField(map, "Price", "part_id") && priceFields.length) {
+    const rows = await input.run(
+      buildQuery(map, {
+        from: { concept: "Price", alias: "pr" },
+        select: [
+          { ref: { alias: "pr", field: "part_id" }, as: "part_id" },
+          ...priceFields.map((field) => ({ ref: { alias: "pr", field }, as: field })),
+          ...(hasField(map, "Price", "valid_from")
+            ? [{ ref: { alias: "pr", field: "valid_from" }, as: "valid_from" }]
+            : []),
+        ],
+        where: [{ ref: { alias: "pr", field: "part_id" }, op: "in", values: ids }],
+      }),
+    );
+    for (const row of rows) prices.set(String(row.part_id), newerPrice(prices.get(String(row.part_id)), row));
+  }
+
   const vehicles = new Map(input.catalog.vehicles.map((vehicle) => [vehicle.hostId, vehicle]));
-  return rows.map((row): PartRow => {
+  return [...parts].map(([hostPartId, { row, verified }]): PartRow => {
     const vehicle = row.vehicle_id !== undefined ? vehicles.get(String(row.vehicle_id)) : undefined;
-    const hostPartId = String(row.part_id);
+    const held = stock.get(hostPartId);
+    const price = prices.get(hostPartId) ?? {};
+    const own = input.rackExtra.get(hostPartId);
+    const racks = held?.racks.length ? held.racks : own ? [own] : [];
     return {
       hostPartId,
       name: String(row.name),
@@ -248,14 +300,13 @@ async function queryRows(
       position: ourWord("position", row.position, input.appWords),
       brand: (row.brand as string | null) ?? null,
       unit: ourWord("unit", row.unit, input.appWords),
-      stock: toUnits(row.stock),
-      retailTaka: toTaka(row.retail_price),
-      garageTaka: toTaka(row.garage_price),
-      wholesaleTaka: toTaka(row.wholesale_price),
-      rack: (row.rack as string | null) ?? input.rackExtra.get(hostPartId) ?? null,
-      fitmentVerified: vehicleIds
-        ? row.verified === undefined || row.verified === true || row.verified === "true" || row.verified === 1
-        : false,
+      stock: held ? toUnits(held.quantity) : null,
+      retailTaka: toTaka(price.retail_price),
+      garageTaka: toTaka(price.garage_price),
+      wholesaleTaka: toTaka(price.wholesale_price),
+      rack: racks[0] ?? null,
+      ...(racks.length > 1 ? { racks } : {}),
+      fitmentVerified: vehicleIds ? verified : false,
       ...(vehicle
         ? {
             vehicle: {

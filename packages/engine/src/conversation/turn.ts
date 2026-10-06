@@ -15,6 +15,7 @@ import {
   parseYear,
   partPhrase,
   racksInText,
+  rackText,
   partsAnswer,
   quantity,
   question,
@@ -244,7 +245,7 @@ function cardsOf(rows: PartRow[]): ReplyEvent {
           .filter(([, taka]) => taka !== null)
           .map(([tier, taka]) => [tier, Number(taka)]),
       ),
-      rack: row.rack,
+      rack: rackText(row),
       fitment_verified: row.fitmentVerified,
       photo_url: null,
     })),
@@ -261,7 +262,7 @@ function rowsForLlm(rows: PartRow[]) {
     stock: row.stock === null ? null : quantity(row.stock, row.unit ?? "piece"),
     retail_price: row.retailTaka === null ? null : money(row.retailTaka),
     garage_price: row.garageTaka === null ? null : money(row.garageTaka),
-    rack: row.rack,
+    rack: rackText(row),
     fitment_recorded: row.fitmentVerified,
   }));
 }
@@ -503,7 +504,7 @@ export async function runTurn(
     if (result.kind === "rows") {
       facts.allowed.addResult(result.rows).addNumber(result.rows.length);
       for (const row of result.rows) {
-        facts.allowed.addRack(row.rack);
+        for (const rack of row.racks ?? [row.rack]) facts.allowed.addRack(rack);
         if (row.vehicle) facts.allowed.addNumber(row.vehicle.yearFrom).addNumber(row.vehicle.yearTo ?? null);
       }
       if (result.resolved.year) facts.allowed.addNumber(result.resolved.year);

@@ -54,6 +54,7 @@ export const CONCEPT_FIELDS: Record<Concept, Record<string, FieldKind>> = {
     garage_price: "money",
     wholesale_price: "money",
     cost: "money",
+    valid_from: "time",
   },
   Customer: {
     id: "id",

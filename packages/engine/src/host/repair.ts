@@ -52,6 +52,11 @@ const FILL: { concept: Concept; field: string; pattern: RegExp; child?: boolean 
     pattern: /^(rack|rack_location|shelf|bin|location|rack_no)$/i,
   },
   {
+    concept: "Price",
+    field: "valid_from",
+    pattern: /^(valid_from|effective_from|effective_date|price_date|from_date|start_date|starts_on)$/i,
+  },
+  {
     concept: "StockItem",
     field: "reorder_level",
     pattern: /^(reorder_level|reorder_point|min_stock|minimum_stock)$/i,

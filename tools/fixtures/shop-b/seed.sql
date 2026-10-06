@@ -12,7 +12,9 @@ INSERT INTO car_models (model_id, model_name, years, engine) VALUES
   (1, 'Axio NZE141', '2012-2017', '1NZ'),
   (2, 'Fielder', '2012-2017', '1NZ'),
   (3, 'Tucson', '2016-2020', NULL),
-  (4, 'Axio', '2006-2011', '1NZ');
+  (4, 'Axio', '2006-2011', '1NZ'),
+  -- A second chassis of the same years: a part fitting both is still one part.
+  (5, 'Axio NZE144', '2012-2017', '1NZ');
 
 INSERT INTO items (item_id, item_name, group_id, grade, side, uom, remarks, is_deleted) VALUES
   -- Only its group says it is a brake pad.
@@ -36,6 +38,8 @@ INSERT INTO item_cars (item_id, model_id) VALUES
   (1, 1),
   (1, 2),
   (2, 1),
+  (2, 5),
+  (1, 5),
   (7, 1),
   (8, 1);
 

@@ -107,6 +107,10 @@ Rules:
 - A ..._id field (part_id, customer_id, sale_id, supplier_id, vehicle_id) is the column that links to that concept's
   table, or that table's own key when the entity lives in the same table. Never map a field to an unrelated key.
 - part_number may live in a separate table of numbers per part, and rack_location on the part's table: join them.
+- An is_deleted or deleted flag (0 or 1) is a row filter eq 0.
+- Stock may have several rows per part (branches, godowns): map StockItem to that table; it is added up per part.
+- A price table with several rows per part is a price history: map valid_from to the date each price starts.
+- A car's years may be one text column such as "2012-2017": map year_from to it and leave year_to out.
 - Use only the tables and columns listed. Do not invent fields that are not in the concept list.`;
 
 /** Collects the LLM's text and parses the JSON object in it. */

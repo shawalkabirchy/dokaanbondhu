@@ -84,6 +84,7 @@ export const shopBMap: SchemaMap = {
         garage_price: "workshop_rate",
         wholesale_price: "dealer_rate",
         cost: "cost_rate",
+        valid_from: "effective_from",
       }),
     }),
     Customer: entity({

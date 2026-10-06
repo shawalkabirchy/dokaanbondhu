@@ -1,6 +1,6 @@
 import { roundTaka } from "@dokaanbondhu/core";
-import { toTaka, toUnits } from "./find-parts";
-import type { RunQuery } from "./pool";
+import { newerPrice, toTaka, toUnits } from "./find-parts";
+import type { Row, RunQuery } from "./pool";
 import { hasField, type SchemaMap } from "./schema-map";
 import { buildQuery } from "./sql";
 
@@ -42,28 +42,39 @@ export function proposeStockValue(map: SchemaMap): ReportFormula | null {
 }
 
 /**
- * Sum over parts of stock quantity times average cost, negative stock counted as zero, in whole taka: summed exactly
+ * Sum over parts of stock quantity times cost, a part's stock added up over all its stock rows (branches, godowns) and
+ * its cost the newest of a price history (D122), negative stock counted as zero, in whole taka: summed exactly
  * (quantities carry at most three decimals) and rounded once (D110).
  */
 export async function stockValue(map: SchemaMap, run: RunQuery): Promise<bigint> {
-  const built = buildQuery(map, {
-    from: { concept: "StockItem", alias: "s" },
-    joins: [
-      {
-        entity: { concept: "Price", alias: "pr" },
-        kind: "inner",
-        on: [{ left: { alias: "pr", field: "part_id" }, right: { alias: "s", field: "part_id" } }],
-      },
-    ],
-    select: [
-      { ref: { alias: "s", field: "quantity" }, as: "quantity" },
-      { ref: { alias: "pr", field: "cost" }, as: "cost" },
-    ],
-  });
+  const stock = await run(
+    buildQuery(map, {
+      from: { concept: "StockItem", alias: "s" },
+      select: [
+        { ref: { alias: "s", field: "part_id" }, as: "part_id" },
+        { ref: { alias: "s", field: "quantity" }, as: "quantity", aggregate: "sum" },
+      ],
+      groupBy: [{ alias: "s", field: "part_id" }],
+    }),
+  );
+  const prices = await run(
+    buildQuery(map, {
+      from: { concept: "Price", alias: "pr" },
+      select: [
+        { ref: { alias: "pr", field: "part_id" }, as: "part_id" },
+        { ref: { alias: "pr", field: "cost" }, as: "cost" },
+        ...(hasField(map, "Price", "valid_from")
+          ? [{ ref: { alias: "pr", field: "valid_from" }, as: "valid_from" }]
+          : []),
+      ],
+    }),
+  );
+  const costs = new Map<string, Row>();
+  for (const row of prices) costs.set(String(row.part_id), newerPrice(costs.get(String(row.part_id)), row));
   let milliTaka = 0n;
-  for (const row of await run(built)) {
+  for (const row of stock) {
     const quantity = toUnits(row.quantity) ?? 0;
-    const cost = toTaka(row.cost) ?? 0n;
+    const cost = toTaka(costs.get(String(row.part_id))?.cost) ?? 0n;
     if (quantity <= 0 || cost <= 0n) continue;
     milliTaka += BigInt(Math.round(quantity * 1000)) * cost;
   }

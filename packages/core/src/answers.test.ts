@@ -99,6 +99,13 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
+  it("names every rack a part is kept on (D122)", () => {
+    expect(partsAnswer([row({ racks: ["B-3", "G-1"] })], axio)).toBe(
+      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা, B-3 আর G-1 তাকে।",
+    );
+    expect(partsAnswer([row({ racks: ["B-3", "G-1", "C-2"] })], axio)).toContain("B-3, G-1 আর C-2 তাকে।");
+  });
+
   it("says the position every kind shares when none was asked, and none when they differ (D120)", () => {
     expect(partsAnswer(pads, { ...axio, position: null })).toBe(partsAnswer(pads, axio));
     const mixed = [

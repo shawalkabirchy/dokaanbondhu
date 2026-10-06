@@ -22,12 +22,22 @@ const base = (overrides: Partial<ReportInput>): ReportInput => ({
   from: null,
   to: null,
   map: withCost(),
-  run: async () => [
-    { quantity: "3", cost: "3600" }, // 3 sets at 3,600 taka
-    { quantity: "1.5", cost: "101" }, // 1.5 litres at 101 taka: 151.5, rounded once at the end
-    { quantity: "2.5", cost: "99.60" }, // a price with a fraction is read as 100 taka (D110)
-    { quantity: "-2", cost: "500" }, // negative stock counts as zero
-  ],
+  // Two reads (D122): the stock summed per part, then each part's cost.
+  run: async ({ text }) =>
+    text.includes("SUM(")
+      ? [
+          { part_id: 1, quantity: "3" }, // 3 sets at 3,600 taka
+          { part_id: 2, quantity: "1.5" }, // 1.5 litres at 101 taka: 151.5, rounded once at the end
+          { part_id: 3, quantity: "2.5" }, // a price with a fraction is read as 100 taka (D110)
+          { part_id: 4, quantity: "-2" }, // negative stock counts as zero
+          { part_id: 5, quantity: "4" }, // no cost recorded: left out
+        ]
+      : [
+          { part_id: 1, cost: "3600" },
+          { part_id: 2, cost: "101" },
+          { part_id: 3, cost: "99.60" },
+          { part_id: 4, cost: "500" },
+        ],
   formulas: [],
   hostReports: [],
   ...overrides,
