@@ -57,6 +57,13 @@
       "when": 1791308498595,
       "tag": "0007_app_words",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791316235566,
+      "tag": "0008_drop_price_tiers",
+      "breakpoints": true
     }
   ]
 }
