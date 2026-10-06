@@ -8,6 +8,7 @@ import {
   loadCatalog,
   loadHostDb,
   loadSchemaMap,
+  type AppWords,
   type Catalog,
   type ReportName,
 } from "@dokaanbondhu/engine/host";
@@ -66,7 +67,7 @@ async function load(shopId: string): Promise<Entry> {
     const shopWords = own.slice(0, SHOP_WORDS).map((row) => `${row.aliasText} = ${row.targetValue}`);
 
     const [connection] = await tx
-      .select({ id: connections.id, priceTiers: connections.priceTiers })
+      .select({ id: connections.id, appWords: connections.appWords })
       .from(connections)
       .where(and(eq(connections.kind, "db"), eq(connections.status, "active")))
       .orderBy(asc(connections.createdAt))
@@ -128,7 +129,7 @@ async function load(shopId: string): Promise<Entry> {
         confirmed: row.confirmedAt !== null,
       })),
       hostReports: [], // a host's own report endpoints come with API connections (spec 11.13)
-      priceTiers: connection.priceTiers as Record<string, string>,
+      appWords: connection.appWords as AppWords,
     };
     return {
       value: { host, dictionary, shopWords },

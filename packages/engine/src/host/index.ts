@@ -1,16 +1,18 @@
 export {
+  appWordsOf,
   catalogVersion,
   customerTier,
   loadCatalog,
-  priceLevels,
+  ourWord,
   rackLabels,
+  readAppWord,
   readCatalog,
   toCatalog,
   writeCatalog,
   type Catalog,
   type CatalogRow,
-  type ChosenTiers,
-  type PriceLevel,
+  type AppWordReading,
+  type AppWords,
 } from "./catalog";
 export {
   findParts,

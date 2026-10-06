@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { customerTier, priceLevels, toCatalog, type CatalogRow } from "./catalog";
+import { appWordsOf, customerTier, ourWord, toCatalog, type CatalogRow } from "./catalog";
 
-// A customer's price level (spec 9.8, D121): its own tier, else its type, each through the owner's choice and then the
-// word list, so any shop app's wording works; retail when nobody has named the value yet.
+// The app's own words (spec 9.8, D121, D122): a customer's price level is its own tier, else its type, and a part's
+// quality, position and unit are read through the owner's choice and then the word list, so any shop app's wording
+// works; an unknown price level is retail, and an unknown part word is kept as written.
 
 const customer = (hostId: string, attrs: Record<string, unknown>): CatalogRow => ({
   concept: "customer",
@@ -26,9 +27,9 @@ describe("customer price levels", () => {
     expect(customerTier({ price_tier: "VIP" })).toBe("retail");
     expect(customerTier({})).toBe("retail");
     expect(customerTier(undefined)).toBe("retail");
-    expect(customerTier({ price_tier: "VIP" }, { VIP: "wholesale" })).toBe("wholesale");
-    expect(customerTier({ price_tier: "Garage" }, { Garage: "retail" })).toBe("retail"); // the owner wins
-    expect(customerTier({ price_tier: "VIP" }, { VIP: "nonsense" })).toBe("retail");
+    expect(customerTier({ price_tier: "VIP" }, { price_tier: { VIP: "wholesale" } })).toBe("wholesale");
+    expect(customerTier({ price_tier: "Garage" }, { price_tier: { Garage: "retail" } })).toBe("retail"); // the owner wins
+    expect(customerTier({ price_tier: "VIP" }, { price_tier: { VIP: "nonsense" } })).toBe("retail");
   });
 
   it("lists each deciding value with its customers for setup, the unknown ones first", () => {
@@ -39,16 +40,38 @@ describe("customer price levels", () => {
       customer("c4", { type: "walk-in" }),
       customer("c5", {}),
     ]);
-    expect(priceLevels(catalog, {})).toEqual([
-      { value: "VIP", tier: null, decidedBy: null, customers: 1 },
-      { value: "Garage", tier: "garage", decidedBy: "words", customers: 2 },
-      { value: "walk-in", tier: "retail", decidedBy: "words", customers: 1 },
+    expect(appWordsOf(catalog, "price_tier", {})).toEqual([
+      { value: "VIP", our: null, decidedBy: null, count: 1 },
+      { value: "Garage", our: "garage", decidedBy: "words", count: 2 },
+      { value: "walk-in", our: "retail", decidedBy: "words", count: 1 },
     ]);
-    expect(priceLevels(catalog, { VIP: "wholesale" })[0]).toEqual({
+    expect(appWordsOf(catalog, "price_tier", { price_tier: { VIP: "wholesale" } })[0]).toEqual({
       value: "Garage",
-      tier: "garage",
+      our: "garage",
       decidedBy: "words",
-      customers: 2,
+      count: 2,
     });
+  });
+
+  it("reads a part's quality, position and unit in the app's words, and keeps an unknown word as written", () => {
+    expect(ourWord("quality", "OEM")).toBe("genuine");
+    expect(ourWord("position", "FL")).toBe("front left");
+    expect(ourWord("unit", "pcs")).toBe("piece");
+    expect(ourWord("position", "R")).toBe("R");
+    expect(ourWord("position", "R", { position: { R: "rear" } })).toBe("rear");
+    expect(ourWord("quality", null)).toBeNull();
+    const part = (hostId: string, attrs: Record<string, unknown>): CatalogRow => ({
+      concept: "part",
+      hostId,
+      displayName: hostId,
+      displayNameBn: null,
+      partNumbers: [],
+      attrs,
+    });
+    const catalog = toCatalog([part("p1", { position: "F" }), part("p2", { position: "R" }), part("p3", {})]);
+    expect(appWordsOf(catalog, "position", {})).toEqual([
+      { value: "R", our: null, decidedBy: null, count: 1 },
+      { value: "F", our: "front", decidedBy: "words", count: 1 },
+    ]);
   });
 });

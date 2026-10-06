@@ -1,13 +1,14 @@
-import type {
-  CatalogSyncResult,
-  ConnectionCreate,
-  ConnectionTest,
-  ConnectionView,
-  EntityView,
-  PriceLevelsView,
-  ReportsView,
-  SchemaView,
-  WordsView,
+import {
+  appWordOurValues,
+  type AppWordsView,
+  type CatalogSyncResult,
+  type ConnectionCreate,
+  type ConnectionTest,
+  type ConnectionView,
+  type EntityView,
+  type ReportsView,
+  type SchemaView,
+  type WordsView,
 } from "@dokaanbondhu/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -20,7 +21,7 @@ import { useDeviceSettings } from "../../../src/lib/settings-store";
 import { Button, Chips, colors, Field, Heading, Note, Screen, styles } from "../../../src/ui";
 
 // Setup, the database half (spec 15.2, 11.3): the connection, the schema map review with sample values as they will be
-// spoken, the catalog sync, the stock-value formula, the customers' price levels (D121), and the words the assistant
+// spoken, the catalog sync, the stock-value formula, the app's own words (D121, D122), and the words the assistant
 // learned (D102). Owner only.
 
 type Language = "bn" | "en";
@@ -327,49 +328,69 @@ function ReportsSection({ connectionId, language }: { connectionId: string; lang
   );
 }
 
-type Tier = PriceLevelsView["levels"][number]["tier"] & string;
+type WordConcept = keyof AppWordsView["groups"];
+const WORD_CONCEPTS: WordConcept[] = ["price_tier", "quality", "position", "unit"];
 
 /**
- * Customers' price levels (D121): each customer type as the shop's app writes it, with the price it gets. The word list
- * knows the usual ones ("Garage", "mechanic", "পাইকারি"); the owner chooses the rest, which are retail until then.
+ * The app's own words (D121, D122): how the shop's app writes a customer type and a part's quality, side and unit,
+ * each with what it means to the assistant. The word list knows the usual ones ("Garage", "OEM", "FL", "pcs"); the
+ * owner chooses the rest, which until then are retail (price) or never matched (the rest).
  */
-function PriceLevelsSection({ connectionId }: { connectionId: string }) {
+function AppWordsSection({ connectionId }: { connectionId: string }) {
   const { t } = useTranslation();
   const message = useErrorText();
   const queryClient = useQueryClient();
-  const key = ["setup", "prices", connectionId];
-  const prices = useQuery({
+  const key = ["setup", "app-words", connectionId];
+  const words = useQuery({
     queryKey: key,
-    queryFn: () => api<{ prices: PriceLevelsView }>(`/setup/price-levels?connection_id=${connectionId}`),
+    queryFn: () => api<{ words: AppWordsView }>(`/setup/app-words?connection_id=${connectionId}`),
   });
   const decide = useMutation({
-    mutationFn: (input: { value: string; tier: Tier }) =>
-      api<{ prices: PriceLevelsView }>("/setup/price-levels", {
+    mutationFn: (input: { concept: WordConcept; value: string; our: string }) =>
+      api<{ words: AppWordsView }>("/setup/app-words", {
         method: "PUT",
-        body: { connection_id: connectionId, value: input.value, tier: input.tier },
+        body: { connection_id: connectionId, ...input },
       }),
     onSuccess: (data) => queryClient.setQueryData(key, data),
   });
-  const levels = prices.data?.prices.levels;
-  const tiers: Tier[] = ["retail", "garage", "wholesale"];
+  const groups = words.data?.words.groups;
+  const meaning = (concept: WordConcept, our: string) =>
+    our
+      .split(" ")
+      .map((part) => t(`setup.our.${concept}.${part}`))
+      .join(" ");
+  const empty = groups && WORD_CONCEPTS.every((concept) => groups[concept].length === 0);
   return (
     <View style={{ gap: 12 }}>
-      <Note>{t("setup.prices_note")}</Note>
-      {levels && levels.length === 0 ? <Note>{t("setup.prices_none")}</Note> : null}
-      {levels?.map((level) => (
-        <View key={level.value} style={styles.card}>
-          <Text style={{ fontSize: 18, color: colors.ink }}>“{level.value}”</Text>
-          <Note tone={level.tier ? "muted" : "danger"}>
-            {t("setup.prices_customers", { count: level.customers })} ·{" "}
-            {level.tier === null
-              ? t("setup.prices_ask")
-              : t(level.decided_by === "owner" ? "setup.prices_by_owner" : "setup.prices_by_words")}
-          </Note>
-          <Chips<string>
-            value={level.tier ?? ""}
-            options={tiers.map((tier) => ({ value: tier, label: t(`setup.tier.${tier}`) }))}
-            onChange={(tier) => decide.mutate({ value: level.value, tier: tier as Tier })}
-          />
+      <Note>{t("setup.app_words_note")}</Note>
+      {empty ? <Note>{t("setup.app_words_none")}</Note> : null}
+      {WORD_CONCEPTS.filter((concept) => groups?.[concept].length).map((concept) => (
+        <View key={concept} style={{ gap: 8 }}>
+          <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>
+            {t(`setup.app_word_group.${concept}`)}
+          </Text>
+          {groups![concept].map((word) => (
+            <View key={word.value} style={styles.card}>
+              <Text style={{ fontSize: 18, color: colors.ink }}>“{word.value}”</Text>
+              <Note tone={word.our ? "muted" : "danger"}>
+                {t(concept === "price_tier" ? "setup.app_words_customers" : "setup.app_words_parts", {
+                  count: word.count,
+                })}{" "}
+                ·{" "}
+                {word.our === null
+                  ? t("setup.app_words_ask")
+                  : `${t(word.decided_by === "owner" ? "setup.app_words_by_owner" : "setup.app_words_by_words")}: ${meaning(concept, word.our)}`}
+              </Note>
+              <Chips<string>
+                value={word.our ?? ""}
+                options={appWordOurValues[concept].map((our) => ({
+                  value: our,
+                  label: meaning(concept, our),
+                }))}
+                onChange={(our) => decide.mutate({ concept, value: word.value, our })}
+              />
+            </View>
+          ))}
         </View>
       ))}
       {decide.isError ? <Note tone="danger">{message(decide.error)}</Note> : null}
@@ -486,8 +507,8 @@ export default function Setup() {
           <CatalogSection connectionId={current.id} />
           <Heading>{t("setup.step_reports")}</Heading>
           <ReportsSection connectionId={current.id} language={language} />
-          <Heading>{t("setup.step_prices")}</Heading>
-          <PriceLevelsSection connectionId={current.id} />
+          <Heading>{t("setup.step_app_words")}</Heading>
+          <AppWordsSection connectionId={current.id} />
           <Heading>{t("setup.step_words")}</Heading>
           <WordsSection />
         </>

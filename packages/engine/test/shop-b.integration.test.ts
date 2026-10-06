@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
+import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { introspect } from "../src/host/introspect";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
@@ -66,6 +66,24 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     const pad = catalog.parts.find((part) => part.partNumbers.includes("04465-12610"))!;
     expect(pad.attrs.category).toBe("Brake Pad");
     expect([...(pad.attrs.racks as string[])].sort()).toEqual(["B-3", "G-1"]);
+  });
+
+  it("reads the app's own words for quality, side, unit and customer kind; R and VIP are asked (D121, D122)", () => {
+    const read = (concept: Parameters<typeof appWordsOf>[1]) =>
+      Object.fromEntries(appWordsOf(catalog, concept, {}).map((word) => [word.value, word.our]));
+    expect(read("quality")).toEqual({ OEM: "genuine", Copy: "aftermarket", Used: "used" });
+    expect(read("position")).toEqual({ F: "front", FL: "front left", R: null });
+    expect(read("unit")).toEqual({ set: "set", pcs: "piece", ltr: "liter" });
+    expect(read("price_tier")).toEqual({
+      Mechanic: "garage",
+      Dealer: "wholesale",
+      VIP: null,
+      "Walk-in": "retail",
+    });
+    const customer = (name: string) => catalog.customers.find((candidate) => candidate.name === name)!.attrs;
+    expect(customerTier(customer("Rahman Auto Works"))).toBe("garage");
+    expect(customerTier(customer("Mr. Karim"))).toBe("retail");
+    expect(customerTier(customer("Mr. Karim"), { price_tier: { VIP: "wholesale" } })).toBe("wholesale");
   });
 
   it("answers a due through the MySQL guard, and refuses a write", async () => {

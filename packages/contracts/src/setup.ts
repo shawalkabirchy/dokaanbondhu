@@ -138,27 +138,49 @@ export type ReportsView = z.infer<typeof reportsViewSchema>;
 
 export const reportConfirmSchema = z.object({ connection_id: z.uuid(), name: z.literal("stock_value") });
 
-// Price levels (D121): each value of the customers' price tier (or type) that decides their price, the level the word
-// list or the owner gave it, and how many customers have it; a value nobody has named is answered at retail until the
-// owner chooses.
-export const priceTierSchema = z.enum(["retail", "garage", "wholesale"]);
+// The app's own words (D121, D122): each value it writes for a customer's price level (its tier, else its type) and a
+// part's quality, position and unit, with ours from the word list or the owner and how many customers or parts have
+// it. A value nobody has named is retail (price) or is never matched (the rest) until the owner chooses.
+export const appWordConceptSchema = z.enum(["price_tier", "quality", "position", "unit"]);
+export type AppWordConceptName = z.infer<typeof appWordConceptSchema>;
 
-export const priceLevelsViewSchema = z.object({
-  connection_id: z.uuid(),
-  levels: z.array(
-    z.object({
-      value: z.string(),
-      customers: z.number().int(),
-      tier: priceTierSchema.nullable(),
-      decided_by: z.enum(["owner", "words"]).nullable(),
-    }),
-  ),
+export const appWordOurValues = {
+  price_tier: ["retail", "garage", "wholesale"],
+  quality: ["genuine", "aftermarket", "reconditioned", "used"],
+  position: ["front", "rear", "left", "right"],
+  unit: ["piece", "set", "pair", "hali", "dozen", "liter", "tin", "box"],
+} as const satisfies Record<AppWordConceptName, readonly string[]>;
+
+const appWordSchema = z.object({
+  value: z.string(),
+  count: z.number().int(),
+  our: z.string().nullable(),
+  decided_by: z.enum(["owner", "words"]).nullable(),
 });
-export type PriceLevelsView = z.infer<typeof priceLevelsViewSchema>;
 
-export const priceLevelDecisionSchema = z
-  .object({ connection_id: z.uuid(), value: z.string().min(1).max(200), tier: priceTierSchema })
-  .strict();
+export const appWordsViewSchema = z.object({
+  connection_id: z.uuid(),
+  groups: z.object({
+    price_tier: z.array(appWordSchema),
+    quality: z.array(appWordSchema),
+    position: z.array(appWordSchema),
+    unit: z.array(appWordSchema),
+  }),
+});
+export type AppWordsView = z.infer<typeof appWordsViewSchema>;
+
+export const appWordDecisionSchema = z
+  .object({
+    connection_id: z.uuid(),
+    concept: appWordConceptSchema,
+    value: z.string().min(1).max(200),
+    our: z.string(),
+  })
+  .strict()
+  .refine((body) => (appWordOurValues[body.concept] as readonly string[]).includes(body.our), {
+    path: ["our"],
+    message: "not one of ours for this concept",
+  });
 
 // Words the assistant learned (D102, D105), for the owner to add or dismiss: the listening check's suggestions, and
 // the words learned from answered questions once seen twice; and what the listening check has done.

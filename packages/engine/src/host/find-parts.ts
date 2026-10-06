@@ -7,12 +7,13 @@ import {
   parseEngineCode,
   parseYear,
   partsOfType,
+  positionsOf,
   roundTaka,
   type CatalogVehicle,
   type Dictionary,
   type PartRow,
 } from "@dokaanbondhu/core";
-import type { Catalog } from "./catalog";
+import { ourWord, type AppWords, type Catalog } from "./catalog";
 import type { Row, RunQuery } from "./pool";
 import { hasField, type SchemaMap } from "./schema-map";
 import { buildQuery, type Condition, type SelectItem } from "./sql";
@@ -54,6 +55,8 @@ export interface FindPartsInput {
   dictionary: Dictionary;
   fitmentExtra: FitmentExtra[];
   rackExtra: ReadonlyMap<string, string>;
+  /** The owner's choices for the app's own words (D121, D122). */
+  appWords?: AppWords;
   now?: Date;
 }
 
@@ -143,7 +146,10 @@ function understood(
   return { value: best.value, unclear: false, options: [] };
 }
 
-/** A host attribute value (front, OEM, ...) against a canonical one, through the glossary. */
+/**
+ * A row's value against the asked one. Quality and position are ours already (D122), and a position may be two
+ * ("front left" is front and left); a brand is matched through the glossary.
+ */
 function sameValue(
   concept: "position" | "quality" | "brand",
   hostValue: string | null,
@@ -152,6 +158,8 @@ function sameValue(
 ): boolean {
   if (!hostValue) return false;
   if (hostValue.toLowerCase() === wanted.toLowerCase()) return true;
+  if (concept === "position") return positionsOf(hostValue).includes(wanted);
+  if (concept === "quality") return false;
   const match = matchConcept(concept, hostValue, [], dictionary);
   return match.candidates[0]?.exact === true && match.candidates[0].value === wanted;
 }
@@ -234,10 +242,11 @@ async function queryRows(
       hostPartId,
       name: String(row.name),
       nameBn: (row.name_bn as string | null) ?? null,
-      quality: (row.quality as string | null) ?? null,
-      position: (row.position as string | null) ?? null,
+      // The app's own words as ours ("OEM" is genuine, "F" front, "pcs" piece; D122); an unknown word as written.
+      quality: ourWord("quality", row.quality, input.appWords),
+      position: ourWord("position", row.position, input.appWords),
       brand: (row.brand as string | null) ?? null,
-      unit: (row.unit as string | null) ?? null,
+      unit: ourWord("unit", row.unit, input.appWords),
       stock: toUnits(row.stock),
       retailTaka: toTaka(row.retail_price),
       garageTaka: toTaka(row.garage_price),

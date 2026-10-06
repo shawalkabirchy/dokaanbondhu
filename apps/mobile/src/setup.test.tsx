@@ -1,4 +1,4 @@
-import type { ConnectionView, PriceLevelsView, SchemaView } from "@dokaanbondhu/contracts";
+import type { AppWordsView, ConnectionView, SchemaView } from "@dokaanbondhu/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import Setup from "../app/(app)/setup/index";
@@ -62,13 +62,22 @@ const schema: SchemaView = {
   warnings: [],
 };
 
-// A customer type the word list does not know ("Dealer") is asked; "Garage" is recognized (D121).
-const prices: PriceLevelsView = {
+// The app's words (D121, D122): a customer type the word list does not know ("VIP") is asked, "Garage" is recognized;
+// a side "R" (rear or right) is asked, "FL" is recognized as front left.
+const words: AppWordsView = {
   connection_id: connection.id,
-  levels: [
-    { value: "Dealer", customers: 4, tier: null, decided_by: null },
-    { value: "Garage", customers: 9, tier: "garage", decided_by: "words" },
-  ],
+  groups: {
+    price_tier: [
+      { value: "VIP", count: 4, our: null, decided_by: null },
+      { value: "Garage", count: 9, our: "garage", decided_by: "words" },
+    ],
+    quality: [],
+    position: [
+      { value: "R", count: 3, our: null, decided_by: null },
+      { value: "FL", count: 2, our: "front left", decided_by: "words" },
+    ],
+    unit: [],
+  },
 };
 
 function answer(connections: ConnectionView[]) {
@@ -85,7 +94,7 @@ function answer(connections: ConnectionView[]) {
       } as never;
     }
     if (path.startsWith("/setup/schema/") && init?.method === "PUT") return { schema } as never;
-    if (path.startsWith("/setup/price-levels")) return { prices } as never;
+    if (path.startsWith("/setup/app-words")) return { words } as never;
     throw new Error(`unexpected ${path}`);
   });
 }
@@ -128,17 +137,25 @@ describe("setup page", () => {
     );
   });
 
-  it("asks the price of a customer type it does not know, and saves the owner's choice (D121)", async () => {
+  it("asks the meaning of an app word it does not know, and saves the owner's choice (D121, D122)", async () => {
     answer([connection]);
     await show();
-    expect(await screen.findByText("“Dealer”", {}, { timeout: 15_000 })).toBeTruthy();
-    expect(screen.getByText(/setup\.prices_ask/)).toBeTruthy();
-    expect(screen.getByText(/setup\.prices_by_words/)).toBeTruthy();
-    fireEvent.press(screen.getAllByText("setup.tier.wholesale")[0]!);
+    expect(await screen.findByText("“VIP”", {}, { timeout: 15_000 })).toBeTruthy();
+    expect(screen.getByText("“R”")).toBeTruthy();
+    expect(screen.getAllByText(/setup\.app_words_ask/)).toHaveLength(2);
+    expect(screen.getByText(/setup\.our\.position\.front setup\.our\.position\.left/)).toBeTruthy();
+    fireEvent.press(screen.getAllByText("setup.our.price_tier.wholesale")[0]!);
     await waitFor(() =>
-      expect(apiMock).toHaveBeenCalledWith("/setup/price-levels", {
+      expect(apiMock).toHaveBeenCalledWith("/setup/app-words", {
         method: "PUT",
-        body: { connection_id: connection.id, value: "Dealer", tier: "wholesale" },
+        body: { connection_id: connection.id, concept: "price_tier", value: "VIP", our: "wholesale" },
+      }),
+    );
+    fireEvent.press(screen.getAllByText("setup.our.position.rear")[0]!);
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith("/setup/app-words", {
+        method: "PUT",
+        body: { connection_id: connection.id, concept: "position", value: "R", our: "rear" },
       }),
     );
   });

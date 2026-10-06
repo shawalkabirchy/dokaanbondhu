@@ -1,4 +1,5 @@
 export * from "./answers";
+export * from "./app-words";
 export * from "./audio";
 export { AppError } from "./errors";
 export * from "./format";
@@ -11,4 +12,3 @@ export * from "./phonetic";
 export * from "./quantity";
 export * from "./resolve";
 export * from "./text";
-export * from "./tiers";

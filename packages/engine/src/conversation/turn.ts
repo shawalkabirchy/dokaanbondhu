@@ -34,7 +34,7 @@ import {
   type PriceTier,
 } from "@dokaanbondhu/core";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
-import { customerTier, rackLabels, type Catalog, type ChosenTiers } from "../host/catalog";
+import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
 import { ReadQueryRejected, runReadQuery, TABLE_ROWS, type ReadQueryResult } from "../host/read-query";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
@@ -83,8 +83,8 @@ export interface TurnHost {
   rackExtra: ReadonlyMap<string, string>;
   formulas: ReportFormula[];
   hostReports: ReportName[];
-  /** The owner's price level for customer values the word list does not know (D121). */
-  priceTiers?: ChosenTiers;
+  /** The owner's choices for the app's own words: price levels, quality, position, unit (D121, D122). */
+  appWords?: AppWords;
 }
 
 export interface TurnState {
@@ -452,6 +452,7 @@ export async function runTurn(
       dictionary: deps.dictionary,
       fitmentExtra: deps.host.fitmentExtra,
       rackExtra: deps.host.rackExtra,
+      ...(deps.host.appWords ? { appWords: deps.host.appWords } : {}),
       now,
     });
     timings.resolve = (timings.resolve ?? 0) + (Date.now() - resolveStart);
@@ -700,7 +701,7 @@ export async function runTurn(
         state.context.customer = {
           hostId: first.customer.hostId,
           name: first.customer.name,
-          tier: customerTier(customer?.attrs, deps.host.priceTiers),
+          tier: customerTier(customer?.attrs, deps.host.appWords),
         };
         record("resolved");
         return JSON.stringify({ customer: first.customer.name });
@@ -801,7 +802,7 @@ export async function runTurn(
         state.context.customer = {
           hostId: customer.hostId,
           name: customer.name,
-          tier: customerTier(customer.attrs, deps.host.priceTiers),
+          tier: customerTier(customer.attrs, deps.host.appWords),
         };
       }
       frame.status = "done";

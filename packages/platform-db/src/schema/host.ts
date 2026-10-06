@@ -62,9 +62,13 @@ export const connections = pgTable(
     features: jsonb("features")
       .notNull()
       .default(sql`'{}'::jsonb`), // the host feature list
+    // Unused since D122 (copied into app_words by migration 0007); dropped once every running server reads app_words.
     priceTiers: jsonb("price_tiers")
       .notNull()
-      .default(sql`'{}'::jsonb`), // the owner's price level for a customer value the word list does not know (D121)
+      .default(sql`'{}'::jsonb`),
+    appWords: jsonb("app_words")
+      .notNull()
+      .default(sql`'{}'::jsonb`), // the owner's value for an app word the word list does not know (D121, D122)
     poolMax: integer("pool_max").notNull().default(3),
     status: text("status").notNull(),
     lastCheckedAt: timestamptz("last_checked_at"),

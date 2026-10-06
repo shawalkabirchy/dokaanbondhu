@@ -10,6 +10,12 @@ const BN_COUNT = ["শূন্য", "এক", "দুই", "তিন", "চা
 
 /** The Bangla word of a glossary value (Toyota Axio -> এক্সিও, aftermarket -> নন-জেনুইন), else the value. */
 export function banglaOf(concept: AliasConcept, value: string): string {
+  // Two positions at once, "front left", are said "সামনের বাম" (D122).
+  if (concept === "position" && value.includes(" "))
+    return value
+      .split(" ")
+      .map((part) => banglaOf(concept, part))
+      .join(" ");
   return (
     GLOSSARY.find((entry) => entry.target_concept === concept && entry.target_value === value)?.bn[0] ?? value
   );

@@ -1,7 +1,8 @@
 import {
-  isPriceTier,
+  appWord,
+  isAppWordValue,
   phoneticKey,
-  priceTierOf,
+  type AppWordConcept,
   type CatalogCustomer,
   type CatalogPart,
   type CatalogVehicle,
@@ -346,54 +347,78 @@ export function rackLabels(catalog: Catalog): string[] {
   return [...labels];
 }
 
-/** A host value's price level as the owner set it in setup (connections.price_tiers, D121). */
-export type ChosenTiers = Readonly<Record<string, string>>;
+/** The owner's choices in setup (connections.app_words, D121, D122): our value for a host's word, per concept. */
+export type AppWords = Partial<Record<AppWordConcept, Readonly<Record<string, string>>>>;
 
-export interface PriceLevel {
-  /** The value as the host stores it ("Dealer"). */
+export interface AppWordReading {
+  /** The value as the host stores it ("Dealer", "OEM", "F"). */
   value: string;
-  /** The level: the owner's choice, else the word list's; null when neither knows it (then retail is used). */
-  tier: PriceTier | null;
+  /** Ours: the owner's choice, else the word list's; null when neither knows it. */
+  our: string | null;
   decidedBy: "owner" | "words" | null;
+}
+
+/** Our value for a host's word: the owner's choice first, then the word list (D121, D122). */
+export function readAppWord(concept: AppWordConcept, value: string, chosen: AppWords = {}): AppWordReading {
+  const owner = chosen[concept]?.[value];
+  if (isAppWordValue(concept, owner)) return { value, our: owner, decidedBy: "owner" };
+  const word = appWord(concept, value);
+  return word ? { value, our: word, decidedBy: "words" } : { value, our: null, decidedBy: null };
+}
+
+/** Our value for a host's word, or the word as written when nobody knows it yet (never a filter match then). */
+export function ourWord(concept: AppWordConcept, value: unknown, chosen: AppWords = {}): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  return readAppWord(concept, value.trim(), chosen).our ?? value.trim();
 }
 
 /**
  * The value that decides a customer's price level (spec 9.8, D121): its own tier, else its type, each through the
  * owner's choice and then the word list; when neither is known, the first value the host stores, without a level.
  */
-function levelOf(attrs: Record<string, unknown>, chosen: ChosenTiers): PriceLevel | null {
+function levelOf(attrs: Record<string, unknown>, chosen: AppWords): AppWordReading | null {
   const values = [attrs.price_tier, attrs.type]
     .map((value) => (typeof value === "string" ? value.trim() : ""))
     .filter(Boolean);
   for (const value of values) {
-    const owner = chosen[value];
-    if (isPriceTier(owner)) return { value, tier: owner, decidedBy: "owner" };
-    const word = priceTierOf(value);
-    if (word) return { value, tier: word, decidedBy: "words" };
+    const reading = readAppWord("price_tier", value, chosen);
+    if (reading.our) return reading;
   }
-  return values[0] ? { value: values[0], tier: null, decidedBy: null } : null;
+  return values[0] ? { value: values[0], our: null, decidedBy: null } : null;
 }
 
 /** A customer's price level; retail when the host stores none or one nobody has named yet. */
-export function customerTier(
-  attrs: Record<string, unknown> | undefined,
-  chosen: ChosenTiers = {},
-): PriceTier {
-  return (attrs && levelOf(attrs, chosen)?.tier) ?? "retail";
+export function customerTier(attrs: Record<string, unknown> | undefined, chosen: AppWords = {}): PriceTier {
+  return ((attrs && levelOf(attrs, chosen)?.our) ?? "retail") as PriceTier;
 }
 
-/** Every value that decides a customer's price level, with its customers, for setup (D121); unknown ones first. */
-export function priceLevels(catalog: Catalog, chosen: ChosenTiers): (PriceLevel & { customers: number })[] {
-  const levels = new Map<string, PriceLevel & { customers: number }>();
-  for (const customer of catalog.customers) {
-    const level = levelOf(customer.attrs, chosen);
-    if (!level) continue;
-    const seen = levels.get(level.value);
-    if (seen) seen.customers += 1;
-    else levels.set(level.value, { ...level, customers: 1 });
+/**
+ * Every value the host writes for a concept, read and counted for setup (D121, D122): the customers' price levels, or
+ * the parts' quality, position or unit. The unknown ones come first.
+ */
+export function appWordsOf(
+  catalog: Catalog,
+  concept: AppWordConcept,
+  chosen: AppWords,
+): (AppWordReading & { count: number })[] {
+  const readings =
+    concept === "price_tier"
+      ? catalog.customers.map((customer) => levelOf(customer.attrs, chosen))
+      : catalog.parts.map((part) => {
+          const value = part.attrs[concept];
+          return typeof value === "string" && value.trim()
+            ? readAppWord(concept, value.trim(), chosen)
+            : null;
+        });
+  const counted = new Map<string, AppWordReading & { count: number }>();
+  for (const reading of readings) {
+    if (!reading) continue;
+    const seen = counted.get(reading.value);
+    if (seen) seen.count += 1;
+    else counted.set(reading.value, { ...reading, count: 1 });
   }
-  return [...levels.values()].sort(
-    (a, b) => Number(a.tier !== null) - Number(b.tier !== null) || b.customers - a.customers,
+  return [...counted.values()].sort(
+    (a, b) => Number(a.our !== null) - Number(b.our !== null) || b.count - a.count,
   );
 }
 

@@ -166,14 +166,40 @@
     "stock_value_confirmed": "Confirmed: the assistant will say this figure.",
     "see_in_app": "Profit and cash book stay in the shop's app; the assistant will not say them.",
     "unknown": "unknown",
-    "step_prices": "5. Customer prices",
-    "prices_note": "Which price each customer gets, by the customer type as the shop's app writes it. Choose a price for any the assistant does not know; until then it says the retail price.",
-    "prices_none": "Customer types show here after the catalog sync.",
-    "prices_customers": "{{count}} customers",
-    "prices_ask": "Which price? Please choose.",
-    "prices_by_words": "recognized by the assistant",
-    "prices_by_owner": "chosen by you",
-    "tier": { "retail": "Retail", "garage": "Garage", "wholesale": "Wholesale" },
+    "step_app_words": "5. The app's words",
+    "app_words_note": "How the shop's app writes a customer type and a part's quality, side and unit. Choose the meaning of any the assistant does not know; until then such a customer gets the retail price, and such parts are not matched in a search.",
+    "app_words_none": "The app's words show here after the catalog sync.",
+    "app_words_customers": "{{count}} customers",
+    "app_words_parts": "{{count}} parts",
+    "app_words_ask": "What does this mean? Please choose.",
+    "app_words_by_words": "recognized by the assistant",
+    "app_words_by_owner": "chosen by you",
+    "app_word_group": {
+      "price_tier": "Customer price",
+      "quality": "Part quality",
+      "position": "Side",
+      "unit": "Unit"
+    },
+    "our": {
+      "price_tier": { "retail": "Retail", "garage": "Garage", "wholesale": "Wholesale" },
+      "quality": {
+        "genuine": "Genuine",
+        "aftermarket": "Non-genuine",
+        "reconditioned": "Reconditioned",
+        "used": "Used"
+      },
+      "position": { "front": "Front", "rear": "Rear", "left": "Left", "right": "Right" },
+      "unit": {
+        "piece": "Piece",
+        "set": "Set",
+        "pair": "Pair",
+        "hali": "Hali (4)",
+        "dozen": "Dozen",
+        "liter": "Liter",
+        "tin": "Tin",
+        "box": "Box"
+      }
+    },
     "concepts": {
       "Part": "Part",
       "Vehicle": "Vehicle",
