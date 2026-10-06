@@ -97,16 +97,19 @@ const RACK_WORDS = new Set(
  */
 const WEAK_RACK_WORDS = new Set(["থাকে", "thake"].map((word) => normalize(word).tokens.join(" ")));
 
+/** Number words that are everyday words too, never a rack number: "বার" (times), "ashi" (I'm coming) (D121). */
+const NOT_RACK_NUMBERS = new Set(["বার", "ashi"].map((word) => word.normalize("NFC")));
+
 /**
- * One sign of a rack label as said: a spelled letter or digit, a number word from zero to nine in either script
- * ("দুই", "dui", D118), or the written letters and digits themselves.
+ * One sign of a rack label as said: a spelled letter or digit, a number word up to 99 in either script ("দুই", "dui",
+ * D118; "বারো", "baro" for 12, D121), or the written letters and digits themselves.
  */
 function rackSign(token: string): string | null {
   const sign = spokenSign(token);
   if (sign !== null) return sign;
   const ascii = asciiDigits(token);
-  const value = /^\d+$/.test(ascii) ? null : wordNumber(token);
-  if (value !== null && value <= 9) return String(value);
+  const value = /^\d+$/.test(ascii) || NOT_RACK_NUMBERS.has(token) ? null : wordNumber(token);
+  if (value !== null && value <= 99 && Number.isInteger(value)) return String(value);
   return /^[a-z0-9][a-z0-9./-]*$/.test(ascii) ? token : null;
 }
 

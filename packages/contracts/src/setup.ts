@@ -138,6 +138,28 @@ export type ReportsView = z.infer<typeof reportsViewSchema>;
 
 export const reportConfirmSchema = z.object({ connection_id: z.uuid(), name: z.literal("stock_value") });
 
+// Price levels (D121): each value of the customers' price tier (or type) that decides their price, the level the word
+// list or the owner gave it, and how many customers have it; a value nobody has named is answered at retail until the
+// owner chooses.
+export const priceTierSchema = z.enum(["retail", "garage", "wholesale"]);
+
+export const priceLevelsViewSchema = z.object({
+  connection_id: z.uuid(),
+  levels: z.array(
+    z.object({
+      value: z.string(),
+      customers: z.number().int(),
+      tier: priceTierSchema.nullable(),
+      decided_by: z.enum(["owner", "words"]).nullable(),
+    }),
+  ),
+});
+export type PriceLevelsView = z.infer<typeof priceLevelsViewSchema>;
+
+export const priceLevelDecisionSchema = z
+  .object({ connection_id: z.uuid(), value: z.string().min(1).max(200), tier: priceTierSchema })
+  .strict();
+
 // Words the assistant learned (D102, D105), for the owner to add or dismiss: the listening check's suggestions, and
 // the words learned from answered questions once seen twice; and what the listening check has done.
 export const wordSuggestionSchema = z.object({

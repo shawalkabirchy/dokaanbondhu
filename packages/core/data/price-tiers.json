@@ -1,0 +1,73 @@
+{
+  "comment": "How shop apps name a customer's price level (D121), matched without case, dashes or underscores. A value not here is asked once in setup.",
+  "filler": [
+    "price",
+    "prices",
+    "rate",
+    "tier",
+    "level",
+    "type",
+    "customer",
+    "customers",
+    "দাম",
+    "রেট",
+    "কাস্টমার",
+    "গ্রাহক"
+  ],
+  "tiers": {
+    "retail": [
+      "retail",
+      "retailer",
+      "walk in",
+      "walkin",
+      "regular",
+      "general",
+      "normal",
+      "customer",
+      "consumer",
+      "individual",
+      "public",
+      "cash",
+      "khuchra",
+      "khucra",
+      "খুচরা",
+      "খুচরো",
+      "সাধারণ",
+      "রিটেইল",
+      "নগদ"
+    ],
+    "garage": [
+      "garage",
+      "garages",
+      "mechanic",
+      "mechanics",
+      "workshop",
+      "service center",
+      "service centre",
+      "mistri",
+      "গ্যারেজ",
+      "গেরেজ",
+      "মেকানিক",
+      "মিস্ত্রি",
+      "মিস্ত্রী",
+      "ওয়ার্কশপ"
+    ],
+    "wholesale": [
+      "wholesale",
+      "wholesaler",
+      "dealer",
+      "dealers",
+      "reseller",
+      "distributor",
+      "trade",
+      "trader",
+      "paikari",
+      "paikar",
+      "পাইকারি",
+      "পাইকারী",
+      "পাইকার",
+      "ডিলার",
+      "হোলসেল"
+    ]
+  }
+}

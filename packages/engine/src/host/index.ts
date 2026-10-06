@@ -1,12 +1,16 @@
 export {
   catalogVersion,
+  customerTier,
   loadCatalog,
+  priceLevels,
   rackLabels,
   readCatalog,
   toCatalog,
   writeCatalog,
   type Catalog,
   type CatalogRow,
+  type ChosenTiers,
+  type PriceLevel,
 } from "./catalog";
 export {
   findParts,

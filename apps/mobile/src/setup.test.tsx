@@ -1,4 +1,4 @@
-import type { ConnectionView, SchemaView } from "@dokaanbondhu/contracts";
+import type { ConnectionView, PriceLevelsView, SchemaView } from "@dokaanbondhu/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import Setup from "../app/(app)/setup/index";
@@ -62,6 +62,15 @@ const schema: SchemaView = {
   warnings: [],
 };
 
+// A customer type the word list does not know ("Dealer") is asked; "Garage" is recognized (D121).
+const prices: PriceLevelsView = {
+  connection_id: connection.id,
+  levels: [
+    { value: "Dealer", customers: 4, tier: null, decided_by: null },
+    { value: "Garage", customers: 9, tier: "garage", decided_by: "words" },
+  ],
+};
+
 function answer(connections: ConnectionView[]) {
   apiMock.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
     if (path === "/setup/connections") return { connections } as never;
@@ -76,6 +85,7 @@ function answer(connections: ConnectionView[]) {
       } as never;
     }
     if (path.startsWith("/setup/schema/") && init?.method === "PUT") return { schema } as never;
+    if (path.startsWith("/setup/price-levels")) return { prices } as never;
     throw new Error(`unexpected ${path}`);
   });
 }
@@ -114,6 +124,21 @@ describe("setup page", () => {
       expect(apiMock).toHaveBeenCalledWith(`/setup/schema/${schema.entities[0]!.id}`, {
         method: "PUT",
         body: {},
+      }),
+    );
+  });
+
+  it("asks the price of a customer type it does not know, and saves the owner's choice (D121)", async () => {
+    answer([connection]);
+    await show();
+    expect(await screen.findByText("“Dealer”", {}, { timeout: 15_000 })).toBeTruthy();
+    expect(screen.getByText(/setup\.prices_ask/)).toBeTruthy();
+    expect(screen.getByText(/setup\.prices_by_words/)).toBeTruthy();
+    fireEvent.press(screen.getAllByText("setup.tier.wholesale")[0]!);
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith("/setup/price-levels", {
+        method: "PUT",
+        body: { connection_id: connection.id, value: "Dealer", tier: "wholesale" },
       }),
     );
   });

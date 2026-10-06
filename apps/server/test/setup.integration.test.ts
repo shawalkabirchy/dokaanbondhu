@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { SchemaView } from "@dokaanbondhu/contracts";
+import type { PriceLevelsView, SchemaView } from "@dokaanbondhu/contracts";
 import {
   aiProviders,
   connections,
@@ -69,7 +69,7 @@ const proposal = {
 
 type Handler = (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>;
 type Routes = Record<
-  "connections" | "test" | "propose" | "schema" | "entity" | "sync" | "reports",
+  "connections" | "test" | "propose" | "schema" | "entity" | "sync" | "reports" | "prices",
   Record<string, unknown>
 >;
 
@@ -154,6 +154,7 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
       entity: await import("../app/api/v1/setup/schema/[entityId]/route"),
       sync: await import("../app/api/v1/setup/catalog/sync/route"),
       reports: await import("../app/api/v1/setup/reports/route"),
+      prices: await import("../app/api/v1/setup/price-levels/route"),
     };
   });
 
@@ -290,5 +291,32 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     expect(confirmed.body.reports).toMatchObject({
       stock_value: { available: true, confirmed: true, current_taka: current },
     });
+  });
+
+  it("lists the customers' price levels from the catalog, and the owner's choice wins over the word list (D121)", async () => {
+    const query = `?connection_id=${connectionId}`;
+    expect((await call(routes.prices.GET, { auth: staff.auth, query })).status).toBe(403);
+    const listed = (await call(routes.prices.GET, { query })).body.prices as PriceLevelsView;
+    // GearGrid writes retail, garage and wholesale, which the word list knows.
+    expect(listed.levels.length).toBeGreaterThan(0);
+    expect(listed.levels.every((level) => level.tier !== null && level.decided_by === "words")).toBe(true);
+    expect(listed.levels.reduce((sum, level) => sum + level.customers, 0)).toBe(30);
+    const garage = listed.levels.find((level) => level.tier === "garage")!;
+
+    const chosen = await call(routes.prices.PUT, {
+      method: "PUT",
+      body: { connection_id: connectionId, value: garage.value, tier: "wholesale" },
+    });
+    expect((chosen.body.prices as PriceLevelsView).levels).toContainEqual({
+      value: garage.value,
+      customers: garage.customers,
+      tier: "wholesale",
+      decided_by: "owner",
+    });
+    const refused = await call(routes.prices.PUT, {
+      method: "PUT",
+      body: { connection_id: connectionId, value: garage.value, tier: "vip" },
+    });
+    expect(refused.status).toBe(400);
   });
 });

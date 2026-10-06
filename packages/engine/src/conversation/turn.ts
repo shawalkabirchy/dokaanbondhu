@@ -31,9 +31,10 @@ import {
   type PartRow,
   type PartsContext,
   type QuestionSlot,
+  type PriceTier,
 } from "@dokaanbondhu/core";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
-import { rackLabels, type Catalog } from "../host/catalog";
+import { customerTier, rackLabels, type Catalog, type ChosenTiers } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
 import { ReadQueryRejected, runReadQuery, TABLE_ROWS, type ReadQueryResult } from "../host/read-query";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
@@ -57,7 +58,7 @@ import { CANNOT_HELP, readTools } from "./tools";
 // One chat turn (spec 9.1): normalize, candidates, frame answer, the LLM tool loop (at most 4 calls, D15),
 // resolution, decide, respond sentence by sentence with the grounding check (spec 12), and what to persist.
 
-export type PriceTier = "retail" | "garage" | "wholesale";
+export type { PriceTier };
 
 export interface SessionContext {
   vehicle?: { model: string; year: number | null; engine: string | null };
@@ -82,6 +83,8 @@ export interface TurnHost {
   rackExtra: ReadonlyMap<string, string>;
   formulas: ReportFormula[];
   hostReports: ReportName[];
+  /** The owner's price level for customer values the word list does not know (D121). */
+  priceTiers?: ChosenTiers;
 }
 
 export interface TurnState {
@@ -694,11 +697,10 @@ export async function runTurn(
           return JSON.stringify({ found: false });
         }
         const customer = deps.host.catalog.customers.find((c) => c.hostId === first.customer.hostId);
-        const tierOf = String(customer?.attrs?.price_tier ?? customer?.attrs?.type ?? "retail");
         state.context.customer = {
           hostId: first.customer.hostId,
           name: first.customer.name,
-          tier: tierOf === "garage" || tierOf === "wholesale" ? tierOf : "retail",
+          tier: customerTier(customer?.attrs, deps.host.priceTiers),
         };
         record("resolved");
         return JSON.stringify({ customer: first.customer.name });
@@ -796,11 +798,10 @@ export async function runTurn(
         (c) => c.hostId === slot.hostId || c.hostId === slot.value,
       );
       if (customer) {
-        const tierOf = String(customer.attrs?.price_tier ?? customer.attrs?.type ?? "retail");
         state.context.customer = {
           hostId: customer.hostId,
           name: customer.name,
-          tier: tierOf === "garage" || tierOf === "wholesale" ? tierOf : "retail",
+          tier: customerTier(customer.attrs, deps.host.priceTiers),
         };
       }
       frame.status = "done";

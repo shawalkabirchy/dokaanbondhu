@@ -66,7 +66,7 @@ async function load(shopId: string): Promise<Entry> {
     const shopWords = own.slice(0, SHOP_WORDS).map((row) => `${row.aliasText} = ${row.targetValue}`);
 
     const [connection] = await tx
-      .select({ id: connections.id })
+      .select({ id: connections.id, priceTiers: connections.priceTiers })
       .from(connections)
       .where(and(eq(connections.kind, "db"), eq(connections.status, "active")))
       .orderBy(asc(connections.createdAt))
@@ -128,6 +128,7 @@ async function load(shopId: string): Promise<Entry> {
         confirmed: row.confirmedAt !== null,
       })),
       hostReports: [], // a host's own report endpoints come with API connections (spec 11.13)
+      priceTiers: connection.priceTiers as Record<string, string>,
     };
     return {
       value: { host, dictionary, shopWords },

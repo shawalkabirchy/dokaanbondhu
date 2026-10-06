@@ -62,6 +62,9 @@ export const connections = pgTable(
     features: jsonb("features")
       .notNull()
       .default(sql`'{}'::jsonb`), // the host feature list
+    priceTiers: jsonb("price_tiers")
+      .notNull()
+      .default(sql`'{}'::jsonb`), // the owner's price level for a customer value the word list does not know (D121)
     poolMax: integer("pool_max").notNull().default(3),
     status: text("status").notNull(),
     lastCheckedAt: timestamptz("last_checked_at"),

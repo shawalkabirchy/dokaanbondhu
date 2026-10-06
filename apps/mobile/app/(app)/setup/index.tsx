@@ -4,6 +4,7 @@ import type {
   ConnectionTest,
   ConnectionView,
   EntityView,
+  PriceLevelsView,
   ReportsView,
   SchemaView,
   WordsView,
@@ -19,7 +20,8 @@ import { useDeviceSettings } from "../../../src/lib/settings-store";
 import { Button, Chips, colors, Field, Heading, Note, Screen, styles } from "../../../src/ui";
 
 // Setup, the database half (spec 15.2, 11.3): the connection, the schema map review with sample values as they will be
-// spoken, the catalog sync, the stock-value formula, and the words the assistant learned (D102). Owner only.
+// spoken, the catalog sync, the stock-value formula, the customers' price levels (D121), and the words the assistant
+// learned (D102). Owner only.
 
 type Language = "bn" | "en";
 
@@ -325,6 +327,56 @@ function ReportsSection({ connectionId, language }: { connectionId: string; lang
   );
 }
 
+type Tier = PriceLevelsView["levels"][number]["tier"] & string;
+
+/**
+ * Customers' price levels (D121): each customer type as the shop's app writes it, with the price it gets. The word list
+ * knows the usual ones ("Garage", "mechanic", "পাইকারি"); the owner chooses the rest, which are retail until then.
+ */
+function PriceLevelsSection({ connectionId }: { connectionId: string }) {
+  const { t } = useTranslation();
+  const message = useErrorText();
+  const queryClient = useQueryClient();
+  const key = ["setup", "prices", connectionId];
+  const prices = useQuery({
+    queryKey: key,
+    queryFn: () => api<{ prices: PriceLevelsView }>(`/setup/price-levels?connection_id=${connectionId}`),
+  });
+  const decide = useMutation({
+    mutationFn: (input: { value: string; tier: Tier }) =>
+      api<{ prices: PriceLevelsView }>("/setup/price-levels", {
+        method: "PUT",
+        body: { connection_id: connectionId, value: input.value, tier: input.tier },
+      }),
+    onSuccess: (data) => queryClient.setQueryData(key, data),
+  });
+  const levels = prices.data?.prices.levels;
+  const tiers: Tier[] = ["retail", "garage", "wholesale"];
+  return (
+    <View style={{ gap: 12 }}>
+      <Note>{t("setup.prices_note")}</Note>
+      {levels && levels.length === 0 ? <Note>{t("setup.prices_none")}</Note> : null}
+      {levels?.map((level) => (
+        <View key={level.value} style={styles.card}>
+          <Text style={{ fontSize: 18, color: colors.ink }}>“{level.value}”</Text>
+          <Note tone={level.tier ? "muted" : "danger"}>
+            {t("setup.prices_customers", { count: level.customers })} ·{" "}
+            {level.tier === null
+              ? t("setup.prices_ask")
+              : t(level.decided_by === "owner" ? "setup.prices_by_owner" : "setup.prices_by_words")}
+          </Note>
+          <Chips<string>
+            value={level.tier ?? ""}
+            options={tiers.map((tier) => ({ value: tier, label: t(`setup.tier.${tier}`) }))}
+            onChange={(tier) => decide.mutate({ value: level.value, tier: tier as Tier })}
+          />
+        </View>
+      ))}
+      {decide.isError ? <Note tone="danger">{message(decide.error)}</Note> : null}
+    </View>
+  );
+}
+
 /**
  * Words the assistant learned (D102, D105): spellings the listening check found, and car or part names it did not
  * understand at first and then got from an answer (seen twice); the owner adds each (understood straight away next
@@ -434,6 +486,8 @@ export default function Setup() {
           <CatalogSection connectionId={current.id} />
           <Heading>{t("setup.step_reports")}</Heading>
           <ReportsSection connectionId={current.id} language={language} />
+          <Heading>{t("setup.step_prices")}</Heading>
+          <PriceLevelsSection connectionId={current.id} />
           <Heading>{t("setup.step_words")}</Heading>
           <WordsSection />
         </>

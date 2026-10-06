@@ -11,3 +11,4 @@ export * from "./phonetic";
 export * from "./quantity";
 export * from "./resolve";
 export * from "./text";
+export * from "./tiers";

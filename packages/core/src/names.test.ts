@@ -76,6 +76,28 @@ describe("racks in a request", () => {
     expect(racksInText(text, shelves)).toEqual([{ kind: "rack", name: "C-2", heard, score: 1 }]);
   });
 
+  // D121: a rack number above nine said as one number; "বার" (times) is never one.
+  const numbered = ["A-1", "A-10", "A-12", "C-2", "C-14"];
+  it.each([
+    { style: "Bangla", text: "এ বারো তাকে কী আছে?", rack: "A-12", heard: "এ বারো" },
+    { style: "Banglish", text: "a baro rack e ki ache?", rack: "A-12", heard: "a baro" },
+    { style: "Bangla", text: "সি চৌদ্দ র‍্যাকে কী কী আছে", rack: "C-14", heard: "সি চৌদ্দ" },
+    { style: "Banglish", text: "c choddo take ki ki ache", rack: "C-14", heard: "c choddo" },
+    { style: "Bangla", text: "এ দশ তাকে কী আছে?", rack: "A-10", heard: "এ দশ" },
+    { style: "Banglish", text: "a ten rack e ki ache?", rack: "A-10", heard: "a ten" },
+  ])("finds a rack whose number is said as one number ($style: $text)", ({ text, rack, heard }) => {
+    expect(racksInText(text, numbered)).toEqual([{ kind: "rack", name: rack, heard, score: 1 }]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "এ বার কী আছে?" },
+    { style: "Banglish", text: "a ashi" },
+    { style: "Bangla", text: "এক্সিও দুই হাজার চৌদ্দ সামনের ব্রেক প্যাড আছে?" },
+    { style: "Banglish", text: "axio dui hajar choddo shamner brake pad ache?" },
+  ])("takes no everyday word or year for a rack number ($style: $text)", ({ text }) => {
+    expect(racksInText(text, numbered)).toEqual([]);
+  });
+
   it.each([
     { style: "Bangla", text: "রহিমের কত বাকি থাকে?" },
     { style: "Banglish", text: "rahimer koto baki thake?" },

@@ -1,4 +1,12 @@
-import { phoneticKey, type CatalogCustomer, type CatalogPart, type CatalogVehicle } from "@dokaanbondhu/core";
+import {
+  isPriceTier,
+  phoneticKey,
+  priceTierOf,
+  type CatalogCustomer,
+  type CatalogPart,
+  type CatalogVehicle,
+  type PriceTier,
+} from "@dokaanbondhu/core";
 import { catalogCache, type Tx } from "@dokaanbondhu/platform-db";
 import { and, eq, lt, max, sql } from "drizzle-orm";
 import type { Row, RunQuery } from "./pool";
@@ -336,6 +344,57 @@ export function rackLabels(catalog: Catalog): string[] {
   for (const part of catalog.parts)
     if (Array.isArray(part.attrs.racks)) for (const rack of part.attrs.racks) labels.add(String(rack));
   return [...labels];
+}
+
+/** A host value's price level as the owner set it in setup (connections.price_tiers, D121). */
+export type ChosenTiers = Readonly<Record<string, string>>;
+
+export interface PriceLevel {
+  /** The value as the host stores it ("Dealer"). */
+  value: string;
+  /** The level: the owner's choice, else the word list's; null when neither knows it (then retail is used). */
+  tier: PriceTier | null;
+  decidedBy: "owner" | "words" | null;
+}
+
+/**
+ * The value that decides a customer's price level (spec 9.8, D121): its own tier, else its type, each through the
+ * owner's choice and then the word list; when neither is known, the first value the host stores, without a level.
+ */
+function levelOf(attrs: Record<string, unknown>, chosen: ChosenTiers): PriceLevel | null {
+  const values = [attrs.price_tier, attrs.type]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  for (const value of values) {
+    const owner = chosen[value];
+    if (isPriceTier(owner)) return { value, tier: owner, decidedBy: "owner" };
+    const word = priceTierOf(value);
+    if (word) return { value, tier: word, decidedBy: "words" };
+  }
+  return values[0] ? { value: values[0], tier: null, decidedBy: null } : null;
+}
+
+/** A customer's price level; retail when the host stores none or one nobody has named yet. */
+export function customerTier(
+  attrs: Record<string, unknown> | undefined,
+  chosen: ChosenTiers = {},
+): PriceTier {
+  return (attrs && levelOf(attrs, chosen)?.tier) ?? "retail";
+}
+
+/** Every value that decides a customer's price level, with its customers, for setup (D121); unknown ones first. */
+export function priceLevels(catalog: Catalog, chosen: ChosenTiers): (PriceLevel & { customers: number })[] {
+  const levels = new Map<string, PriceLevel & { customers: number }>();
+  for (const customer of catalog.customers) {
+    const level = levelOf(customer.attrs, chosen);
+    if (!level) continue;
+    const seen = levels.get(level.value);
+    if (seen) seen.customers += 1;
+    else levels.set(level.value, { ...level, customers: 1 });
+  }
+  return [...levels.values()].sort(
+    (a, b) => Number(a.tier !== null) - Number(b.tier !== null) || b.customers - a.customers,
+  );
 }
 
 /** The newest sync time of a connection's cache (the server polls this every 60 s). */

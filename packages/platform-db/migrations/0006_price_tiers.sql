@@ -1,0 +1,1 @@
+ALTER TABLE "connections" ADD COLUMN "price_tiers" jsonb DEFAULT '{}'::jsonb NOT NULL;
