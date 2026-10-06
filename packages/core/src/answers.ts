@@ -54,7 +54,11 @@ export interface PartsContext {
   partType: string; // glossary value, e.g. Brake Pad
   position: string | null;
   tier: "retail" | "garage" | "wholesale";
+  /** The customer whose tier it is (session context), named when the answer uses that price (D119). */
+  customer?: string;
 }
+
+const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি" } as const;
 
 function vehiclePhrase(context: PartsContext): string {
   const vehicle = banglaOf("vehicle_model", context.vehicle);
@@ -107,11 +111,29 @@ export function missingAnswer(
   return `${partPhrase(context, pairUsed ?? context.partType)} ${missing} নেই।`;
 }
 
-/** The parts answer (architecture, A.1): one kind in one sentence, several with "দুই রকম" and a shared rack. */
-export function partsAnswer(rows: PartRow[], context: PartsContext, pairUsed: string | null = null): string {
+/** "দাম নিউ ঢাকা গ্যারেজের রেটে।" when a price said is the customer's tier price, not retail (D119). */
+function rateSentence(rows: PartRow[], context: PartsContext): string {
+  if (context.tier === "retail") return "";
+  const differs = rows.some((row) => {
+    const price = priceOf(row, context.tier);
+    return (row.stock ?? 1) > 0 && price !== null && price !== row.retailTaka;
+  });
+  if (!differs) return "";
+  return ` দাম ${context.customer ? possessive(context.customer) : TIER_BN[context.tier]} রেটে।`;
+}
+
+/**
+ * The parts answer (architecture, A.1): one kind in one sentence, several with "দুই রকম" and a shared rack. A position
+ * not asked is said when every kind shares it (D120); the customer's rate is named when it was used (D119).
+ */
+export function partsAnswer(rows: PartRow[], asked: PartsContext, pairUsed: string | null = null): string {
+  const positions = new Set(rows.map((row) => row.position));
+  const onePosition = positions.size === 1 ? [...positions][0]! : null;
+  const context = { ...asked, position: asked.position ?? onePosition };
   const subject = partPhrase(context, pairUsed ?? context.partType);
   const inStock = rows.filter((row) => row.stock === null || row.stock > 0);
   if (inStock.length === 0) return `${subject} এখন স্টকে নেই।`;
+  const rate = rateSentence(rows, context);
   if (rows.length === 1) {
     const row = rows[0]!;
     const quality = row.quality ? `${banglaOf("quality", row.quality)} ` : "";
@@ -120,7 +142,7 @@ export function partsAnswer(rows: PartRow[], context: PartsContext, pairUsed: st
       ...(priceOf(row, context.tier) !== null ? [money(priceOf(row, context.tier)!)] : []),
       ...(row.rack ? [`${row.rack} তাকে`] : []),
     ];
-    return `${[head, ...tail].join(", ")}।`;
+    return `${[head, ...tail].join(", ")}।${rate}`;
   }
   const racks = new Set(inStock.map((row) => row.rack));
   const sharedRack = racks.size === 1 ? [...racks][0] : null;
@@ -129,7 +151,7 @@ export function partsAnswer(rows: PartRow[], context: PartsContext, pairUsed: st
   const kinds = rows.map((row) => kindText(row, context.tier, !sharedRack, shared(row))).join("; ");
   const both = rows.length === 2 ? "দুটোই" : "সবগুলো";
   const rack = sharedRack ? ` ${both} ${sharedRack} তাকে।` : "";
-  return `${subject} ${kindsCount(rows.length)} আছে: ${kinds}।${rack}`;
+  return `${subject} ${kindsCount(rows.length)} আছে: ${kinds}।${rack}${rate}`;
 }
 
 /** No recorded fitment: said plainly, with the offers marked as not recorded for this car (architecture, step 5). */

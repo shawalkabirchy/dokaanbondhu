@@ -62,11 +62,38 @@ describe("racks in a request", () => {
     expect(racksInText(text, racks)).toEqual([{ kind: "rack", name: "C-2", heard, score: 1 }]);
   });
 
+  // D120: from the demo phone, 6 Oct: "সি টু" heard as one word, and "তাকে" written "থাকে"; D-2 ("ডিটু") is one
+  // letter from "সিটু".
+  const shelves = ["B-1", "B-3", "C-2", "D-2"];
+  it.each([
+    { style: "Bangla", text: "সিটু থাকে কি কি আছে", heard: "সিটু" },
+    { style: "Banglish", text: "situ thake ki ki ache", heard: "situ" },
+    { style: "Bangla", text: "সিধুই থাকে কি আছে", heard: "সিধুই" },
+    { style: "Banglish", text: "sidui thake ki ache", heard: "sidui" },
+    { style: "Bangla", text: "সি দুই থাকে কি কি আছে", heard: "সি দুই" },
+    { style: "Banglish", text: "si dui thake ki ki ache", heard: "si dui" },
+  ])("finds a rack next to the rack word as Whisper writes it ($style: $text)", ({ text, heard }) => {
+    expect(racksInText(text, shelves)).toEqual([{ kind: "rack", name: "C-2", heard, score: 1 }]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "রহিমের কত বাকি থাকে?" },
+    { style: "Banglish", text: "rahimer koto baki thake?" },
+    { style: "Bangla", text: "এটার সাথে থাকে?" },
+    { style: "Banglish", text: "etar shathe thake?" },
+    { style: "Bangla", text: "বাক্সের ভেতরে থাকে" },
+    { style: "Banglish", text: "eta kothay thake?" },
+  ])("takes no everyday word next to থাকে as a rack ($style: $text)", ({ text }) => {
+    expect(racksInText(text, shelves)).toEqual([]);
+  });
+
   it.each([
     { style: "Bangla", text: "সিধুই কি আছে?" },
     { style: "Banglish", text: "sidui ki ache?" },
     { style: "Bangla", text: "তাকে কী কী আছে?" },
     { style: "Banglish", text: "take ki ki ache?" },
+    { style: "Bangla", text: "এটা কোথায় থাকে?" },
+    { style: "Banglish", text: "eta kothay thake?" },
   ])(
     "takes one word as a rack only next to a rack word, and never a one-letter sound ($style: $text)",
     ({ text }) => {

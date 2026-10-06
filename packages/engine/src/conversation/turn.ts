@@ -409,6 +409,9 @@ export async function runTurn(
     | null = null;
 
   const tier: PriceTier = state.context.customer?.tier ?? "retail";
+  /** The customer's Bangla name when the host stores one, for the rate sentence (D119). */
+  const customerName = (hostId: string, name: string) =>
+    deps.host.catalog.customers.find((customer) => customer.hostId === hostId)?.nameBn ?? name;
 
   const ask = (frame: RequestFrame, slot: string, text: string, offers: Offer[]) => {
     asking(frame, slot, offers);
@@ -429,6 +432,9 @@ export async function runTurn(
     partType: result.resolved.partType ?? query.part_type ?? "",
     position: result.resolved.position,
     tier,
+    ...(state.context.customer
+      ? { customer: customerName(state.context.customer.hostId, state.context.customer.name) }
+      : {}),
   });
 
   /** find_parts with its outcome handled: a question, facts for the answer, or nothing. */

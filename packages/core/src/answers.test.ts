@@ -49,10 +49,18 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
 
   it("names the brand when two kinds share a quality, so they can be told apart", () => {
     const filters = [
-      row({ quality: "aftermarket", brand: "Denso", stock: 10, retailTaka: 420n, rack: "A-2" }),
+      row({
+        quality: "aftermarket",
+        position: null,
+        brand: "Denso",
+        stock: 10,
+        retailTaka: 420n,
+        rack: "A-2",
+      }),
       row({
         hostPartId: "z",
         quality: "aftermarket",
+        position: null,
         brand: "Sakura",
         stock: 10,
         retailTaka: 390n,
@@ -77,9 +85,28 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
-  it("uses the customer's tier price, and leaves out what the host does not record", () => {
-    expect(partsAnswer([row({ rack: null, quality: null })], { ...axio, tier: "garage" })).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা।",
+  it("uses the customer's tier price and says whose rate it is (D119), and leaves out what the host does not record", () => {
+    const garage: PartsContext = { ...axio, tier: "garage", customer: "নিউ ঢাকা গ্যারেজ" };
+    expect(partsAnswer([row({ rack: null, quality: null })], garage)).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা। দাম নিউ ঢাকা গ্যারেজের রেটে।",
+    );
+    expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: 1650n }], garage)).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম নিউ ঢাকা গ্যারেজের রেটে।",
+    );
+    // No garage price recorded: the retail price is said, so no rate is named.
+    expect(partsAnswer([row({ garageTaka: null })], garage)).toBe(
+      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা, B-3 তাকে।",
+    );
+  });
+
+  it("says the position every kind shares when none was asked, and none when they differ (D120)", () => {
+    expect(partsAnswer(pads, { ...axio, position: null })).toBe(partsAnswer(pads, axio));
+    const mixed = [
+      row({}),
+      row({ hostPartId: "y", position: "rear", quality: "aftermarket", retailTaka: 1800n }),
+    ];
+    expect(partsAnswer(mixed, { ...axio, position: null })).toMatch(
+      /^এক্সিও ২০১৪-এর ব্রেক প্যাড দুই রকম আছে/,
     );
   });
 

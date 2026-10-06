@@ -172,6 +172,31 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
+  // D119: a garage named earlier in the session sets the price, and the answer says whose rate it is.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
+    },
+  ])("answers at the session customer's garage price and names the rate ($style)", async ({ text, args }) => {
+    const garage = catalog.customers.find((customer) => customer.name === "New Dhaka Garage")!;
+    const state: TurnState = {
+      ...fresh(),
+      context: { customer: { hostId: garage.hostId, name: garage.name, tier: "garage" } },
+    };
+    const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+    const { reply } = await turn(text, state, [llm]);
+    expect(reply).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬০০ টাকা। দুটোই B-3 তাকে। দাম New Dhaka Garage-এর রেটে।",
+    );
+  });
+
   const rahimMotorsDue = {
     name: "run_read_query",
     arguments: {
