@@ -95,6 +95,7 @@ export const shopBMap: SchemaMap = {
       fields: fields("parties", {
         id: "party_id",
         name: "party_name",
+        name_bn: "party_name_bn",
         type: "party_kind",
         phone: "mobile",
         due_balance: "balance",

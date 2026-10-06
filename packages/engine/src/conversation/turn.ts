@@ -10,6 +10,7 @@ import {
   matchConcept,
   money,
   namesInText,
+  type NamedInText,
   noFitmentAnswer,
   normalize,
   parseYear,
@@ -371,17 +372,22 @@ export async function runTurn(
   // The shop's own customers, suppliers and racks named in the request, as stored, so the LLM knows "Eastern
   // Lubricants" is one of them and "সি-২" is rack C-2 (D95, D108). The words of a name are not also a car or a part:
   // "গ্যারেজের" in "নিউ ঢাকা গ্যারেজের" is not grease.
-  const named = [
-    ...namesInText(
-      text,
-      [
-        ...deps.host.catalog.customers.map((customer) => ({ kind: "customer", name: customer.name })),
-        ...deps.host.catalog.suppliers.map((supplier) => ({ kind: "supplier", name: supplier.name })),
-      ],
-      deps.dictionary,
-    ),
-    ...racksInText(text, rackLabels(deps.host.catalog)),
-  ];
+  // A Bangla name the app keeps is matched too, and reported as the stored name (D122).
+  const shopNames = [
+    ...deps.host.catalog.customers.map((customer) => ({ kind: "customer", ...customer })),
+    ...deps.host.catalog.suppliers.map((supplier) => ({ kind: "supplier", ...supplier })),
+  ].flatMap(({ kind, name, nameBn }) => [
+    { kind, name, stored: name },
+    ...(nameBn ? [{ kind, name: nameBn, stored: name }] : []),
+  ]);
+  const storedName = new Map(shopNames.map((entry) => [`${entry.kind}|${entry.name}`, entry.stored]));
+  // Best first, so the better of a name's two spellings is kept.
+  const byName = new Map<string, NamedInText>();
+  for (const found of namesInText(text, shopNames, deps.dictionary)) {
+    const name = storedName.get(`${found.kind}|${found.name}`) ?? found.name;
+    if (!byName.has(`${found.kind}|${name}`)) byName.set(`${found.kind}|${name}`, { ...found, name });
+  }
+  const named = [...byName.values(), ...racksInText(text, rackLabels(deps.host.catalog))];
   const inName = (heard: string) => named.some((name) => ` ${name.heard} `.includes(` ${heard} `));
   // The part type, car, quality and position the request names by itself; they also complete a find_parts call
   // that leaves one out (D118).

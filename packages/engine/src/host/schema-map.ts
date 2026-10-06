@@ -59,6 +59,7 @@ export const CONCEPT_FIELDS: Record<Concept, Record<string, FieldKind>> = {
   Customer: {
     id: "id",
     name: "text",
+    name_bn: "text",
     type: "text",
     price_tier: "text",
     phone: "text",
@@ -91,7 +92,7 @@ export const CONCEPT_FIELDS: Record<Concept, Record<string, FieldKind>> = {
     method: "text",
     trx_id: "text",
   },
-  Supplier: { id: "id", name: "text", phone: "text", payable_balance: "money" },
+  Supplier: { id: "id", name: "text", name_bn: "text", phone: "text", payable_balance: "money" },
   Purchase: {
     id: "id",
     supplier_id: "ref",

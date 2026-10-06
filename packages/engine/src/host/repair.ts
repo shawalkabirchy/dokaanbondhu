@@ -51,6 +51,11 @@ const FILL: { concept: Concept; field: string; pattern: RegExp; child?: boolean 
     field: "rack_location",
     pattern: /^(rack|rack_location|shelf|bin|location|rack_no)$/i,
   },
+  ...(["Part", "Customer", "Supplier"] as const).map((concept) => ({
+    concept,
+    field: "name_bn",
+    pattern: /^(name_bn|bn_name|bangla_name|name_bangla|name_bengali|bengali_name|\w+_name_bn)$/i,
+  })),
   {
     concept: "Price",
     field: "valid_from",

@@ -210,8 +210,8 @@ export async function readCatalog(
   }
 
   for (const [concept, entity, alias, fields] of [
-    ["customer", "Customer", "c", ["type", "price_tier", "phone"]],
-    ["supplier", "Supplier", "s", ["phone"]],
+    ["customer", "Customer", "c", ["type", "price_tier", "phone", "name_bn"]],
+    ["supplier", "Supplier", "s", ["phone", "name_bn"]],
   ] as const) {
     if (!hasField(map, entity, "id") || !hasField(map, entity, "name")) continue;
     const extra = optional(map, entity, alias, [...fields]);
@@ -227,14 +227,14 @@ export async function readCatalog(
     );
     for (const row of rows) {
       const attrs: Record<string, unknown> = Object.fromEntries(
-        extra.map((item) => [item.as, text(row[item.as])]),
+        extra.filter((item) => item.as !== "name_bn").map((item) => [item.as, text(row[item.as])]),
       );
       if (concept === "customer") attrs.sales_30d = sold.customers.get(String(row.id)) ?? 0;
       out.push({
         concept,
         hostId: String(row.id),
         displayName: String(row.name),
-        displayNameBn: null,
+        displayNameBn: text(row.name_bn), // a Bangla name when the app keeps one (D122)
         partNumbers: null,
         attrs,
       });
@@ -291,7 +291,7 @@ export interface Catalog {
   parts: (CatalogPart & { attrs: Record<string, unknown> })[];
   vehicles: CatalogVehicle[];
   customers: (CatalogCustomer & { attrs: Record<string, unknown> })[];
-  suppliers: { hostId: string; name: string }[];
+  suppliers: { hostId: string; name: string; nameBn?: string | null }[];
 }
 
 const number = (value: unknown) =>
@@ -362,7 +362,7 @@ export function toCatalog(rows: (CatalogRow & { syncedAt?: Date })[]): Catalog {
     } else if (row.concept === "customer") {
       catalog.customers.push({ hostId: row.hostId, name: row.displayName, nameBn: row.displayNameBn, attrs });
     } else {
-      catalog.suppliers.push({ hostId: row.hostId, name: row.displayName });
+      catalog.suppliers.push({ hostId: row.hostId, name: row.displayName, nameBn: row.displayNameBn });
     }
   }
   return catalog;

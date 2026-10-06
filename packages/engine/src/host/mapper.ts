@@ -108,6 +108,7 @@ Rules:
   table, or that table's own key when the entity lives in the same table. Never map a field to an unrelated key.
 - part_number may live in a separate table of numbers per part, and rack_location on the part's table: join them.
 - An is_deleted or deleted flag (0 or 1) is a row filter eq 0.
+- name_bn is the name in Bangla script, when the app keeps one beside the English name.
 - Stock may have several rows per part (branches, godowns): map StockItem to that table; it is added up per part.
 - A price table with several rows per part is a price history: map valid_from to the date each price starts.
 - A car's years may be one text column such as "2012-2017": map year_from to it and leave year_to out.

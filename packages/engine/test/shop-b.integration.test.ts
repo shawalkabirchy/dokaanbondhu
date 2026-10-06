@@ -3,7 +3,9 @@ import {
   catalogEntries,
   GLOSSARY,
   matchVehicles,
+  namesInText,
   partsAnswer,
+  resolveCustomer,
   type Dictionary,
   type PartsContext,
 } from "@dokaanbondhu/core";
@@ -241,6 +243,50 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       input({ part_type: "power steering pump", vehicle: "axio", year: "2010" }),
     );
     expect(result.kind).toBe("none");
+  });
+
+  it.each([
+    { style: "Bangla", said: "রহমান অটো ওয়ার্কসের বাকি কত?" },
+    { style: "Banglish", said: "rahman auto works er baki koto?" },
+  ])("knows a customer by the Bangla name the app keeps, or the English one ($style)", ({ said }) => {
+    const rahman = catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!;
+    expect(rahman.nameBn).toBe("রহমান অটো ওয়ার্কস");
+    const names = catalog.customers.flatMap((customer) => [
+      { kind: "customer", name: customer.name },
+      ...(customer.nameBn ? [{ kind: "customer", name: customer.nameBn }] : []),
+    ]);
+    expect(namesInText(said, names, dictionary)[0]?.name).toMatch(/^(Rahman Auto Works|রহমান অটো ওয়ার্কস)$/);
+    const name = said.replace(/(er |ের )?বাকি.*|( er)? baki.*/, "").trim();
+    const match = resolveCustomer(name, [], catalog.customers, dictionary);
+    expect(match.decision).toBe("understood");
+    expect(match.candidates[0]?.customer.hostId).toBe(rahman.hostId);
+  });
+
+  it("names a garage's rate with its Bangla name (D119)", () => {
+    const pad = {
+      hostPartId: "1",
+      name: "x",
+      nameBn: null,
+      quality: "genuine",
+      position: "front",
+      brand: null,
+      unit: "set",
+      stock: 5,
+      retailTaka: 4500n,
+      garageTaka: 4200n,
+      wholesaleTaka: null,
+      rack: "B-3",
+      fitmentVerified: true,
+    };
+    const context: PartsContext = {
+      vehicle: "Toyota Axio",
+      year: 2014,
+      partType: "Brake Pad",
+      position: "front",
+      tier: customerTier(catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!.attrs),
+      customer: "রহমান অটো ওয়ার্কস",
+    };
+    expect(partsAnswer([pad], context)).toMatch(/৪,২০০ টাকা, B-3 তাকে। দাম রহমান অটো ওয়ার্কসের রেটে।$/);
   });
 
   it("values the stock per part with the newest cost, over both branches", async () => {
