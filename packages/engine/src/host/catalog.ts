@@ -130,6 +130,7 @@ export async function readCatalog(
       "unit",
       "pack_size",
       "vehicle_type",
+      "notes", // cars written in the notes, for an app without a part-to-car table (D122)
     ];
     const extra = optional(map, "Part", "p", attrFields);
     const numbers: SelectItem[] = hasField(map, "Part", "part_number")

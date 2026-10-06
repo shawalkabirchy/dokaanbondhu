@@ -45,6 +45,8 @@ export interface FitmentExtra {
   yearTo: number | null;
   engineCode: string | null;
   verified: boolean;
+  /** "parsed": read from the part's name or notes (D122); "owner": added by the owner. */
+  source?: "parsed" | "owner";
 }
 
 export interface FindPartsInput {
@@ -345,7 +347,15 @@ async function queryRows(
   });
 }
 
-/** Owner-added and parsed fitments for the vehicle, as rows marked unverified unless the owner verified them. */
+/** Whether the app has a part-to-car table; without one, fit comes only from fitment_extra (D122). */
+function fitted(input: FindPartsInput): boolean {
+  return hasField(input.map, "Fitment", "part_id") && hasField(input.map, "Fitment", "vehicle_id");
+}
+
+/**
+ * Owner-added and parsed fitments for the vehicle, as rows marked unverified unless the owner verified them; a fit
+ * read only from the part's name or notes is marked so the answer can say it (D122).
+ */
 async function extraRows(
   input: FindPartsInput,
   partIds: string[],
@@ -362,10 +372,14 @@ async function extraRows(
   );
   if (!matching.length) return [];
   const rows = await queryRows(input, [...new Set(matching.map((extra) => extra.hostPartId))], null);
-  return rows.map((row) => ({
-    ...row,
-    fitmentVerified: matching.some((extra) => extra.hostPartId === row.hostPartId && extra.verified),
-  }));
+  return rows.map((row) => {
+    const own = matching.filter((extra) => extra.hostPartId === row.hostPartId);
+    return {
+      ...row,
+      fitmentVerified: own.some((extra) => extra.verified),
+      ...(own.every((extra) => extra.source === "parsed") ? { fitFromName: true } : {}),
+    };
+  });
 }
 
 /**
@@ -414,13 +428,14 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
       if (vehicles.needsYear) {
         return { kind: "ask", slot: "year", options: vehicles.vehicles.map(vehicleLabel), resolved };
       }
-      const recorded = vehicles.vehicles.length
-        ? await queryRows(
-            input,
-            ids,
-            vehicles.vehicles.map((vehicle) => vehicle.hostId),
-          )
-        : [];
+      const recorded =
+        vehicles.vehicles.length && fitted(input)
+          ? await queryRows(
+              input,
+              ids,
+              vehicles.vehicles.map((vehicle) => vehicle.hostId),
+            )
+          : [];
       const extra = await extraRows(input, ids, car.value, resolved.year, resolved.engine);
       const seen = new Set(recorded.map((row) => row.hostPartId));
       const fitting = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
@@ -456,13 +471,14 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
   const tryType = async (partType: string) => {
     const ids = partsOfType(partType, catalog.parts, dictionary).map((part) => part.hostId);
     if (!ids.length) return { exact: [] as PartRow[], placed: [] as PartRow[] };
-    const recorded = vehicles.vehicles.length
-      ? await queryRows(
-          input,
-          ids,
-          vehicles.vehicles.map((vehicle) => vehicle.hostId),
-        )
-      : [];
+    const recorded =
+      vehicles.vehicles.length && fitted(input)
+        ? await queryRows(
+            input,
+            ids,
+            vehicles.vehicles.map((vehicle) => vehicle.hostId),
+          )
+        : [];
     const extra = await extraRows(input, ids, model.value!, resolved.year, resolved.engine);
     const seen = new Set(recorded.map((row) => row.hostPartId));
     const merged = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
@@ -502,7 +518,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
       isModel(vehicle, model.value!) && !vehicles.vehicles.some((wanted) => wanted.hostId === vehicle.hostId),
   );
   const closeVehicle =
-    ids.length && others.length
+    ids.length && others.length && fitted(input)
       ? await queryRows(
           input,
           ids,

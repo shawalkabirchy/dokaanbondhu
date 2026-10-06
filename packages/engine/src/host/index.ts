@@ -49,7 +49,8 @@ export {
 export * from "./schema-map";
 export { buildQuery, quoteName, type BuiltQuery, type QuerySpec } from "./sql";
 export { confirmEntity, ConnectionNotUsable, loadHostDb, loadSchemaMap, saveProposal } from "./store";
-export { syncConnection, type SyncCounts, type WithTx } from "./sync";
+export { carsInText, parsedFitments, yearsInText } from "./fitment-text";
+export { fittedParts, syncConnection, type SyncCounts, type WithTx } from "./sync";
 export {
   banglaSpellings,
   MAX_CHECKS_PER_SHOP,

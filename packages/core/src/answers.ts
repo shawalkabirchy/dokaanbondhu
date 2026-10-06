@@ -136,6 +136,15 @@ function rateSentence(rows: PartRow[], context: PartsContext): string {
   return ` দাম ${context.customer ? possessive(context.customer) : TIER_BN[context.tier]} রেটে।`;
 }
 
+/** Said when a fit is read only from a part's name or notes, never confirmed by the app's records (D122). */
+function fromNameSentence(rows: PartRow[]): string {
+  const named = rows.filter((row) => row.fitFromName).length;
+  if (!named) return "";
+  return named === rows.length
+    ? " এই গাড়িতে লাগে বলে নামে লেখা আছে, নিশ্চিত নয়।"
+    : " কয়েকটা এই গাড়িতে লাগে বলে শুধু নামে লেখা আছে, নিশ্চিত নয়।";
+}
+
 /**
  * The parts answer (architecture, A.1): one kind in one sentence, several with "দুই রকম" and a shared rack. A position
  * not asked is said when every kind shares it (D120); the customer's rate is named when it was used (D119).
@@ -147,7 +156,7 @@ export function partsAnswer(rows: PartRow[], asked: PartsContext, pairUsed: stri
   const subject = partPhrase(context, pairUsed ?? context.partType);
   const inStock = rows.filter((row) => row.stock === null || row.stock > 0);
   if (inStock.length === 0) return `${subject} এখন স্টকে নেই।`;
-  const rate = rateSentence(rows, context);
+  const rate = rateSentence(rows, context) + fromNameSentence(rows);
   if (rows.length === 1) {
     const row = rows[0]!;
     const quality = row.quality ? `${banglaOf("quality", row.quality)} ` : "";

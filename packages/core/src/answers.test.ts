@@ -99,6 +99,15 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
+  it("says when a fit is read only from the part's name (D122)", () => {
+    expect(partsAnswer([row({ fitFromName: true })], axio)).toBe(
+      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা, B-3 তাকে। এই গাড়িতে লাগে বলে নামে লেখা আছে, নিশ্চিত নয়।",
+    );
+    expect(partsAnswer([pads[0]!, { ...pads[1]!, fitFromName: true }], axio)).toMatch(
+      / কয়েকটা এই গাড়িতে লাগে বলে শুধু নামে লেখা আছে, নিশ্চিত নয়।$/,
+    );
+  });
+
   it("names every rack a part is kept on (D122)", () => {
     expect(partsAnswer([row({ racks: ["B-3", "G-1"] })], axio)).toBe(
       "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা, B-3 আর G-1 তাকে।",

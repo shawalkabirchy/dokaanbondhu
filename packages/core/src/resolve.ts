@@ -48,6 +48,8 @@ export interface PartRow {
   /** Every rack the part is kept on when there are several (branches, godowns; D122); rack is the first. */
   racks?: string[];
   fitmentVerified: boolean;
+  /** The fit is read only from the part's name or notes, not from the app's records (D122). */
+  fitFromName?: boolean;
   /** The vehicle the row's fitment names (its year range and engine separate generations). */
   vehicle?: { hostId: string; yearFrom: number; yearTo: number | null; engineCode: string | null };
 }

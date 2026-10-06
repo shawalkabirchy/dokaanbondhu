@@ -9,11 +9,13 @@ import {
 } from "@dokaanbondhu/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
-import { findParts, type FindPartsInput } from "../src/host/find-parts";
+import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
+import { parsedFitments } from "../src/host/fitment-text";
 import { introspect } from "../src/host/introspect";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
 import { stockValue } from "../src/host/reports";
+import { fittedParts } from "../src/host/sync";
 import { shopBMap } from "./shop-b-map";
 
 // Host integration against test shop B (D122; tools/fixtures/shop-b): a MySQL 8 shop app shaped unlike GearGrid, read
@@ -34,6 +36,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
   let db: HostDb;
   let catalog: Catalog;
   let dictionary: Dictionary;
+  let fitmentExtra: FitmentExtra[];
 
   const input = (query: FindPartsInput["query"]): FindPartsInput => ({
     query,
@@ -42,7 +45,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     run: (built) => pools.readOnly(db, (run) => run(built)),
     catalog,
     dictionary,
-    fitmentExtra: [],
+    fitmentExtra,
     rackExtra: new Map(),
   });
 
@@ -63,6 +66,9 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     catalog = toCatalog(await pools.readOnly(db, (run) => readCatalog(run, shopBMap)));
     // As the server builds it: the glossary, then the app's own car models, categories and part kinds (D122).
     dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
+    // As catalog sync does: the fit of the parts its item_cars table leaves out, read from their name and remarks.
+    const covered = await pools.readOnly(db, (run) => fittedParts(run, shopBMap));
+    fitmentExtra = parsedFitments(catalog, dictionary, covered);
   });
 
   afterAll(async () => {
@@ -174,6 +180,67 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       input({ part_type: "ac compressor", vehicle: "fielder", year: "2014" }),
     );
     expect(compressor.resolved).toMatchObject({ partType: "AC Compressor", vehicle: "Toyota Fielder" });
+  });
+
+  it("reads the fit of the items item_cars leaves out from their name and remarks (D122)", () => {
+    const fits = fitmentExtra
+      .map((row) => `${row.hostPartId} ${row.model} ${row.yearFrom}-${row.yearTo}`)
+      .sort();
+    expect(fits).toEqual([
+      "3 Tucson 2016-2020",
+      "4 Toyota Axio 2012-2017",
+      "4 Toyota Fielder 2012-2017",
+      "5 Toyota Axio 2012-2017",
+    ]);
+  });
+
+  it.each([
+    { style: "Bangla", args: { part_type: "পাওয়ার স্টিয়ারিং পাম্প", vehicle: "এক্সিও", year: "২০১৪" } },
+    { style: "Banglish", args: { part_type: "power steering pump", vehicle: "axio", year: "2014" } },
+  ])("answers a part whose car is only in its remarks, and says so ($style)", async ({ args }) => {
+    const result = await findParts(input(args));
+    if (result.kind !== "rows") throw new Error(result.kind);
+    const context: PartsContext = {
+      vehicle: "Toyota Axio",
+      year: 2014,
+      partType: result.resolved.partType!,
+      position: null,
+      tier: "retail",
+    };
+    expect(partsAnswer(result.rows, context)).toBe(
+      "এক্সিও ২০১৪-এর জেনুইন Power Steering Pump ১টা আছে, ৯,০০০ টাকা, C-2 তাকে। এই গাড়িতে লাগে বলে নামে লেখা আছে, নিশ্চিত নয়।",
+    );
+  });
+
+  // The app's own car is English; its Bangla word comes from the listening check once the owner adds it (D105), as
+  // the server then loads it among the shop's aliases.
+  it.each([
+    { style: "Bangla", args: { part_type: "শক অ্যাবজর্ভার", vehicle: "টুসান", year: "২০১৮" } },
+    { style: "Banglish", args: { part_type: "shock absorber", vehicle: "tucson", year: "2018" } },
+  ])("answers the app's own car from a name, front left in its words ($style)", async ({ args }) => {
+    const added = {
+      target_concept: "vehicle_model" as const,
+      target_value: "Tucson",
+      bn: ["টুসান"],
+      latin: [],
+    };
+    const shop = buildDictionary([...GLOSSARY, ...catalogEntries(catalog), added]);
+    const result = await findParts({ ...input(args), dictionary: shop });
+    if (result.kind !== "rows") throw new Error(`${result.kind} ${JSON.stringify(result.resolved)}`);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      position: "front left",
+      stock: 2,
+      rack: "D-12",
+      fitFromName: true,
+    });
+  });
+
+  it("finds nothing for a year the name's range leaves out", async () => {
+    const result = await findParts(
+      input({ part_type: "power steering pump", vehicle: "axio", year: "2010" }),
+    );
+    expect(result.kind).toBe("none");
   });
 
   it("values the stock per part with the newest cost, over both branches", async () => {

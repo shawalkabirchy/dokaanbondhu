@@ -123,6 +123,7 @@ async function load(shopId: string): Promise<Entry> {
         yearTo: row.yearTo,
         engineCode: row.engineCode,
         verified: row.verified,
+        source: row.source as "parsed" | "owner",
       })),
       rackExtra: new Map(racks.map((row) => [row.hostPartId, row.rackLocation])),
       formulas: formulas.map((row) => ({
