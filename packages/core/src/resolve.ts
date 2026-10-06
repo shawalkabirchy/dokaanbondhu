@@ -96,6 +96,37 @@ export interface VehicleMatch {
   needsYear: boolean;
 }
 
+/** The words of a car name, split at anything but letters, marks and digits ("Noah/Voxy" -> noah, voxy). */
+function carWords(text: string): string[] {
+  return text
+    .normalize("NFC")
+    .toLowerCase()
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/**
+ * Whether an app's car is the wanted model (D122): the whole name inside the app's make and model ("Toyota" +
+ * "Axio"), or, leaving the wanted make out, the model's words inside the app's model ("Axio", "Axio NZE141", "Corolla
+ * Axio"), or the app's model words all within the wanted model ("Sylphy" for Bluebird Sylphy). An app's make that is
+ * not the wanted one never matches.
+ */
+export function isModel(vehicle: { make: string; model: string }, wanted: string): boolean {
+  const want = carWords(wanted);
+  if (!want.length) return false;
+  if (containsRun(carWords(`${vehicle.make} ${vehicle.model}`), want)) return true;
+  if (want.length < 2) return false;
+  const [wantMake, ...wantModel] = want;
+  const make = carWords(vehicle.make);
+  if (make.length && !make.includes(wantMake!)) return false;
+  const model = carWords(vehicle.model).filter((word) => !make.includes(word) && word !== wantMake);
+  if (!model.length) return false;
+  return (
+    containsRun(model, wantModel) ||
+    (model.some((word) => word.length >= 3) && model.every((word) => wantModel.includes(word)))
+  );
+}
+
 /** The vehicles of a model whose year range contains the year (and with the engine, if one is given). */
 export function matchVehicles(
   model: string,
@@ -103,11 +134,7 @@ export function matchVehicles(
   engine: string | null,
   vehicles: readonly CatalogVehicle[],
 ): VehicleMatch {
-  const wanted = model.toLowerCase();
-  let found = vehicles.filter(
-    (vehicle) =>
-      `${vehicle.make} ${vehicle.model}`.toLowerCase() === wanted || vehicle.model.toLowerCase() === wanted,
-  );
+  let found = vehicles.filter((vehicle) => isModel(vehicle, model));
   if (engine) found = found.filter((vehicle) => (vehicle.engineCode ?? "").toUpperCase().startsWith(engine));
   if (year !== null) {
     found = found.filter(

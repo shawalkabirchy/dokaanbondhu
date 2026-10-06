@@ -191,17 +191,19 @@ export async function readCatalog(
       }),
     );
     for (const row of rows) {
-      const years = row.year_from ? ` ${row.year_from}-${row.year_to ?? ""}` : "";
+      const attrs: Record<string, unknown> = Object.fromEntries([
+        ["model", text(row.model)],
+        ...extra.map((item) => [item.as, text(row[item.as])]),
+      ]);
+      const span = yearsOf(attrs);
+      const years = span.from ? ` ${span.from}-${span.to ?? ""}` : "";
       out.push({
         concept: "vehicle",
         hostId: String(row.id),
         displayName: `${row.make ? `${row.make} ` : ""}${row.model}${years}`,
         displayNameBn: null,
         partNumbers: null,
-        attrs: Object.fromEntries([
-          ["model", text(row.model)],
-          ...extra.map((item) => [item.as, text(row[item.as])]),
-        ]),
+        attrs,
       });
     }
   }
@@ -294,6 +296,30 @@ export interface Catalog {
 const number = (value: unknown) =>
   value === null || value === undefined || value === "" ? null : Number(value);
 
+/** A year as an app writes it: 2014, or two digits (16 is 2016; 98 is 1998). */
+function fullYear(text: string, now = new Date()): number {
+  const year = Number(text);
+  if (text.length > 2) return year;
+  return year <= (now.getFullYear() % 100) + 1 ? 2000 + year : 1900 + year;
+}
+
+/**
+ * A car's years however the app writes them (D122): two columns, or one holding a range ("2012-2017", "2012-17",
+ * "2012+", "2012 onwards"). One plain year in the only year column is that year alone; with a mapped year_to left
+ * empty, the car is still made.
+ */
+export function yearsOf(attrs: Record<string, unknown>): { from: number; to: number | null } {
+  const text = String(attrs.year_from ?? "").trim();
+  const range = /^((?:19|20)\d{2}|\d{2})\s*(?:-|–|—|to|~)\s*((?:19|20)\d{2}|\d{2})?$/i.exec(text);
+  if (range) return { from: fullYear(range[1]!), to: range[2] ? fullYear(range[2]) : null };
+  const open = /^((?:19|20)\d{2})\s*(?:\+|onwards?|on|-\s*present|-\s*now)$/i.exec(text);
+  if (open) return { from: Number(open[1]), to: null };
+  const from = number(attrs.year_from);
+  if (from === null || !Number.isFinite(from)) return { from: 0, to: null };
+  if ("year_to" in attrs) return { from, to: number(attrs.year_to) };
+  return { from, to: from };
+}
+
 export async function loadCatalog(tx: Tx, connectionId: string): Promise<Catalog> {
   const rows = await tx.select().from(catalogCache).where(eq(catalogCache.connectionId, connectionId));
   return toCatalog(
@@ -321,12 +347,13 @@ export function toCatalog(rows: (CatalogRow & { syncedAt?: Date })[]): Catalog {
         attrs,
       });
     } else if (row.concept === "vehicle") {
+      const years = yearsOf(attrs);
       catalog.vehicles.push({
         hostId: row.hostId,
         make: String(attrs.make ?? ""),
         model: String(attrs.model ?? row.displayName),
-        yearFrom: number(attrs.year_from) ?? 0,
-        yearTo: number(attrs.year_to),
+        yearFrom: years.from,
+        yearTo: years.to,
         engineCode: (attrs.engine_code as string | null) ?? null,
         vehicleType: (attrs.vehicle_type as string | null) ?? null,
       });

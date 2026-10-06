@@ -1,3 +1,4 @@
+import { matchVehicles } from "@dokaanbondhu/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { introspect } from "../src/host/introspect";
@@ -84,6 +85,14 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(customerTier(customer("Rahman Auto Works"))).toBe("garage");
     expect(customerTier(customer("Mr. Karim"))).toBe("retail");
     expect(customerTier(customer("Mr. Karim"), { price_tier: { VIP: "wholesale" } })).toBe("wholesale");
+  });
+
+  it("finds its cars without a make column, with years written as text; two Axio generations ask the year (D122)", () => {
+    const axio = matchVehicles("Toyota Axio", 2014, null, catalog.vehicles);
+    expect(axio.vehicles.map((vehicle) => vehicle.model)).toEqual(["Axio NZE141"]);
+    expect(axio.vehicles[0]).toMatchObject({ yearFrom: 2012, yearTo: 2017 });
+    expect(matchVehicles("Toyota Axio", null, null, catalog.vehicles)).toMatchObject({ needsYear: true });
+    expect(matchVehicles("Toyota Fielder", 2014, null, catalog.vehicles).vehicles).toHaveLength(1);
   });
 
   it("answers a due through the MySQL guard, and refuses a write", async () => {

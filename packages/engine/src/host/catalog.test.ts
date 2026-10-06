@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appWordsOf, customerTier, ourWord, toCatalog, type CatalogRow } from "./catalog";
+import { appWordsOf, customerTier, ourWord, toCatalog, yearsOf, type CatalogRow } from "./catalog";
 
 // The app's own words (spec 9.8, D121, D122): a customer's price level is its own tier, else its type, and a part's
 // quality, position and unit are read through the owner's choice and then the word list, so any shop app's wording
@@ -73,5 +73,18 @@ describe("customer price levels", () => {
       { value: "R", our: null, decidedBy: null, count: 1 },
       { value: "F", our: "front", decidedBy: "words", count: 1 },
     ]);
+  });
+
+  it("reads a car's years however the app writes them (D122)", () => {
+    expect(yearsOf({ year_from: "2012", year_to: "2017" })).toEqual({ from: 2012, to: 2017 });
+    expect(yearsOf({ year_from: 2012, year_to: null })).toEqual({ from: 2012, to: null }); // still made
+    expect(yearsOf({ year_from: "2012-2017" })).toEqual({ from: 2012, to: 2017 });
+    expect(yearsOf({ year_from: "2016-20" })).toEqual({ from: 2016, to: 2020 });
+    expect(yearsOf({ year_from: "12 - 17" })).toEqual({ from: 2012, to: 2017 });
+    expect(yearsOf({ year_from: "2018+" })).toEqual({ from: 2018, to: null });
+    expect(yearsOf({ year_from: "2018 onwards" })).toEqual({ from: 2018, to: null });
+    expect(yearsOf({ year_from: "2014" })).toEqual({ from: 2014, to: 2014 }); // one year, no year_to mapped
+    expect(yearsOf({})).toEqual({ from: 0, to: null });
+    expect(yearsOf({ year_from: "new" })).toEqual({ from: 0, to: null });
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDictionary } from "./glossary";
 import {
+  isModel,
   matchVehicles,
   pairedType,
   partsOfType,
@@ -13,6 +14,16 @@ import {
 } from "./resolve";
 
 const dictionary = buildDictionary();
+
+const vehicle = (fields: Partial<CatalogVehicle> & { hostId: string }): CatalogVehicle => ({
+  make: "Toyota",
+  model: "Axio",
+  yearFrom: 2012,
+  yearTo: 2017,
+  engineCode: null,
+  vehicleType: null,
+  ...fields,
+});
 
 const vehicles: CatalogVehicle[] = [
   {
@@ -87,6 +98,33 @@ describe("part resolver (spec 10.7)", () => {
     expect(matchVehicles("Toyota Axio", null, null, vehicles)).toMatchObject({ needsYear: true });
     expect(matchVehicles("Toyota Noah", null, null, vehicles)).toMatchObject({ needsYear: false });
     expect(matchVehicles("Toyota Axio", 2014, "3ZR", vehicles).vehicles).toEqual([]);
+  });
+
+  // D122: apps write cars their own way: no make column, a chassis code, a combined name, another make.
+  it.each([
+    [{ make: "Toyota", model: "Axio" }, "Toyota Axio", true],
+    [{ make: "", model: "Axio" }, "Toyota Axio", true],
+    [{ make: "", model: "Axio NZE141" }, "Toyota Axio", true],
+    [{ make: "TOYOTA", model: "AXIO" }, "Toyota Axio", true],
+    [{ make: "", model: "Toyota Axio" }, "Toyota Axio", true],
+    [{ make: "Toyota", model: "Corolla Axio" }, "Toyota Axio", true],
+    [{ make: "", model: "Noah/Voxy" }, "Toyota Noah", true],
+    [{ make: "", model: "Sylphy" }, "Nissan Bluebird Sylphy", true],
+    [{ make: "", model: "Tucson" }, "Tucson", true],
+    [{ make: "Honda", model: "Axio" }, "Toyota Axio", false],
+    [{ make: "", model: "Fielder" }, "Toyota Axio", false],
+    [{ make: "", model: "Alto" }, "Toyota Axio", false],
+  ] as const)("matches %o as %s: %s", (vehicle, wanted, expected) => {
+    expect(isModel(vehicle, wanted)).toBe(expected);
+  });
+
+  it("finds an app's cars without a make column, asking the year when two generations match", () => {
+    const noMake = [
+      vehicle({ hostId: "n1", make: "", model: "Axio NZE141", yearFrom: 2012, yearTo: 2017 }),
+      vehicle({ hostId: "n2", make: "", model: "Axio", yearFrom: 2006, yearTo: 2011 }),
+    ];
+    expect(matchVehicles("Toyota Axio", 2014, null, noMake).vehicles.map((v) => v.hostId)).toEqual(["n1"]);
+    expect(matchVehicles("Toyota Axio", null, null, noMake)).toMatchObject({ needsYear: true });
   });
 
   it("pairs brake pads with brake shoes", () => {

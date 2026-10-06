@@ -1,4 +1,5 @@
 import {
+  isModel,
   matchConcept,
   matchPartNumber,
   matchVehicles,
@@ -280,7 +281,7 @@ async function extraRows(
   const matching = input.fitmentExtra.filter(
     (extra) =>
       partIds.includes(extra.hostPartId) &&
-      `${extra.make} ${extra.model}`.toLowerCase() === model.toLowerCase() &&
+      isModel(extra, model) &&
       (year === null || ((extra.yearFrom ?? 0) <= year && year <= (extra.yearTo ?? 9999))) &&
       (!engine || !extra.engineCode || extra.engineCode.toUpperCase().startsWith(engine)),
   );
@@ -423,8 +424,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
   const ids = partsOfType(type.value, catalog.parts, dictionary).map((part) => part.hostId);
   const others = catalog.vehicles.filter(
     (vehicle) =>
-      `${vehicle.make} ${vehicle.model}`.toLowerCase() === model.value!.toLowerCase() &&
-      !vehicles.vehicles.some((wanted) => wanted.hostId === vehicle.hostId),
+      isModel(vehicle, model.value!) && !vehicles.vehicles.some((wanted) => wanted.hostId === vehicle.hostId),
   );
   const closeVehicle =
     ids.length && others.length
