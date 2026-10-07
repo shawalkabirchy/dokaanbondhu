@@ -51,6 +51,7 @@ import {
   isOpen,
   newFrame,
   renew,
+  splitCorrection,
   type Offer,
   type RequestFrame,
 } from "./frame";
@@ -595,8 +596,13 @@ export async function runTurn(
    */
   const completed = (query: PartQuery): { query: PartQuery; remembered: Set<string> } => {
     const out = { ...query };
+    // The year the user said: in this input, or in the request an answer has just finished ("২০১৬ সালের নোয়া",
+    // then "সেলফ").
+    const said =
+      saidYear ??
+      (request === text ? null : parseYear(normalize(request, deps.dictionary.variants).tokens, { now }));
     if (out.year && parseYear(normalize(out.year).tokens, { now, bare: true }) === null) delete out.year;
-    if (!out.year && saidYear !== null) out.year = String(saidYear);
+    if (!out.year && said !== null) out.year = String(said);
     for (const [slot, concept] of [
       ["part_type", "part_type"],
       ["vehicle", "vehicle_model"],
@@ -607,33 +613,28 @@ export async function runTurn(
       if (!out[slot] && heard) out[slot] = heard;
     }
     // The remembered car (D125, D126): it completes a search that names no car; the same car said without a year
-    // keeps its year; another car never does. A part number is looked up as it is, never for the remembered car.
+    // keeps its year. A year the user did not say is used only for that car (D127): one the LLM gives another car
+    // was copied from earlier words, so it is asked instead. A part number is looked up as it is.
     const remembered = new Set<string>();
+    if (out.part_number) return { query: out, remembered };
     const car = state.context.vehicle;
-    if (car && !out.part_number) {
-      const recall = (slot: "year" | "engine", value: string | null) => {
-        if (!out[slot] && value) {
-          out[slot] = value;
-          remembered.add(slot);
-        }
-      };
-      if (!out.vehicle) {
-        out.vehicle = car.model;
-        remembered.add("vehicle");
-        recall("year", car.year === null ? null : String(car.year));
-        recall("engine", car.engine);
-      } else if (sameCar(out.vehicle, car.model)) {
-        if (saidYear === null && !yearInside(out.vehicle))
-          recall("year", car.year === null ? null : String(car.year));
-        recall("engine", car.engine);
-      } else if (
-        saidYear === null &&
-        out.year &&
-        car.year !== null &&
-        parseYear(normalize(out.year).tokens, { now, bare: true }) === car.year
-      ) {
-        delete out.year; // the LLM copied the remembered year to another car: it is asked instead
+    const recall = (slot: "year" | "engine", value: string | null) => {
+      if (!out[slot] && value) {
+        out[slot] = value;
+        remembered.add(slot);
       }
+    };
+    if (car && !out.vehicle) {
+      out.vehicle = car.model;
+      remembered.add("vehicle");
+      recall("year", car.year === null ? null : String(car.year));
+      recall("engine", car.engine);
+    } else if (car && out.vehicle && sameCar(out.vehicle, car.model)) {
+      if (said === null && !yearInside(out.vehicle))
+        recall("year", car.year === null ? null : String(car.year));
+      recall("engine", car.engine);
+    } else if (out.vehicle && out.year && said === null) {
+      delete out.year;
     }
     return { query: out, remembered };
   };
@@ -645,6 +646,11 @@ export async function runTurn(
   };
   /** Whether a car as said carries its own year ("Axio 2014"). */
   const yearInside = (said: string) => parseYear(normalize(said).tokens, { now }) !== null;
+  /** The car a text names, read as the request's candidates are: the best match scoring 0.7 or more. */
+  const carOf = (said: string) => {
+    const best = matchConcept("vehicle_model", said, [], deps.dictionary).candidates[0];
+    return best && best.score >= 0.7 ? best.value : null;
+  };
 
   /** find_parts for the LLM: the tool result, or "stop" when the turn asks a question. */
   const partsTool = async (query: PartQuery, record: (result: string) => void): Promise<string | "stop"> => {
@@ -856,7 +862,17 @@ export async function runTurn(
   // Stage 4: the frame answer. A question's answer fills its slot and the request runs again, without the LLM.
   since = Date.now();
   let request = text;
-  if (frameOpen && state.frame) {
+  // An input that names another car than the waiting request's, while it asks anything but the car, is a new request:
+  // "নোয়া সেলফ মোটর আছে?" after "কোন পার্ট লাগবে?" about an Axio. The waiting one is set aside and the input goes to
+  // the LLM without it; "না, প্রিমিও" stays a correction (spec 9.3 rule 3, D127).
+  if (frameOpen && state.frame && state.frame.asking !== "vehicle" && !splitCorrection(text).correction) {
+    const heardCar = heardSlots.get("vehicle_model");
+    const asked = state.frame.slots.vehicle?.value;
+    const frameCar =
+      typeof asked === "string" ? carOf(asked) : state.frame.request ? carOf(state.frame.request) : null;
+    if (heardCar && frameCar && heardCar !== frameCar) state.frame = { ...state.frame, status: "set_aside" };
+  }
+  if (frameOpen && state.frame && state.frame.status !== "set_aside") {
     const frame = state.frame;
     // What the request had for the asked slot, before the answer replaces it (D102 B).
     const asked = frame.asking;

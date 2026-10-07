@@ -480,6 +480,82 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     expect((muchLater.events.at(-1) as { context?: unknown }).context).toEqual({});
   });
 
+  // D127, from the demo commands on Render: after "কোন পার্ট লাগবে?" about an Axio 2014, a question about a Noah was
+  // taken as the answer and gave the Axio's self motor. It is a new request now, and the Noah's year is asked, never
+  // the Axio's copied; the same car's part is still the answer, without the LLM.
+  const partQuestion = [
+    {
+      style: "Bangla",
+      car: "এক্সিও ২০১৪",
+      carArgs: { vehicle: "এক্সিও", year: "২০১৪" },
+      noah: "নোয়া সেলফ মোটর আছে?",
+      noahArgs: { part_type: "সেলফ মোটর", vehicle: "নোয়া", year: "২০১৪" },
+      part: "সেলফ মোটর",
+    },
+    {
+      style: "Banglish",
+      car: "axio 2014",
+      carArgs: { vehicle: "axio", year: "2014" },
+      noah: "noah self motor ache?",
+      noahArgs: { part_type: "self motor", vehicle: "noah", year: "2014" },
+      part: "self motor",
+    },
+  ];
+
+  it.each(partQuestion)(
+    "takes an answer that names another car as a new request, and asks that car's year (D127; $style)",
+    async ({ car, carArgs, noah, noahArgs }) => {
+      const first = await turn(car, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: carArgs }] }]),
+      ]);
+      expect(first.reply).toBe("কোন পার্ট লাগবে?");
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: noahArgs }] }]);
+      const second = await turn(noah, first.outcome.state, [llm]);
+      expect(llm.calls).toBe(1);
+      expect(second.reply).toBe("কোন বছরের নোয়া?");
+      expect(second.events.find((event) => event.type === "choices")).toMatchObject({ slot: "year" });
+    },
+  );
+
+  it.each(partQuestion)(
+    "still takes the asked part as the answer for the same car, without the LLM (D127; $style)",
+    async ({ car, carArgs, part }) => {
+      const first = await turn(car, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: carArgs }] }]),
+      ]);
+      const second = await turn(part, first.outcome.state, [scripted([])]);
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর");
+      expect(second.reply).toContain("সেলফ");
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      first: "২০১৬ সালের নোয়া",
+      next: "সেলফ",
+      args: { part_type: "সেলফ", vehicle: "নোয়া", year: "২০১৬" },
+    },
+    {
+      style: "Banglish",
+      first: "2016 saler noah",
+      next: "self",
+      args: { part_type: "self", vehicle: "noah", year: "2016" },
+    },
+  ])(
+    "keeps a year said earlier in the same request when an answer finishes it (D127; $style)",
+    async ({ first, next, args }) => {
+      const asked = await turn(first, fresh(), [
+        scripted([{ calls: [{ name: "ask_user", arguments: { slot: "part_type", question: "?" } }] }]),
+      ]);
+      expect(asked.reply).toBe("কোন পার্ট লাগবে?");
+      const answered = await turn(next, asked.outcome.state, [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(answered.reply).toContain("নোয়া ২০১৬-এর");
+    },
+  );
+
   it.each([
     { style: "Bangla", text: "স্টকের মোট দাম কত?" },
     { style: "Banglish", text: "stock er mot dam koto?" },

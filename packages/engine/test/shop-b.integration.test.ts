@@ -347,6 +347,47 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     },
   );
 
+  // D127: an answer that names another car is a new request on this app too; the Axio's year is not given to it. The
+  // app's own "AC Compressor" gets its Bangla word from the owner, as the Tucson above.
+  it.each([
+    {
+      style: "Bangla",
+      car: "এক্সিও ২০১৪",
+      carArgs: { vehicle: "এক্সিও", year: "২০১৪" },
+      other: "ফিল্ডারের এসি কম্প্রেসার আছে?",
+      otherArgs: { part_type: "এসি কম্প্রেসার", vehicle: "ফিল্ডার", year: "২০১৪" },
+    },
+    {
+      style: "Banglish",
+      car: "axio 2014",
+      carArgs: { vehicle: "axio", year: "2014" },
+      other: "fielder er ac compressor ache?",
+      otherArgs: { part_type: "ac compressor", vehicle: "fielder", year: "2014" },
+    },
+  ])(
+    "takes an answer that names another car as a new request (D127; $style)",
+    async ({ car, carArgs, other, otherArgs }) => {
+      const added = {
+        target_concept: "part_type" as const,
+        target_value: "AC Compressor",
+        bn: ["এসি কম্প্রেসার"],
+        latin: [],
+      };
+      const shop = buildDictionary([...GLOSSARY, ...catalogEntries(catalog), added]);
+      const first = await turn(car, fresh(), { calls: [{ name: "find_parts", arguments: carArgs }] }, shop);
+      expect(first.reply).toBe("কোন পার্ট লাগবে?");
+      const second = await turn(
+        other,
+        first.outcome.state,
+        { calls: [{ name: "find_parts", arguments: otherArgs }] },
+        shop,
+      );
+      expect(second.reply).toContain("ফিল্ডার");
+      expect(second.reply).toContain("C-2 তাকে");
+      expect(second.reply).not.toContain("এক্সিও");
+    },
+  );
+
   it("finds nothing for a year the name's range leaves out", async () => {
     const result = await findParts(
       input({ part_type: "power steering pump", vehicle: "axio", year: "2010" }),
