@@ -15,6 +15,7 @@ import { HostPools, type HostDb } from "../src/host/pool";
 import { stockValue } from "../src/host/reports";
 import type { LlmDelta, LlmProvider } from "../src/providers";
 import { geargridMap } from "./geargrid-map";
+import { scripted } from "./scripted-llm";
 
 // Pipeline tests (spec 18.1): whole chat turns against the CI copy of GearGrid, with a scripted LLM, so every LLM
 // call is known: the tool it chooses and the sentence it phrases.
@@ -27,39 +28,6 @@ const isLocal = (() => {
     return false;
   }
 })();
-
-interface Step {
-  text?: string;
-  calls?: { name: string; arguments: Record<string, unknown> }[];
-}
-
-/** An LLM that answers from a script, one step per call, and fails the test when called beyond it. */
-function scripted(steps: Step[]): LlmProvider & { calls: number } {
-  const llm = {
-    id: "stub",
-    external: false,
-    calls: 0,
-    async *stream(): AsyncIterable<LlmDelta> {
-      const step = steps[llm.calls];
-      llm.calls += 1;
-      if (!step) throw new Error("the LLM was called more often than the script allows");
-      yield { type: "start" };
-      if (step.text) yield { type: "text", text: step.text };
-      if (step.calls?.length) {
-        yield {
-          type: "tool_calls",
-          calls: step.calls.map((call, index) => ({
-            id: `call-${index}`,
-            name: call.name,
-            arguments: JSON.stringify(call.arguments),
-          })),
-        };
-      }
-      yield { type: "finish", reason: step.calls?.length ? "tool_calls" : "stop" };
-    },
-  };
-  return llm;
-}
 
 const down: LlmProvider = {
   id: "down",
@@ -403,6 +371,114 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       );
     },
   );
+
+  // D125: a new part with no car is looked up for the remembered car, and the answer names it; also when the LLM asks
+  // for the car instead of searching.
+  const axioPads = [
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+      next: "এয়ার ফিল্টার আছে?",
+      part: "এয়ার ফিল্টার",
+      premio: { text: "প্রিমিওর এয়ার ফিল্টার আছে?", vehicle: "প্রিমিও", year: "২০১৪" },
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er front brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
+      next: "air filter ache?",
+      part: "air filter",
+      premio: { text: "premio r air filter ache?", vehicle: "premio", year: "2014" },
+    },
+  ];
+
+  it.each(
+    axioPads.flatMap((row) => [
+      {
+        ...row,
+        llmDoes: "searches without the car",
+        call: { name: "find_parts", arguments: { part_type: row.part } },
+      },
+      {
+        ...row,
+        llmDoes: "asks for the car",
+        call: { name: "ask_user", arguments: { slot: "vehicle", question: "?" } },
+      },
+    ]),
+  )(
+    "looks up a new part for the remembered car when the LLM $llmDoes (D125; $style)",
+    async ({ text, args, next, call }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      const second = await turn(next, first.outcome.state, [scripted([{ calls: [call] }])]);
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর এয়ার ফিল্টার");
+      expect(second.reply).toContain("A-1");
+      expect(second.outcome.state.frame?.slots.vehicle).toMatchObject({
+        value: "Toyota Axio",
+        source: "context",
+      });
+      expect(second.events.at(-1)).toMatchObject({
+        type: "done",
+        context: { vehicle: { label: "এক্সিও ২০১৪", until: expect.any(String) } },
+      });
+    },
+  );
+
+  it.each(axioPads)(
+    "never gives another car the remembered year, even when the LLM copies it (D125; $style)",
+    async ({ text, args, part, premio }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      const second = await turn(premio.text, first.outcome.state, [
+        scripted([
+          {
+            calls: [
+              {
+                name: "find_parts",
+                arguments: { part_type: part, vehicle: premio.vehicle, year: premio.year },
+              },
+            ],
+          },
+        ]),
+      ]);
+      expect(second.reply).toMatch(/^কোন বছরের /);
+      expect(second.outcome.state.frame).toMatchObject({ asking: "year" });
+    },
+  );
+
+  // D125: the customer, and so their rate, is forgotten after 10 minutes without a turn; the car after 30.
+  it.each([
+    { style: "Bangla", text: "এয়ার ফিল্টার আছে?", part: "এয়ার ফিল্টার" },
+    { style: "Banglish", text: "air filter ache?", part: "air filter" },
+  ])("forgets the customer after 10 minutes and the car after 30 ($style)", async ({ text, part }) => {
+    const garage = catalog.customers.find((customer) => customer.name === "New Dhaka Garage")!;
+    const idleFor = (minutes: number): TurnState => ({
+      ...fresh(),
+      context: {
+        vehicle: { model: "Toyota Axio", year: 2014, engine: null },
+        customer: { hostId: garage.hostId, name: garage.name, tier: "garage" },
+        updatedAt: new Date(Date.now() - minutes * 60_000).toISOString(),
+      },
+    });
+    const search = () => scripted([{ calls: [{ name: "find_parts", arguments: { part_type: part } }] }]);
+
+    const soon = await turn(text, idleFor(5), [search()]);
+    expect(soon.reply).toContain("এক্সিও ২০১৪-এর এয়ার ফিল্টার");
+    expect(soon.reply).toContain("রেটে"); // still the garage's price
+    expect(soon.events.at(-1)).toMatchObject({ context: { vehicle: {}, customer: { label: garage.name } } });
+
+    const later = await turn(text, idleFor(11), [search()]);
+    expect(later.reply).toContain("এক্সিও ২০১৪-এর এয়ার ফিল্টার");
+    expect(later.reply).not.toContain("রেটে");
+    expect(later.outcome.state.context.customer).toBeUndefined();
+
+    const muchLater = await turn(text, idleFor(31), [search()]);
+    expect(muchLater.reply).toBe("কোন গাড়ির?");
+    expect((muchLater.events.at(-1) as { context?: unknown }).context).toEqual({});
+  });
 
   it.each([
     { style: "Bangla", text: "স্টকের মোট দাম কত?" },

@@ -1,10 +1,12 @@
-import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import type { Remembered, RememberedKey, ReplyEvent } from "@dokaanbondhu/contracts";
 import { create } from "zustand";
 import { ApiError } from "./api";
 
-// The chat page's state (spec 15.5): the conversation, its messages, and the turn that is running. Each reply event
-// updates the assistant message it belongs to; chips answer only the newest question. The API calls are passed in,
-// so the tests run without a server.
+// The conversation's state (spec 15.5): the one conversation the voice and chat pages share (D125), its messages, the
+// turn that is running, and what the assistant remembers. Each reply event updates the assistant message it belongs
+// to; chips answer only the newest question. The API calls are passed in, so the tests run without a server.
+
+export type Channel = "voice" | "chat";
 
 export type PartCard = Extract<ReplyEvent, { type: "cards" }>["parts"][number];
 export type TableEvent = Extract<ReplyEvent, { type: "table" }>;
@@ -61,8 +63,11 @@ export function applyEvent(message: AssistantMessage, event: ReplyEvent): Assist
 }
 
 export interface ChatDeps {
-  createConversation: () => Promise<string>;
+  /** Opens a conversation; the channel is the page that opened it (D126). */
+  createConversation: (channel: Channel) => Promise<string>;
   stream: (path: string, body: unknown, onEvent: (event: ReplyEvent) => void) => Promise<void>;
+  /** Forgets the remembered car or customer on the server (DELETE /conversations/{id}/context/{key}). */
+  forget: (conversationId: string, key: RememberedKey) => Promise<void>;
   newId: () => string;
 }
 
@@ -79,8 +84,12 @@ export interface ChatState {
   conversationId: string | null;
   messages: ChatMessage[];
   busy: boolean;
-  /** The conversation's ID, opening it once if there is none yet. */
-  ensureConversation: () => Promise<string>;
+  /** What the assistant remembers after the last turn, for the memory line (D125). */
+  remembered: Remembered;
+  /** The conversation's ID, opening it once if there is none yet, from the page that asks first. */
+  ensureConversation: (channel?: Channel) => Promise<string>;
+  /** Forgets the remembered car or customer: at once on screen, then on the server (D125). */
+  forget: (key: RememberedKey) => Promise<void>;
   send: (input: ChatInput, options?: SendOptions) => Promise<void>;
   /**
    * Any turn: shows the user's words (a voice turn's are filled in by its transcript event) and an assistant message
@@ -117,10 +126,10 @@ export function createChatStore(deps: ChatDeps) {
       if (active === replyId) set({ busy: false });
     };
 
-    const ensureConversation = async () => {
+    const ensureConversation = async (channel: Channel = "chat") => {
       const current = get().conversationId;
       if (current) return current;
-      opening ??= deps.createConversation().then(
+      opening ??= deps.createConversation(channel).then(
         (id) => {
           set({ conversationId: id });
           opening = null;
@@ -170,6 +179,7 @@ export function createChatStore(deps: ChatDeps) {
           } else {
             update(replyId, (message) => applyEvent(message, event));
           }
+          if (event.type === "done" && event.context) set({ remembered: event.context });
           // The whole answer is on screen: the next question may start; the stream goes on only for the audio (D101).
           if (event.type === "text" && event.final) release(replyId);
           tap?.(event);
@@ -177,7 +187,7 @@ export function createChatStore(deps: ChatDeps) {
       } catch (error) {
         // A conversation the server no longer knows is started again with the next message.
         if (error instanceof ApiError && error.body?.code === "CONVERSATION_NOT_FOUND")
-          set({ conversationId: null });
+          set({ conversationId: null, remembered: {} });
         const key = error instanceof ApiError && error.body ? `errors.${error.body.code}` : "common.error";
         update(replyId, (message) => ({ ...message, error: key }));
       } finally {
@@ -206,16 +216,34 @@ export function createChatStore(deps: ChatDeps) {
         return { messages: [...state.messages, message] };
       });
 
+    const forget: ChatState["forget"] = async (key) => {
+      const { conversationId, remembered } = get();
+      const item = remembered[key];
+      if (!conversationId || !item) return;
+      const kept = { ...remembered };
+      delete kept[key];
+      set({ remembered: kept });
+      try {
+        await deps.forget(conversationId, key);
+      } catch {
+        // Not forgotten on the server: shown again, unless a newer turn has said what is remembered since.
+        if (get().remembered[key] === undefined && get().conversationId === conversationId)
+          set({ remembered: { ...get().remembered, [key]: item } });
+      }
+    };
+
     return {
       conversationId: null,
       messages: [],
       busy: false,
+      remembered: {},
       ensureConversation,
+      forget,
       runTurn,
       note,
       reset: () => {
         active = null;
-        set({ conversationId: null, messages: [], busy: false });
+        set({ conversationId: null, messages: [], busy: false, remembered: {} });
       },
       send: (input, options = {}) =>
         runTurn(

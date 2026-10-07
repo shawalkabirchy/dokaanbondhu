@@ -10,15 +10,15 @@ import * as Crypto from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { AssistantBubble, UserBubble } from "../../src/chat-ui";
+import { AssistantBubble, MemoryLine, UserBubble } from "../../src/chat-ui";
 import { phonePlayer, playAskAgain, stopPlayback } from "../../src/lib/audio";
 import { useHealth } from "../../src/lib/health";
 import { base64ToBytes } from "../../src/lib/pcm";
 import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useMe } from "../../src/lib/session";
 import { useDeviceSettings } from "../../src/lib/settings-store";
+import { useChat } from "../../src/lib/chat";
 import { streamTurn, uploadChunk } from "../../src/lib/stream";
-import { useVoice } from "../../src/lib/voice";
 import { MAX_RECORDING_MS, MIN_PRESS_MS, VoiceTurn } from "../../src/lib/voice-turn";
 
 /** How long release waits for the recorder's last chunk, and how much short of the held time counts as all of it. */
@@ -35,13 +35,14 @@ import { Button, colors, OfflineBanner } from "../../src/ui";
 // streams in: the transcript as the user's words, then the reply as text with its audio, played in order. The recorder
 // is prepared before the press (on opening the page and after every stop), because unprepared it takes about 1.4 s
 // to start and loses the first words (P5). Pressing again while an answer plays stops it (barge-in). After the release
-// the recorder listens for half a second more, so the last word is not cut (D113).
+// the recorder listens for half a second more, so the last word is not cut (D113). The conversation and its list are
+// the chat page's too, so a question asked here can be finished by typing there (D125).
 
 export default function Voice() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const { micAllowed, speechTrouble, refresh } = useHealth();
-  const { messages, busy, runTurn, ensureConversation, send, reset, note } = useVoice();
+  const { messages, busy, runTurn, ensureConversation, send, reset, note, remembered, forget } = useChat();
   /** False when the developer has switched reading aloud off (AI_SPEAK=off, D114). */
   const speaks = useMe().data?.providers.speaks ?? true;
   const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
@@ -75,7 +76,7 @@ export default function Voice() {
       micReady.current = true;
       await prepareRecording(config);
     })();
-    ensureConversation().catch(() => undefined); // opened early, so the first press starts at once
+    ensureConversation("voice").catch(() => undefined); // opened early, so the first press starts at once
     return () => player.current?.stop();
   }, [prepareRecording, config, ensureConversation]);
 
@@ -113,7 +114,7 @@ export default function Voice() {
         newId: () => Crypto.randomUUID(),
         now: () => Date.now(),
       },
-      ensureConversation(),
+      ensureConversation("voice"),
     );
     turn.current = started;
     capturing.current = started;
@@ -191,6 +192,7 @@ export default function Voice() {
           ),
         )}
       </ScrollView>
+      <MemoryLine remembered={remembered} onForget={(key) => void forget(key)} />
       <View style={styles.bottom}>
         <Pressable
           accessibilityRole="button"

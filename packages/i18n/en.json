@@ -60,6 +60,11 @@
     "hold": "Hold to talk",
     "hint": "Hold the button and ask, for example: Axio 2014 front brake pad ache? Let go to hear the answer."
   },
+  "memory": {
+    "title": "Remembered:",
+    "forget_vehicle": "Forget the car",
+    "forget_customer": "Forget the customer"
+  },
   "chat": {
     "placeholder": "Type a question…",
     "send": "Send",

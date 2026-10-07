@@ -1,4 +1,4 @@
-import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import type { Remembered, ReplyEvent } from "@dokaanbondhu/contracts";
 import {
   AllowedFacts,
   ASK_AGAIN,
@@ -28,6 +28,7 @@ import {
   splitSentences,
   banglaOf,
   banglaNumbers,
+  carLabel,
   formatTaka,
   type Dictionary,
   type PartRow,
@@ -53,6 +54,7 @@ import {
   type Offer,
   type RequestFrame,
 } from "./frame";
+import { llmHistory } from "./history";
 import { systemPrompt } from "./prompt";
 import type { ConversationState } from "./state";
 import { CANNOT_HELP, readTools } from "./tools";
@@ -69,6 +71,38 @@ export interface SessionContext {
 }
 
 export const CONTEXT_TTL_MS = 30 * 60_000;
+/** The customer, and so their price rate, is forgotten sooner, so the next walk-in is not given it (D125). */
+export const CUSTOMER_TTL_MS = 10 * 60_000;
+
+/**
+ * What the app's memory line shows (D125, D126): the car and the customer, each with the time it is forgotten, counted
+ * from the last turn. The customer's label is the Bangla name when the host keeps one.
+ */
+export function rememberedOf(
+  context: SessionContext,
+  customerLabel: (hostId: string, name: string) => string = (_hostId, name) => name,
+): Remembered {
+  const since = context.updatedAt ? Date.parse(context.updatedAt) : Date.now();
+  const until = (ms: number) => new Date(since + ms).toISOString();
+  return {
+    ...(context.vehicle
+      ? {
+          vehicle: {
+            label: carLabel(context.vehicle.model, context.vehicle.year),
+            until: until(CONTEXT_TTL_MS),
+          },
+        }
+      : {}),
+    ...(context.customer
+      ? {
+          customer: {
+            label: customerLabel(context.customer.hostId, context.customer.name),
+            until: until(CUSTOMER_TTL_MS),
+          },
+        }
+      : {}),
+  };
+}
 
 export interface TurnInput {
   text?: string;
@@ -355,9 +389,13 @@ export async function runTurn(
   const hypotheses = input.hypotheses?.length ? input.hypotheses : text ? [text] : [];
   const others = hypotheses.slice(1);
 
-  // Session context expires after 30 minutes without a turn (spec 9.8).
-  if (state.context.updatedAt && now.getTime() - Date.parse(state.context.updatedAt) > CONTEXT_TTL_MS)
-    state.context = {};
+  // Session context expires after 30 minutes without a turn, the customer after 10 (spec 9.8, D125).
+  const idle = state.context.updatedAt ? now.getTime() - Date.parse(state.context.updatedAt) : 0;
+  if (idle > CONTEXT_TTL_MS) state.context = {};
+  else if (idle > CUSTOMER_TTL_MS && state.context.customer) {
+    state.context = { ...state.context };
+    delete state.context.customer;
+  }
   const frameOpen = isOpen(state.frame, now);
   if (state.frame && !frameOpen && state.frame.status === "active")
     state.frame = { ...state.frame, status: "expired" };
@@ -447,8 +485,15 @@ export async function runTurn(
       : {}),
   });
 
-  /** find_parts with its outcome handled: a question, facts for the answer, or nothing. */
-  const findAndDecide = async (query: PartQuery, frame: RequestFrame): Promise<"asked" | "facts"> => {
+  /**
+   * find_parts with its outcome handled: a question, facts for the answer, or nothing. `remembered` names the slots
+   * that came from the session context, not from the user (D125).
+   */
+  const findAndDecide = async (
+    query: PartQuery,
+    frame: RequestFrame,
+    remembered: ReadonlySet<string> = new Set(),
+  ): Promise<"asked" | "facts"> => {
     const resolveStart = Date.now();
     const result = await findParts({
       query,
@@ -478,7 +523,7 @@ export async function runTurn(
       parts: result.kind === "rows" ? result.rows.map((row) => numbersOf(row.hostPartId)) : [],
     });
     for (const [key, value] of Object.entries(query)) {
-      frame.slots[key] = { value, status: "understood", source: "user" };
+      frame.slots[key] = { value, status: "understood", source: remembered.has(key) ? "context" : "user" };
     }
     if (result.kind === "ask") {
       const vehicle = result.resolved.vehicle ?? undefined;
@@ -548,7 +593,7 @@ export async function runTurn(
    * is the request's candidate, and a year it left out or gave in a form that cannot be read is the request's own;
    * an unreadable year the request does not have is dropped, so it is asked.
    */
-  const completed = (query: PartQuery): PartQuery => {
+  const completed = (query: PartQuery): { query: PartQuery; remembered: Set<string> } => {
     const out = { ...query };
     if (out.year && parseYear(normalize(out.year).tokens, { now, bare: true }) === null) delete out.year;
     if (!out.year && saidYear !== null) out.year = String(saidYear);
@@ -561,13 +606,51 @@ export async function runTurn(
       const heard = heardSlots.get(concept);
       if (!out[slot] && heard) out[slot] = heard;
     }
-    return out;
+    // The remembered car (D125, D126): it completes a search that names no car; the same car said without a year
+    // keeps its year; another car never does. A part number is looked up as it is, never for the remembered car.
+    const remembered = new Set<string>();
+    const car = state.context.vehicle;
+    if (car && !out.part_number) {
+      const recall = (slot: "year" | "engine", value: string | null) => {
+        if (!out[slot] && value) {
+          out[slot] = value;
+          remembered.add(slot);
+        }
+      };
+      if (!out.vehicle) {
+        out.vehicle = car.model;
+        remembered.add("vehicle");
+        recall("year", car.year === null ? null : String(car.year));
+        recall("engine", car.engine);
+      } else if (sameCar(out.vehicle, car.model)) {
+        if (saidYear === null && !yearInside(out.vehicle))
+          recall("year", car.year === null ? null : String(car.year));
+        recall("engine", car.engine);
+      } else if (
+        saidYear === null &&
+        out.year &&
+        car.year !== null &&
+        parseYear(normalize(out.year).tokens, { now, bare: true }) === car.year
+      ) {
+        delete out.year; // the LLM copied the remembered year to another car: it is asked instead
+      }
+    }
+    return { query: out, remembered };
   };
+
+  /** Whether a car as said is the remembered one ("এক্সিওর" and "Toyota Axio"). */
+  const sameCar = (said: string, model: string) => {
+    const match = matchConcept("vehicle_model", said, [], deps.dictionary);
+    return match.decision !== "unclear" && match.candidates[0]?.value === model;
+  };
+  /** Whether a car as said carries its own year ("Axio 2014"). */
+  const yearInside = (said: string) => parseYear(normalize(said).tokens, { now }) !== null;
 
   /** find_parts for the LLM: the tool result, or "stop" when the turn asks a question. */
   const partsTool = async (query: PartQuery, record: (result: string) => void): Promise<string | "stop"> => {
     const frame = newFrame(deps.newId(), "find_parts", now, text);
-    const outcome = await findAndDecide(completed(query), frame);
+    const full = completed(query);
+    const outcome = await findAndDecide(full.query, frame, full.remembered);
     record(outcome === "asked" ? "question" : (facts.parts?.result.kind ?? "facts"));
     if (outcome === "asked") return "stop";
     const result = facts.parts!.result;
@@ -715,6 +798,17 @@ export async function runTurn(
       }
       case "ask_user": {
         const slot = str(args.slot) ?? "other";
+        // The car asked for while one is remembered and the request names a part and no car: the part search for the
+        // remembered car, whose answer names it (D125, D126).
+        if (
+          (slot === "vehicle" || slot === "vehicle_model") &&
+          state.context.vehicle &&
+          heardSlots.has("part_type") &&
+          !heardSlots.has("vehicle_model") &&
+          deps.host.map &&
+          deps.host.run
+        )
+          return partsTool({}, (result) => record(`part_search: ${result}`));
         const frame =
           state.frame && isOpen(state.frame, now)
             ? state.frame
@@ -822,11 +916,13 @@ export async function runTurn(
   // A short follow-up to the last part search ("pechoner ta?", "genuine ta?"): that search again with one detail
   // changed, without the LLM (spec 9.8, D95).
   const last = state.frame;
+  // It needs the remembered car, so a car forgotten in the app is not reused (D126).
   const recent =
     !frameOpen &&
     !input.choice &&
     last?.intent === "find_parts" &&
     last.status === "done" &&
+    state.context.vehicle !== undefined &&
     state.context.updatedAt !== undefined &&
     now.getTime() - Date.parse(state.context.updatedAt) <= CONTEXT_TTL_MS;
   const followUp = recent && text ? followUpSlot(text, deps.dictionary, now) : null;
@@ -839,7 +935,12 @@ export async function runTurn(
     const query = partQueryOf(
       Object.fromEntries(Object.entries(frame.slots).map(([key, slot]) => [key, slot.value])),
     );
-    const outcome = await findAndDecide(query, frame);
+    const remembered = new Set(
+      Object.entries(frame.slots)
+        .filter(([, slot]) => slot.source === "context")
+        .map(([key]) => key),
+    );
+    const outcome = await findAndDecide(query, frame, remembered);
     trace.tool_calls.push({
       name: "find_parts",
       arguments: query,
@@ -870,9 +971,10 @@ export async function runTurn(
           openRequest,
         }),
       },
-      ...state.history
-        .slice(-6)
-        .map((message) => ({ role: message.role, content: message.text }) as ChatMessage),
+      // Only as much of the past as the request needs: none when it names its own part and car (D125, D126).
+      ...llmHistory(state.history, {
+        selfContained: !openRequest && heardSlots.has("part_type") && heardSlots.has("vehicle_model"),
+      }),
       {
         role: "user",
         content: `${request}${candidates.length ? `\n(candidates: ${candidates.join("; ")})` : ""}`,
@@ -1005,6 +1107,7 @@ export async function runTurn(
     turn_id: turnId,
     state: finalState,
     timings_ms: timings,
+    context: rememberedOf(state.context, customerName),
     ...(deps.evalMode ? { trace } : {}),
   });
   return {

@@ -16,6 +16,7 @@ function store(events: ReplyEvent[][], overrides: Partial<ChatDeps> = {}) {
       sent.push(body);
       for (const event of events.shift() ?? []) onEvent(event);
     }),
+    forget: jest.fn(async () => undefined),
     newId: () => `m${++id}`,
     ...overrides,
   };
@@ -195,5 +196,57 @@ describe("chat store", () => {
     expect(useChat.getState().busy).toBe(false);
     expect(deps.stream).not.toHaveBeenCalled();
     expect(deps.createConversation).not.toHaveBeenCalled();
+  });
+
+  // D125, D126: the memory line shows what the last turn said is remembered; ✕ forgets it.
+  const until = new Date(Date.now() + 10 * 60_000).toISOString();
+  const memory = {
+    vehicle: { label: "এক্সিও ২০১৪", until },
+    customer: { label: "নিউ ঢাকা গ্যারেজ", until },
+  };
+  const withMemory: ReplyEvent = {
+    type: "done",
+    turn_id: "t1",
+    state: "IDLE",
+    timings_ms: {},
+    context: memory,
+  };
+
+  it.each([
+    { style: "Bangla", text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?" },
+    { style: "Banglish", text: "axio 2014 er samner brake pad ache?" },
+  ])(
+    "keeps what is remembered, forgets one at once and on the server, and clears all with a new chat ($style)",
+    async ({ text }) => {
+      const { useChat, deps } = store([[withMemory]]);
+      await useChat.getState().send({ text });
+      expect(useChat.getState().remembered).toEqual(memory);
+
+      await useChat.getState().forget("customer");
+      expect(useChat.getState().remembered).toEqual({ vehicle: { label: "এক্সিও ২০১৪", until } });
+      expect(deps.forget).toHaveBeenCalledWith("c1", "customer");
+
+      useChat.getState().reset();
+      expect(useChat.getState().remembered).toEqual({});
+    },
+  );
+
+  it("shows the customer again when the server could not forget it", async () => {
+    const { useChat } = store([[withMemory]], {
+      forget: jest.fn(async () => {
+        throw new ApiError(503, null);
+      }),
+    });
+    await useChat.getState().send({ text: "rahim motors er baki koto?" });
+    await useChat.getState().forget("customer");
+    expect(useChat.getState().remembered.customer).toEqual({ label: "নিউ ঢাকা গ্যারেজ", until });
+  });
+
+  it("opens the conversation as the page that asks first", async () => {
+    const { useChat, deps } = store([]);
+    await useChat.getState().ensureConversation("voice");
+    await useChat.getState().send({ text: "হ্যালো" });
+    expect(deps.createConversation).toHaveBeenCalledTimes(1);
+    expect(deps.createConversation).toHaveBeenCalledWith("voice");
   });
 });

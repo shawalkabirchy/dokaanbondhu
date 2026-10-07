@@ -14,6 +14,17 @@ const state = z.enum([
   "RESPONDING",
 ]);
 
+/** One thing the conversation remembers, as the app's memory line shows it, and until when (D125, D126). */
+const rememberedItem = z.object({ label: z.string(), until: z.string() });
+
+/** What the conversation remembers after a turn: the car and the customer, each while its time lasts. */
+export const rememberedSchema = z.object({
+  vehicle: rememberedItem.optional(),
+  customer: rememberedItem.optional(),
+});
+export type Remembered = z.infer<typeof rememberedSchema>;
+export type RememberedKey = keyof Remembered;
+
 export const replyEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), state, label_key: z.string() }),
   z.object({ type: z.literal("transcript"), text: z.string(), unclear: z.array(z.string()).default([]) }),
@@ -92,6 +103,7 @@ export const replyEventSchema = z.discriminatedUnion("type", [
     turn_id: z.string(),
     state,
     timings_ms: z.record(z.string(), z.number()).default({}),
+    context: rememberedSchema.optional(), // what is remembered (D125)
     trace: z.unknown().optional(), // only in evaluation mode
   }),
 ]);

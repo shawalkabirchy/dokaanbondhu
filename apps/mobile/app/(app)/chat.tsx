@@ -3,7 +3,7 @@ import * as Crypto from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { KeyboardAvoidingView, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { AssistantBubble, UserBubble } from "../../src/chat-ui";
+import { AssistantBubble, MemoryLine, UserBubble } from "../../src/chat-ui";
 import { phonePlayer } from "../../src/lib/audio";
 import { useChat } from "../../src/lib/chat";
 import { ReplyPlayer } from "../../src/lib/reply-player";
@@ -12,14 +12,15 @@ import { useDeviceSettings } from "../../src/lib/settings-store";
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
 /**
- * The chat page (spec 15.2): the message list with cards, tables and chips, and the input at the bottom. The speaker
- * switch asks for the spoken reply too (speak: true, D88), played in sentence order; it is hidden when the developer
- * has switched reading aloud off (AI_SPEAK=off, D114).
+ * The chat page (spec 15.2): the message list with cards, tables and chips, what is remembered, and the input at the
+ * bottom. The list is the voice page's too: one conversation for both (D125). The speaker switch asks for the spoken
+ * reply too (speak: true, D88), played in sentence order; it is hidden when the developer has switched reading aloud
+ * off (AI_SPEAK=off, D114).
  */
 export default function Chat() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
-  const { messages, busy, send, reset } = useChat();
+  const { messages, busy, send, reset, remembered, forget } = useChat();
   const [text, setText] = useState("");
   const [speak, setSpeak] = useState(false);
   const speaks = useMe().data?.providers.speaks ?? true;
@@ -66,7 +67,10 @@ export default function Chat() {
           {messages.length === 0 ? <Text style={styles.hint}>{t("chat.empty")}</Text> : null}
           {messages.map((message) =>
             message.kind === "user" ? (
-              <UserBubble key={message.id} text={message.text} />
+              // A voice question's words come with its transcript; until then there is no bubble.
+              message.text ? (
+                <UserBubble key={message.id} text={message.text} />
+              ) : null
             ) : (
               <AssistantBubble
                 key={message.id}
@@ -81,6 +85,7 @@ export default function Chat() {
             ),
           )}
         </ScrollView>
+        <MemoryLine remembered={remembered} onForget={(key) => void forget(key)} />
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}

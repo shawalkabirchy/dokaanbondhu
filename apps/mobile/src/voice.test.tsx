@@ -45,13 +45,15 @@ jest.mock("./lib/audio", () => ({
   stopPlayback: jest.fn(),
 }));
 jest.mock("./lib/stream", () => ({ streamTurn: jest.fn(async () => undefined), uploadChunk: jest.fn() }));
-jest.mock("./lib/voice", () => {
+const mockCreateConversation = jest.fn(async (_channel: string) => "conv-1");
+jest.mock("./lib/chat", () => {
   const { createChatStore } = jest.requireActual("./lib/chat-store");
   let n = 0;
   return {
-    useVoice: createChatStore({
-      createConversation: async () => "conv-1",
+    useChat: createChatStore({
+      createConversation: (channel: string) => mockCreateConversation(channel),
       stream: async () => undefined,
+      forget: async () => undefined,
       newId: () => `m${++n}`,
     }),
   };
@@ -73,6 +75,12 @@ describe("voice page", () => {
     mockMe.data.providers.speaks = true;
   });
   afterEach(() => jest.useRealTimers());
+
+  // D125, D126: one conversation for both pages, recorded as opened by the page that asked first.
+  it("opens the shared conversation as a voice one", async () => {
+    await render(<Voice />);
+    expect(mockCreateConversation).toHaveBeenCalledWith("voice");
+  });
 
   it("stops recording by itself at 30 s", async () => {
     await render(<Voice />);

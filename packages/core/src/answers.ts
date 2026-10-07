@@ -66,9 +66,15 @@ export interface PartsContext {
 
 const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি" } as const;
 
+/** A car as said in answers and on the app's memory line: "এক্সিও ২০১৪" (D125). */
+export function carLabel(model: string, year: number | null): string {
+  const vehicle = banglaOf("vehicle_model", model);
+  return year ? `${vehicle} ${yearText(year)}` : vehicle;
+}
+
 function vehiclePhrase(context: PartsContext): string {
+  if (context.year) return carLabel(context.vehicle, context.year);
   const vehicle = banglaOf("vehicle_model", context.vehicle);
-  if (context.year) return `${vehicle} ${yearText(context.year)}`;
   if (context.yearRange) {
     const [from, to] = context.yearRange;
     return `${vehicle} ${yearText(from)}${to ? `–${yearText(to)}` : ""}`;

@@ -16,6 +16,7 @@ import {
   disableConnection,
   EVAL_KEY,
   post,
+  token,
   urls,
   useTestEnvironment,
   type HostShop,
@@ -31,12 +32,28 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   let admin: Platform;
   let llm: StubLlm;
   let shop: HostShop;
-  let routes: { conversations: { POST: unknown }; chat: { POST: unknown } };
+  let routes: { conversations: { POST: unknown }; chat: { POST: unknown }; context: { DELETE: unknown } };
 
   async function newConversation(auth = shop.owner.auth): Promise<string> {
     const response = await post(routes.conversations.POST, auth, { channel: "chat" });
     expect(response.status).toBe(201);
     return ((await response.json()) as { conversation: { id: string } }).conversation.id;
+  }
+
+  /** DELETE /conversations/{id}/context/{key}: the memory line's ✕ (D125). */
+  async function forget(conversationId: string, key: string, auth = shop.owner.auth): Promise<Response> {
+    const request = new Request(
+      `http://localhost:3100/api/v1/conversations/${conversationId}/context/${key}`,
+      {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${await token(auth)}` },
+      },
+    );
+    type Handler = (
+      request: Request,
+      context: { params: Promise<Record<string, string>> },
+    ) => Promise<Response>;
+    return (routes.context.DELETE as Handler)(request, { params: Promise.resolve({ conversationId, key }) });
   }
 
   const chat = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
@@ -49,12 +66,15 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     routes = {
       conversations: await import("../app/api/v1/conversations/route"),
       chat: await import("../app/api/v1/chat/messages/route"),
+      context: await import("../app/api/v1/conversations/[conversationId]/context/[key]/route"),
     };
   });
 
   beforeEach(() => {
     llm.script.length = 0;
     llm.received.length = 0;
+    // A fresh minute of turns for each test: together they ask more than the 20 a minute one user may (spec 8.7).
+    (globalThis as { __dokaanRateLimiter?: unknown }).__dokaanRateLimiter = undefined;
   });
 
   afterAll(async () => {
@@ -190,6 +210,65 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       expect(second.reply).toContain("B-4");
     },
   );
+
+  // D125, D126: the remembered car completes a new part's search; the LLM is told only what past answers were about;
+  // the app is told what is remembered, and a forgotten car is not reused by a short follow-up.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+      next: "এয়ার ফিল্টার আছে?",
+      part: "এয়ার ফিল্টার",
+      rear: "পেছনেরটা?",
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "front" },
+      next: "air filter ache?",
+      part: "air filter",
+      rear: "pechoner ta?",
+    },
+  ])(
+    "remembers the car for a new part, sends light history, and forgets the car on request ($style)",
+    async ({ text, args, next, part, rear }) => {
+      const conversationId = await newConversation();
+      llm.script.push({ calls: [{ name: "find_parts", arguments: args }] });
+      const first = await chat({ conversation_id: conversationId, text });
+      expect(first.events.at(-1)).toMatchObject({
+        type: "done",
+        context: { vehicle: { label: "এক্সিও ২০১৪", until: expect.any(String) } },
+      });
+
+      llm.script.push({ calls: [{ name: "find_parts", arguments: { part_type: part } }] });
+      const second = await chat({ conversation_id: conversationId, text: next });
+      expect(second.reply).toContain("এক্সিও ২০১৪-এর এয়ার ফিল্টার");
+      const sent = llm.received[1]!.messages as { role: string; content: string }[];
+      expect(
+        sent.filter((message) => message.role === "assistant").map((message) => message.content),
+      ).toEqual([
+        "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে…", // without its prices
+      ]);
+
+      expect((await forget(conversationId, "vehicle")).status).toBe(204);
+      const [saved] = await admin.withAdmin((tx) =>
+        tx.select().from(conversations).where(eq(conversations.id, conversationId)),
+      );
+      expect(saved!.context).not.toHaveProperty("vehicle");
+
+      llm.script.push({ calls: [{ name: "cannot_help", arguments: {} }] });
+      await chat({ conversation_id: conversationId, text: rear });
+      expect(llm.received).toHaveLength(3); // the LLM was asked: the forgotten car's search was not rerun
+    },
+  );
+
+  it("forgets only in the caller's own conversation, and only the car or the customer", async () => {
+    const staffConversation = await newConversation(shop.staff.auth);
+    expect((await forget(staffConversation, "vehicle")).status).toBe(404); // the owner, on the staff's conversation
+    expect((await forget(staffConversation, "price", shop.staff.auth)).status).toBe(404);
+    expect((await forget(staffConversation, "customer", shop.staff.auth)).status).toBe(204);
+  });
 
   // From the end-to-end check (D108): the answer to "কোন গাড়ির?" had the year too, and it was asked again.
   it.each([

@@ -9,7 +9,10 @@ import {
   type Dictionary,
   type PartsContext,
 } from "@dokaanbondhu/core";
+import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { runTurn, type TurnState } from "../src/conversation/turn";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
 import { parsedFitments } from "../src/host/fitment-text";
@@ -18,6 +21,7 @@ import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
 import { stockValue } from "../src/host/reports";
 import { fittedParts } from "../src/host/sync";
+import { scripted, type Step } from "./scripted-llm";
 import { shopBMap } from "./shop-b-map";
 
 // Host integration against test shop B (D122; tools/fixtures/shop-b): a MySQL 8 shop app shaped unlike GearGrid, read
@@ -237,6 +241,111 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       fitFromName: true,
     });
   });
+
+  /** One whole turn on shop B with a scripted LLM step: its reply and the outcome (the next turn's state). */
+  const turn = async (said: string, state: TurnState, step: Step, words: Dictionary = dictionary) => {
+    const events: ReplyEvent[] = [];
+    const outcome = await runTurn(
+      { text: said },
+      state,
+      {
+        llm: [scripted([step])],
+        dictionary: words,
+        host: {
+          map: shopBMap,
+          run: (built) => pools.readOnly(db, (run) => run(built)),
+          catalog,
+          fitmentExtra,
+          rackExtra: new Map(),
+          formulas: [],
+          hostReports: [],
+        },
+        now: () => new Date(),
+        newId: () => randomUUID(),
+        evalMode: false,
+        shopWords: [],
+      },
+      (event) => events.push(event),
+    );
+    const reply = events.flatMap((event) => (event.type === "text" ? [event.text] : [])).join(" ");
+    return { outcome, reply, done: events.at(-1) };
+  };
+  const fresh = (): TurnState => ({ state: "IDLE", context: {}, frame: null, history: [] });
+
+  // D125: a new part with no car is looked up for the remembered car, on an app shaped unlike GearGrid too.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+      next: "পাওয়ার স্টিয়ারিং পাম্প আছে?",
+      part: "পাওয়ার স্টিয়ারিং পাম্প",
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
+      next: "power steering pump ache?",
+      part: "power steering pump",
+    },
+  ])(
+    "looks up a new part for the remembered car in a whole turn ($style)",
+    async ({ text, args, next, part }) => {
+      const first = await turn(text, fresh(), { calls: [{ name: "find_parts", arguments: args }] });
+      expect(first.reply).toContain("B-3 আর G-1 তাকে");
+      const second = await turn(next, first.outcome.state, {
+        calls: [{ name: "find_parts", arguments: { part_type: part } }],
+      });
+      expect(second.reply).toBe(
+        "এক্সিও ২০১৪-এর জেনুইন Power Steering Pump ১টা আছে, ৯,০০০ টাকা, C-2 তাকে। এই গাড়িতে লাগে বলে নামে লেখা আছে, নিশ্চিত নয়।",
+      );
+    },
+  );
+
+  // D125: a car only the app knows (the Tucson is in no glossary) is remembered too, shown as the app writes it, and
+  // completes the next part's search. Its Bangla word is the owner's, added as in the test above.
+  it.each([
+    {
+      style: "Bangla",
+      text: "টুসান ২০১৮-এর ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "টুসান", year: "২০১৮" },
+      next: "শক অ্যাবজর্ভার আছে?",
+      part: "শক অ্যাবজর্ভার",
+    },
+    {
+      style: "Banglish",
+      text: "tucson 2018 er brake pad ache?",
+      args: { part_type: "brake pad", vehicle: "tucson", year: "2018" },
+      next: "shock absorber ache?",
+      part: "shock absorber",
+    },
+  ])(
+    "remembers a car only the app knows and finds the next part for it ($style)",
+    async ({ text, args, next, part }) => {
+      const added = {
+        target_concept: "vehicle_model" as const,
+        target_value: "Tucson",
+        bn: ["টুসান"],
+        latin: [],
+      };
+      const shop = buildDictionary([...GLOSSARY, ...catalogEntries(catalog), added]);
+      // No brake pad is recorded for a Tucson; the car is remembered all the same.
+      const first = await turn(text, fresh(), { calls: [{ name: "find_parts", arguments: args }] }, shop);
+      expect(first.outcome.state.context.vehicle).toMatchObject({ model: "Tucson", year: 2018 });
+      expect(first.done).toMatchObject({ type: "done", context: { vehicle: { label: "Tucson ২০১৮" } } });
+
+      const second = await turn(
+        next,
+        first.outcome.state,
+        { calls: [{ name: "find_parts", arguments: { part_type: part } }] },
+        shop,
+      );
+      expect(second.reply).toContain("Tucson ২০১৮-এর");
+      expect(second.reply).toContain("D-12 তাকে");
+      expect(second.reply).toContain("নামে লেখা আছে");
+      expect(second.outcome.state.frame?.slots.vehicle).toMatchObject({ value: "Tucson", source: "context" });
+    },
+  );
 
   it("finds nothing for a year the name's range leaves out", async () => {
     const result = await findParts(

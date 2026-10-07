@@ -1,3 +1,5 @@
+import type { Remembered, RememberedKey } from "@dokaanbondhu/contracts";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { AssistantMessage, ChoicesEvent, PartCard, TableEvent } from "./lib/chat-store";
@@ -117,6 +119,45 @@ export function ChoiceChips(props: {
   );
 }
 
+/**
+ * What the assistant remembers, above the input of both pages (D125, D126): the car and the customer, each while its
+ * time lasts (checked every 30 s), with ✕ to forget it.
+ */
+export function MemoryLine(props: { remembered: Remembered; onForget: (key: RememberedKey) => void }) {
+  const { t } = useTranslation();
+  const [now, setNow] = useState(() => Date.now());
+  const shown = (["vehicle", "customer"] as const).flatMap((key) => {
+    const item = props.remembered[key];
+    return item && Date.parse(item.until) > now ? [{ key, label: item.label }] : [];
+  });
+  const showing = shown.length > 0;
+  useEffect(() => {
+    if (!showing) return;
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [showing]);
+  if (!showing) return null;
+  return (
+    <View style={styles.memory}>
+      <Text style={styles.muted}>{t("memory.title")}</Text>
+      {shown.map(({ key, label }) => (
+        <View key={key} style={styles.memoryItem}>
+          <Text style={styles.memoryText}>{label}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(`memory.forget_${key}`)}
+            hitSlop={8}
+            onPress={() => props.onForget(key)}
+            style={({ pressed }) => [styles.memoryForget, pressed && styles.faded]}
+          >
+            <Text style={styles.memoryX}>✕</Text>
+          </Pressable>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export function UserBubble({ text }: { text: string }) {
   return (
     <View style={[styles.bubble, styles.userBubble]}>
@@ -202,4 +243,15 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 18, color: colors.green, fontWeight: "600" },
   chipSub: { fontSize: 14, color: colors.muted },
   faded: { opacity: 0.5 },
+  memory: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingHorizontal: 12 },
+  memoryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    backgroundColor: colors.greenLight,
+    paddingLeft: 12,
+  },
+  memoryText: { fontSize: 16, color: colors.ink },
+  memoryForget: { minWidth: 44, minHeight: 40, alignItems: "center", justifyContent: "center" },
+  memoryX: { fontSize: 18, color: colors.muted, fontWeight: "700" },
 });
