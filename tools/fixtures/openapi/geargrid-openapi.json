@@ -1,0 +1,2928 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GearGrid API",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message_en": {
+                "type": "string"
+              },
+              "message_bn": {
+                "type": "string"
+              },
+              "message_bn_key": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": ["code", "message_en", "message_bn", "message_bn_key"]
+          }
+        },
+        "required": ["error"]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"]
+          },
+          "version": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": ["status", "version", "time"]
+      },
+      "Customer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "price_tier": {
+            "type": "string",
+            "enum": ["retail", "garage", "wholesale"]
+          },
+          "phone": {
+            "type": ["string", "null"]
+          },
+          "credit_limit_taka": {
+            "type": ["integer", "null"]
+          },
+          "due_balance_taka": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "name", "type", "price_tier", "phone", "credit_limit_taka", "due_balance_taka"]
+      },
+      "Supplier": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phone": {
+            "type": ["string", "null"]
+          },
+          "payable_balance_taka": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "name", "phone", "payable_balance_taka"]
+      },
+      "Part": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name_en": {
+            "type": "string"
+          },
+          "name_bn": {
+            "type": ["string", "null"]
+          },
+          "quality": {
+            "type": "string"
+          },
+          "position": {
+            "type": ["string", "null"]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "rack_location": {
+            "type": ["string", "null"]
+          },
+          "retail_price_taka": {
+            "type": "integer"
+          },
+          "garage_price_taka": {
+            "type": ["integer", "null"]
+          },
+          "wholesale_price_taka": {
+            "type": ["integer", "null"]
+          },
+          "stock_quantity": {
+            "type": "number"
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name_en",
+          "name_bn",
+          "quality",
+          "position",
+          "unit",
+          "rack_location",
+          "retail_price_taka",
+          "garage_price_taka",
+          "wholesale_price_taka",
+          "stock_quantity",
+          "is_active"
+        ]
+      },
+      "Fitment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "part_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicle_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "source": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "part_id", "vehicle_id", "note", "source", "verified", "deleted", "updated_at"]
+      },
+      "Reason": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": ["reason"]
+      },
+      "PaymentInput": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": ["cash", "bkash", "nagad", "rocket", "bank", "cheque"]
+          },
+          "amount_taka": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "trx_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "cheque": {
+            "type": "object",
+            "properties": {
+              "bank": {
+                "type": "string",
+                "minLength": 1
+              },
+              "cheque_no": {
+                "type": "string",
+                "minLength": 1
+              },
+              "due_date": {
+                "type": "string",
+                "format": "date"
+              }
+            },
+            "required": ["bank", "cheque_no", "due_date"]
+          }
+        },
+        "required": ["method", "amount_taka"]
+      },
+      "SaleInput": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "sale_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "part_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "unit_price_taka": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": ["part_id", "quantity"]
+            },
+            "minItems": 1
+          },
+          "discount": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["amount", "percent"]
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              }
+            },
+            "required": ["kind", "value"]
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentInput"
+            },
+            "default": []
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": ["items"]
+      },
+      "Warning": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": ["LOW_STOCK", "OVER_CREDIT_LIMIT", "INACTIVE_PART", "TRX_ID_MISSING", "AVG_COST_KEPT"]
+          },
+          "message_en": {
+            "type": "string"
+          },
+          "message_bn": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": ["code", "message_en", "message_bn", "details"]
+      },
+      "Sale": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoice_no": {
+            "type": ["string", "null"]
+          },
+          "customer_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "sale_time": {
+            "type": "string"
+          },
+          "subtotal_taka": {
+            "type": "integer"
+          },
+          "discount_taka": {
+            "type": "integer"
+          },
+          "round_off_taka": {
+            "type": "integer"
+          },
+          "total_taka": {
+            "type": "integer"
+          },
+          "paid_taka": {
+            "type": "integer"
+          },
+          "due_taka": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "void"]
+          },
+          "void_reason": {
+            "type": ["string", "null"]
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": ["string", "null"]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "part_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "unit_price_taka": {
+                  "type": "integer"
+                },
+                "list_price_taka": {
+                  "type": "integer"
+                },
+                "price_tier": {
+                  "type": "string"
+                },
+                "line_total_taka": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "part_id",
+                "quantity",
+                "unit_price_taka",
+                "list_price_taka",
+                "price_tier",
+                "line_total_taka"
+              ]
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "amount_taka": {
+                  "type": "integer"
+                },
+                "account_id": {
+                  "type": ["string", "null"],
+                  "format": "uuid"
+                },
+                "trx_id": {
+                  "type": ["string", "null"]
+                },
+                "cheque_id": {
+                  "type": ["string", "null"],
+                  "format": "uuid"
+                }
+              },
+              "required": ["id", "method", "amount_taka", "account_id", "trx_id", "cheque_id"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "invoice_no",
+          "customer_id",
+          "sale_time",
+          "subtotal_taka",
+          "discount_taka",
+          "round_off_taka",
+          "total_taka",
+          "paid_taka",
+          "due_taka",
+          "status",
+          "void_reason",
+          "flags",
+          "note",
+          "items",
+          "payments"
+        ]
+      },
+      "SaleAnswer": {
+        "type": "object",
+        "properties": {
+          "sale": {
+            "$ref": "#/components/schemas/Sale"
+          },
+          "customer": {
+            "type": ["object", "null"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "due_balance_taka": {
+                "type": "integer"
+              }
+            },
+            "required": ["id", "due_balance_taka"]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": ["sale", "customer", "warnings", "dry_run"]
+      },
+      "CustomerPaymentInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/PaymentInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "customer_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "received_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": ["customer_id"]
+          }
+        ]
+      },
+      "CustomerPayment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount_taka": {
+            "type": "integer"
+          },
+          "method": {
+            "type": "string"
+          },
+          "account_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "trx_id": {
+            "type": ["string", "null"]
+          },
+          "cheque_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "received_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "reversed"]
+          },
+          "reversal_reason": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "id",
+          "customer_id",
+          "amount_taka",
+          "method",
+          "account_id",
+          "trx_id",
+          "cheque_id",
+          "received_at",
+          "status",
+          "reversal_reason"
+        ]
+      },
+      "CustomerPaymentAnswer": {
+        "type": "object",
+        "properties": {
+          "payment": {
+            "$ref": "#/components/schemas/CustomerPayment"
+          },
+          "customer": {
+            "type": ["object", "null"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "due_balance_taka": {
+                "type": "integer"
+              }
+            },
+            "required": ["id", "due_balance_taka"]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": ["payment", "customer", "warnings", "dry_run"]
+      },
+      "PurchaseInput": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bill_no": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "purchase_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "part_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "unit_cost_taka": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": ["part_id", "quantity", "unit_cost_taka"]
+            },
+            "minItems": 1
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentInput"
+            },
+            "default": []
+          }
+        },
+        "required": ["supplier_id", "items"]
+      },
+      "Purchase": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bill_no": {
+            "type": ["string", "null"]
+          },
+          "purchase_time": {
+            "type": "string"
+          },
+          "total_taka": {
+            "type": "integer"
+          },
+          "paid_taka": {
+            "type": "integer"
+          },
+          "due_taka": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["completed", "reversed"]
+          },
+          "reversal_reason": {
+            "type": ["string", "null"]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "part_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "unit_cost_taka": {
+                  "type": "integer"
+                },
+                "line_total_taka": {
+                  "type": "integer"
+                }
+              },
+              "required": ["id", "part_id", "quantity", "unit_cost_taka", "line_total_taka"]
+            }
+          },
+          "payments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "amount_taka": {
+                  "type": "integer"
+                },
+                "account_id": {
+                  "type": ["string", "null"],
+                  "format": "uuid"
+                },
+                "trx_id": {
+                  "type": ["string", "null"]
+                },
+                "cheque_id": {
+                  "type": ["string", "null"],
+                  "format": "uuid"
+                }
+              },
+              "required": ["id", "method", "amount_taka", "account_id", "trx_id", "cheque_id"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "supplier_id",
+          "bill_no",
+          "purchase_time",
+          "total_taka",
+          "paid_taka",
+          "due_taka",
+          "status",
+          "reversal_reason",
+          "items",
+          "payments"
+        ]
+      },
+      "PurchaseAnswer": {
+        "type": "object",
+        "properties": {
+          "purchase": {
+            "$ref": "#/components/schemas/Purchase"
+          },
+          "supplier": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "payable_balance_taka": {
+                "type": "integer"
+              }
+            },
+            "required": ["id", "payable_balance_taka"]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": ["purchase", "supplier", "warnings", "dry_run"]
+      },
+      "ReturnInput": {
+        "type": "object",
+        "properties": {
+          "sale_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sale_item_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "restock": {
+                  "type": "string",
+                  "enum": ["yes", "damaged"]
+                }
+              },
+              "required": ["sale_item_id", "quantity"]
+            },
+            "minItems": 1
+          },
+          "refund_due_taka": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "refund_cash_taka": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "return_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["sale_id", "items"]
+      },
+      "Return": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "sale_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customer_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "return_time": {
+            "type": "string"
+          },
+          "total_taka": {
+            "type": "integer"
+          },
+          "refund_due_taka": {
+            "type": ["integer", "null"]
+          },
+          "refund_cash_taka": {
+            "type": ["integer", "null"]
+          },
+          "account_id": {
+            "type": ["string", "null"],
+            "format": "uuid"
+          },
+          "reason": {
+            "type": ["string", "null"]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": ["string", "null"],
+                  "format": "uuid"
+                },
+                "sale_item_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "part_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "quantity": {
+                  "type": "number"
+                },
+                "unit_price_taka": {
+                  "type": "integer"
+                },
+                "restock": {
+                  "type": "string",
+                  "enum": ["yes", "damaged"]
+                }
+              },
+              "required": ["id", "sale_item_id", "part_id", "quantity", "unit_price_taka", "restock"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "sale_id",
+          "customer_id",
+          "return_time",
+          "total_taka",
+          "refund_due_taka",
+          "refund_cash_taka",
+          "account_id",
+          "reason",
+          "items"
+        ]
+      },
+      "ReturnAnswer": {
+        "type": "object",
+        "properties": {
+          "return": {
+            "$ref": "#/components/schemas/Return"
+          },
+          "customer": {
+            "type": ["object", "null"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "due_balance_taka": {
+                "type": "integer"
+              }
+            },
+            "required": ["id", "due_balance_taka"]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Warning"
+            }
+          },
+          "dry_run": {
+            "type": "boolean"
+          }
+        },
+        "required": ["return", "customer", "warnings", "dry_run"]
+      },
+      "PriceInput": {
+        "type": "object",
+        "properties": {
+          "retail_price_taka": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "garage_price_taka": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          },
+          "wholesale_price_taka": {
+            "type": ["integer", "null"],
+            "minimum": 0
+          }
+        }
+      },
+      "FitmentInput": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vehicle_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": ["part_id", "vehicle_id"]
+      },
+      "FitmentChange": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "enum": [true]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Whether the API is up; needs no key",
+        "responses": {
+          "200": {
+            "description": "The API is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/customers/{id}": {
+      "get": {
+        "operationId": "getCustomer",
+        "summary": "Read a customer by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The customer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "customer": {
+                      "$ref": "#/components/schemas/Customer"
+                    }
+                  },
+                  "required": ["customer"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/suppliers/{id}": {
+      "get": {
+        "operationId": "getSupplier",
+        "summary": "Read a supplier by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The supplier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "supplier": {
+                      "$ref": "#/components/schemas/Supplier"
+                    }
+                  },
+                  "required": ["supplier"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/parts/{id}": {
+      "get": {
+        "operationId": "getPart",
+        "summary": "Read a part by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The part",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "$ref": "#/components/schemas/Part"
+                    }
+                  },
+                  "required": ["part"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fitments/{id}": {
+      "get": {
+        "operationId": "getFitment",
+        "summary": "Read a fitment by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The fitment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fitment": {
+                      "$ref": "#/components/schemas/Fitment"
+                    }
+                  },
+                  "required": ["fitment"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateFitment",
+        "summary": "Edit a fitment link, or remove it with { deleted: true }",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitmentChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fitment": {
+                      "$ref": "#/components/schemas/Fitment"
+                    }
+                  },
+                  "required": ["fitment"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales": {
+      "post": {
+        "operationId": "recordSale",
+        "summary": "Record a sale, on credit or paid; ?dry_run=true checks it and computes the totals without saving",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-supports-dry-run": true,
+        "x-compensating-operation": {
+          "operation": "voidSale",
+          "id_from": "sale.id",
+          "body": {
+            "reason": "{undo_reason}"
+          }
+        },
+        "x-read-back": {
+          "operation": "getSale",
+          "id_from": "sale.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false,
+            "name": "dry_run",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaleInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry run: what the sale would be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleAnswer"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The sale was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales/{id}/void": {
+      "post": {
+        "operationId": "voidSale",
+        "summary": "Cancel a sale: stock, ledger and money go back",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The cancelled sale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaleAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales/{id}": {
+      "get": {
+        "operationId": "getSale",
+        "summary": "Read a sale by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The sale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sale": {
+                      "$ref": "#/components/schemas/Sale"
+                    }
+                  },
+                  "required": ["sale"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/customer-payments": {
+      "post": {
+        "operationId": "receivePayment",
+        "summary": "Receive a payment from a customer against their due; ?dry_run=true checks it without saving",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-supports-dry-run": true,
+        "x-compensating-operation": {
+          "operation": "reversePayment",
+          "id_from": "payment.id",
+          "body": {
+            "reason": "{undo_reason}"
+          }
+        },
+        "x-read-back": {
+          "operation": "getPayment",
+          "id_from": "payment.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false,
+            "name": "dry_run",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerPaymentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry run: what the payment would be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPaymentAnswer"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The payment was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPaymentAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/customer-payments/{id}/reverse": {
+      "post": {
+        "operationId": "reversePayment",
+        "summary": "Reverse a customer payment: the due and the money go back",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reversed payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerPaymentAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/customer-payments/{id}": {
+      "get": {
+        "operationId": "getPayment",
+        "summary": "Read a customer payment by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "payment": {
+                      "$ref": "#/components/schemas/CustomerPayment"
+                    }
+                  },
+                  "required": ["payment"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchases": {
+      "post": {
+        "operationId": "stockIn",
+        "summary": "Record a purchase from a supplier (stock in); ?dry_run=true checks it without saving",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-supports-dry-run": true,
+        "x-compensating-operation": {
+          "operation": "reversePurchase",
+          "id_from": "purchase.id",
+          "body": {
+            "reason": "{undo_reason}"
+          }
+        },
+        "x-read-back": {
+          "operation": "getPurchase",
+          "id_from": "purchase.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false,
+            "name": "dry_run",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry run: what the purchase would be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseAnswer"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The purchase was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchases/{id}/reverse": {
+      "post": {
+        "operationId": "reversePurchase",
+        "summary": "Reverse a purchase: stock, payable and money go back",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Reason"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The reversed purchase",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchases/{id}": {
+      "get": {
+        "operationId": "getPurchase",
+        "summary": "Read a purchase by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The purchase",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "purchase": {
+                      "$ref": "#/components/schemas/Purchase"
+                    }
+                  },
+                  "required": ["purchase"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/returns": {
+      "post": {
+        "operationId": "recordReturn",
+        "summary": "Record a return against a sale; ?dry_run=true without the refund amounts gives the total and the customer's due",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-supports-dry-run": true,
+        "x-read-back": {
+          "operation": "getReturn",
+          "id_from": "return.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false,
+            "name": "dry_run",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry run: what the return would be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnAnswer"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The return was saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnAnswer"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/returns/{id}": {
+      "get": {
+        "operationId": "getReturn",
+        "summary": "Read a return by ID",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The return",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "return": {
+                      "$ref": "#/components/schemas/Return"
+                    }
+                  },
+                  "required": ["return"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/parts/{id}/price": {
+      "patch": {
+        "operationId": "updatePrice",
+        "summary": "Change a part's retail, garage or wholesale price; the answer keeps the previous prices for an undo",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-compensating-operation": {
+          "operation": "updatePrice",
+          "id_from": "part.id",
+          "body": {
+            "retail_price_taka": "{previous.retail_price_taka}",
+            "garage_price_taka": "{previous.garage_price_taka}",
+            "wholesale_price_taka": "{previous.wholesale_price_taka}"
+          }
+        },
+        "x-read-back": {
+          "operation": "getPart",
+          "id_from": "part.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new prices and the previous ones",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "type": "object",
+                      "properties": {
+                        "retail_price_taka": {
+                          "type": "integer"
+                        },
+                        "garage_price_taka": {
+                          "type": ["integer", "null"]
+                        },
+                        "wholesale_price_taka": {
+                          "type": ["integer", "null"]
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": ["retail_price_taka", "garage_price_taka", "wholesale_price_taka", "id"]
+                    },
+                    "previous": {
+                      "type": "object",
+                      "properties": {
+                        "retail_price_taka": {
+                          "type": "integer"
+                        },
+                        "garage_price_taka": {
+                          "type": ["integer", "null"]
+                        },
+                        "wholesale_price_taka": {
+                          "type": ["integer", "null"]
+                        }
+                      },
+                      "required": ["retail_price_taka", "garage_price_taka", "wholesale_price_taka"]
+                    }
+                  },
+                  "required": ["part", "previous"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fitments": {
+      "post": {
+        "operationId": "addFitment",
+        "summary": "Record that a part fits a vehicle",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-compensating-operation": {
+          "operation": "updateFitment",
+          "id_from": "fitment.id",
+          "body": {
+            "deleted": true
+          }
+        },
+        "x-read-back": {
+          "operation": "getFitment",
+          "id_from": "fitment.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{8,100}$"
+            },
+            "required": false,
+            "name": "Idempotency-Key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "X-Acting-User",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FitmentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fitment": {
+                      "$ref": "#/components/schemas/Fitment"
+                    }
+                  },
+                  "required": ["fitment"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {},
+  "x-host-features": {
+    "dry_run": "?dry_run=true",
+    "idempotency_header": "Idempotency-Key",
+    "bangla_errors": "error.message_bn",
+    "acting_user_header": "X-Acting-User"
+  }
+}

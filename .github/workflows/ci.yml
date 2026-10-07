@@ -58,6 +58,7 @@ jobs:
       DOKAAN_RO_PASSWORD: ci-dokaan-ro
       SHOPB_DATABASE_URL: mysql://root:ci@127.0.0.1:3306/shopb
       SHOPB_RO_PASSWORD: ci-shopb-ro
+      GEARGRID_API_URL: http://localhost:4000 # GearGrid's write API, started below (spec 6.10, 18.3)
     steps:
       - uses: actions/checkout@v5
       - uses: actions/checkout@v5 # GearGrid is public, so no key is needed (D66)
@@ -82,6 +83,15 @@ jobs:
           npm ci
           psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/bootstrap.sql
           npm run db:migrate && npm run db:roles && npm run db:seed
+      - name: GearGrid's API on port 4000, as app_api (spec 6.10)
+        working-directory: geargrid/apps/web
+        env:
+          DATABASE_URL: postgres://app_api:ci-app-api@localhost:5432/geargrid
+        run: |
+          npx next build
+          nohup npx next start -p 4000 > "$RUNNER_TEMP/geargrid-api.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:4000/api/v1/health && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/geargrid-api.log"; exit 1
       - name: Platform database (bootstrap, migrate, roles)
         run: |
           npm ci

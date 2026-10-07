@@ -59,3 +59,12 @@ export {
   type NameToCheck,
   type SpeechCheckResult,
 } from "./speech-check";
+export {
+  importOpenApi,
+  OpenApiImportError,
+  snakeCase,
+  type ImportedCapability,
+  type ImportedDocument,
+  type ImportedOperationRef,
+  type ImportedParam,
+} from "./openapi-import";
