@@ -14,7 +14,8 @@ const isLocal = (() => {
     return false;
   }
 })();
-if (process.env.CI === "true" && !isLocal) throw new Error("the OpenAPI test needs the API the CI job starts");
+if (process.env.CI === "true" && !isLocal)
+  throw new Error("the OpenAPI test needs the API the CI job starts");
 
 const fixture = JSON.parse(
   readFileSync(new URL("../../../tools/fixtures/openapi/geargrid-openapi.json", import.meta.url), "utf8"),
