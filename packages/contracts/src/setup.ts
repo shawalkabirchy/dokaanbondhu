@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-// Setup, the database half (spec 8.3, 11.1, 11.3, 11.4, 11.7): the connection, the schema map review with sample values
-// as they will be spoken, the catalog sync and the stock-value formula. Secrets go in and never come back out.
+// Setup (spec 8.3): the database half (11.1, 11.3, 11.4, 11.7: the connection, the schema map review with sample values
+// as they will be spoken, the catalog sync and the stock-value formula) and the API half (11.8, 11.12, 11.13: the API
+// connection, the capabilities imported from its OpenAPI document, the host feature list). Secrets go in and never
+// come back out.
 
-export const connectionCreateSchema = z.object({
+export const dbConnectionCreateSchema = z.object({
   kind: z.literal("db"),
   label: z.string().trim().min(1).max(60).optional(),
   dialect: z.enum(["postgres", "mysql"]),
@@ -18,6 +20,27 @@ export const connectionCreateSchema = z.object({
   ssl_ca: z.string().trim().max(20_000).optional(),
   pool_max: z.number().int().min(1).max(10).default(3),
 });
+
+/** An API connection: api_key sends the secret in a named header, bearer as Authorization (spec 11.12, D134). */
+export const apiConnectionCreateSchema = z.object({
+  kind: z.literal("api"),
+  label: z.string().trim().min(1).max(60).optional(),
+  /** https, or http only for localhost; the operations' paths are added to it. */
+  base_url: z.string().trim().min(1).max(500),
+  auth_type: z.enum(["api_key", "bearer"]),
+  /** api_key only; left out, the connection test takes it from the document's apiKey scheme. */
+  auth_header: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9-]{1,64}$/)
+    .optional(),
+  secret: z.string().min(1).max(2000),
+});
+
+export const connectionCreateSchema = z.discriminatedUnion("kind", [
+  dbConnectionCreateSchema,
+  apiConnectionCreateSchema,
+]);
 export type ConnectionCreate = z.input<typeof connectionCreateSchema>;
 
 export const connectionViewSchema = z.object({
@@ -31,6 +54,9 @@ export const connectionViewSchema = z.object({
   username: z.string().nullable(),
   ssl_mode: z.enum(["verify-full", "require", "disable"]).nullable(),
   has_ssl_ca: z.boolean(),
+  base_url: z.string().nullable(),
+  auth_type: z.enum(["api_key", "bearer", "session"]).nullable(),
+  auth_header: z.string().nullable(),
   status: z.enum(["pending", "active", "error", "disabled"]),
   last_checked_at: z.string().nullable(),
   last_error: z.string().nullable(),
@@ -41,6 +67,9 @@ export type ConnectionView = z.infer<typeof connectionViewSchema>;
 export const connectionTestSchema = z.object({
   ok: z.boolean(),
   tables: z.number().int().optional(),
+  /** API connections: the document's operations, and whether the host accepted the secret. */
+  operations: z.number().int().optional(),
+  key: z.enum(["accepted", "refused", "not_checked"]).optional(),
   error: z.string().optional(),
   connection: connectionViewSchema,
 });
@@ -202,3 +231,190 @@ export const wordsViewSchema = z.object({
 export type WordsView = z.infer<typeof wordsViewSchema>;
 
 export const wordDecisionSchema = z.object({ action: z.enum(["add", "dismiss"]) }).strict();
+
+// The API half (spec 11.8, 11.13; D133, D134): capabilities imported from the host's OpenAPI document, each with the
+// proposals the owner confirms, and the host feature list.
+
+/** Confirmation template kinds (spec 11.10). */
+export const TEMPLATE_KINDS = [
+  "sale",
+  "payment",
+  "stock_in",
+  "return",
+  "price_update",
+  "add_fitment",
+  "generic",
+] as const;
+export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
+
+/** Semantic slots a parameter is filled from (spec 9.6); a required parameter without one is asked as extra.<name>. */
+export const SEMANTIC_SLOTS = [
+  "customer",
+  "supplier",
+  "items",
+  "part",
+  "vehicle",
+  "payment",
+  "amount",
+  "prices",
+  "sale_ref",
+  "refund",
+  "reason",
+  "note",
+] as const;
+export type SemanticSlot = (typeof SEMANTIC_SLOTS)[number];
+
+/** The schema map's concepts an ID parameter may name (spec 7.2). */
+export const ENTITY_CONCEPTS = [
+  "Part",
+  "Vehicle",
+  "Fitment",
+  "StockItem",
+  "Price",
+  "Customer",
+  "Sale",
+  "SaleItem",
+  "Return",
+  "Payment",
+  "Supplier",
+  "Purchase",
+] as const;
+
+export const capabilityParamViewSchema = z.object({
+  id: z.uuid(),
+  path: z.string(),
+  location: z.enum(["body", "query", "path"]),
+  type: z.string(),
+  required: z.boolean(),
+  enum_values: z.array(z.string()).nullable(),
+  entity_concept: z.string().nullable(),
+  semantic_slot: z.string().nullable(),
+  safety_critical: z.boolean(),
+  /** Spoken word -> the host's value. */
+  spoken_map: z.record(z.string(), z.string()).nullable(),
+  confirmed: z.boolean(),
+});
+export type CapabilityParamView = z.infer<typeof capabilityParamViewSchema>;
+
+/** Another capability by its name, and where its ID is read in this one's answer (sale.id). */
+const operationRefSchema = z.object({
+  operation: z.string().min(1).max(100),
+  id_from: z.string().min(1).max(200),
+});
+
+export const capabilityViewSchema = z.object({
+  id: z.uuid(),
+  connection_id: z.uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  kind: z.enum(["read", "write"]),
+  http_method: z.string().nullable(),
+  path: z.string().nullable(),
+  source: z.enum(["openapi", "scanner", "demo"]),
+  schema_hash: z.string(),
+  required_role: z.enum(["staff", "owner"]),
+  template: z.enum(TEMPLATE_KINDS).nullable(),
+  enabled: z.boolean(),
+  verified_at: z.string().nullable(),
+  /** The host can run it as a dry run. */
+  dry_run: z.boolean(),
+  /** Undo: the compensating capability and the body it is sent (placeholders such as {undo_reason}). */
+  compensation: operationRefSchema
+    .extend({ capability_id: z.uuid().nullable(), body: z.record(z.string(), z.unknown()) })
+    .nullable(),
+  read_back: operationRefSchema.nullable(),
+  /** Another capability's compensation: only undo calls it, it is never a tool (D52). */
+  is_compensation: z.boolean(),
+  params: z.array(capabilityParamViewSchema),
+});
+export type CapabilityView = z.infer<typeof capabilityViewSchema>;
+
+/** The host feature list (spec 11.13, the architecture's example); every key is optional. */
+export const hostFeaturesSchema = z
+  .object({
+    openapi: z.string().startsWith("/").max(200),
+    dry_run: z.string().max(200),
+    idempotency_header: z.string().max(64),
+    bangla_errors: z.string().max(200),
+    acting_user_header: z.string().max(64),
+    sync_status: z.string().max(200),
+    reports: z.array(z.string().max(60)).max(20),
+    report_path: z.string().max(200),
+  })
+  .partial()
+  .strict();
+export type HostFeatures = z.infer<typeof hostFeaturesSchema>;
+
+/** A detected list keeps only the keys and values the feature list knows. */
+export function knownFeatures(detected: Record<string, unknown>): HostFeatures {
+  const shape = hostFeaturesSchema.shape;
+  const known: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(detected)) {
+    const field = shape[key as keyof typeof shape];
+    if (field && value !== undefined && field.safeParse(value).success) known[key] = value;
+  }
+  return known as HostFeatures;
+}
+
+export const discoverSchema = z.object({ connection_id: z.uuid() }).strict();
+
+export const discoverResultSchema = z.object({
+  connection_id: z.uuid(),
+  added: z.array(z.string()),
+  /** The request changed: switched off until the sandbox verifies it again. */
+  changed: z.array(z.string()),
+  kept: z.array(z.string()),
+  /** No longer in the document: switched off. */
+  removed: z.array(z.string()),
+  /** A compensation names an operation the document does not have. */
+  unresolved: z.array(z.string()),
+  detected_features: hostFeaturesSchema,
+  features_confirmed: z.boolean(),
+  capabilities: z.array(capabilityViewSchema),
+});
+export type DiscoverResult = z.infer<typeof discoverResultSchema>;
+
+export const capabilityPatchSchema = z
+  .object({
+    enabled: z.boolean(),
+    required_role: z.enum(["staff", "owner"]),
+    template: z.enum(TEMPLATE_KINDS),
+    compensation: operationRefSchema
+      .extend({ body: z.record(z.string(), z.unknown()).default({}) })
+      .nullable(),
+    read_back: operationRefSchema.nullable(),
+    params: z
+      .array(
+        z
+          .object({
+            path: z.string().min(1).max(200),
+            entity_concept: z.enum(ENTITY_CONCEPTS).nullable().optional(),
+            semantic_slot: z.enum(SEMANTIC_SLOTS).nullable().optional(),
+            spoken_map: z
+              .record(z.string().trim().min(1).max(60), z.string().min(1).max(100))
+              .nullable()
+              .optional(),
+            confirmed: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .max(200),
+  })
+  .partial()
+  .strict();
+export type CapabilityPatch = z.infer<typeof capabilityPatchSchema>;
+
+export const featuresViewSchema = z.object({
+  connections: z.array(
+    z.object({
+      connection_id: z.uuid(),
+      label: z.string().nullable(),
+      features: hostFeaturesSchema,
+      /** null while the list is only detected. */
+      confirmed_at: z.string().nullable(),
+    }),
+  ),
+});
+export type FeaturesView = z.infer<typeof featuresViewSchema>;
+
+export const featuresPutSchema = z.object({ connection_id: z.uuid(), features: hostFeaturesSchema }).strict();

@@ -249,7 +249,8 @@ function slotOf(path: string, linesWithParts: Set<string>): string | null {
   return null;
 }
 
-const SAFETY_CRITICAL = new Set([
+/** Slots whose value is always confirmed with care (D133). */
+export const SAFETY_CRITICAL_SLOTS: ReadonlySet<string> = new Set([
   "customer",
   "supplier",
   "items",
@@ -342,7 +343,7 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
         param.entityConcept = param.type.endsWith(":uuid") || /_id$/.test(leaf) ? conceptOf(leaf) : null;
         param.semanticSlot =
           param.location === "body" || param.location === "query" ? slotOf(path, linesWithParts) : null;
-        param.safetyCritical = SAFETY_CRITICAL.has(param.semanticSlot ?? "");
+        param.safetyCritical = SAFETY_CRITICAL_SLOTS.has(param.semanticSlot ?? "");
         param.spokenMap = spokenMapOf(param.enumValues);
       }
 

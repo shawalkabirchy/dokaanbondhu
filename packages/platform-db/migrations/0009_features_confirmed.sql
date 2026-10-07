@@ -1,0 +1,1 @@
+ALTER TABLE "connections" ADD COLUMN "features_confirmed_at" timestamp with time zone;

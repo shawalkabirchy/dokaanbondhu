@@ -48,7 +48,14 @@ export {
 } from "./reports";
 export * from "./schema-map";
 export { buildQuery, quoteName, type BuiltQuery, type QuerySpec } from "./sql";
-export { confirmEntity, ConnectionNotUsable, loadHostDb, loadSchemaMap, saveProposal } from "./store";
+export {
+  confirmEntity,
+  ConnectionNotUsable,
+  loadApiConnection,
+  loadHostDb,
+  loadSchemaMap,
+  saveProposal,
+} from "./store";
 export { carsInText, parsedFitments, yearsInText } from "./fitment-text";
 export { fittedParts, syncConnection, type SyncCounts, type WithTx } from "./sync";
 export {
@@ -61,6 +68,7 @@ export {
 } from "./speech-check";
 export {
   importOpenApi,
+  SAFETY_CRITICAL_SLOTS,
   OpenApiImportError,
   snakeCase,
   type ImportedCapability,
@@ -68,3 +76,28 @@ export {
   type ImportedOperationRef,
   type ImportedParam,
 } from "./openapi-import";
+export {
+  apiKeyHeaderOf,
+  AUTH_ADAPTERS,
+  authHeaders,
+  baseUrlProblem,
+  callHost,
+  checkApiConnection,
+  fetchOpenApi,
+  HOST_TIMEOUT_MS,
+  HostCallFailed,
+  hostUrl,
+  keyProbeOf,
+  openApiPath,
+  type ApiConnection,
+  type ApiConnectionCheck,
+  type HostRequest,
+  type HostResponse,
+} from "./api";
+export {
+  CapabilityChangeRefused,
+  capabilityViews,
+  changeCapability,
+  saveImport,
+  type ImportSummary,
+} from "./registry";

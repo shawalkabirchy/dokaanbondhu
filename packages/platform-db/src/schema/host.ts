@@ -62,6 +62,7 @@ export const connections = pgTable(
     features: jsonb("features")
       .notNull()
       .default(sql`'{}'::jsonb`), // the host feature list
+    featuresConfirmedAt: timestamptz("features_confirmed_at"), // null while the list is only detected (D134)
     appWords: jsonb("app_words")
       .notNull()
       .default(sql`'{}'::jsonb`), // the owner's value for an app word the word list does not know (D121, D122)

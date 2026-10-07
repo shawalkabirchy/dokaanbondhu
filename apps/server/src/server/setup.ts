@@ -4,9 +4,11 @@ import {
   CONCEPT_FIELDS,
   CONCEPTS,
   introspect,
+  loadApiConnection,
   loadHostDb,
   loadSchemaMap,
   spokenSamples,
+  type ApiConnection,
   type Dialect,
   type EntityMap,
   type HostDb,
@@ -49,6 +51,9 @@ export function connectionView(row: ConnectionRow): ConnectionView {
     username: row.username,
     ssl_mode: row.sslMode as ConnectionView["ssl_mode"],
     has_ssl_ca: Boolean(row.sslCa),
+    base_url: row.baseUrl,
+    auth_type: row.authType as ConnectionView["auth_type"],
+    auth_header: row.authHeader,
     status: row.status as ConnectionView["status"],
     last_checked_at: row.lastCheckedAt?.toISOString() ?? null,
     last_error: row.lastError,
@@ -66,6 +71,24 @@ export async function dbConnection(shopId: string, connectionId: string): Promis
   );
   if (!row) throw appError("NOT_FOUND", 404, { entity: "connection" });
   return row;
+}
+
+/** One of the shop's API connections; another shop's, or a database connection, is not found. */
+export async function apiConnectionRow(shopId: string, connectionId: string): Promise<ConnectionRow> {
+  const [row] = await platform().withShop(shopId, (tx) =>
+    tx
+      .select()
+      .from(connections)
+      .where(and(eq(connections.id, connectionId), eq(connections.kind, "api"))),
+  );
+  if (!row) throw appError("NOT_FOUND", 404, { entity: "connection" });
+  return row;
+}
+
+/** The API connection with its secret, for one call to the host. */
+export async function apiConnectionOf(shopId: string, connectionId: string): Promise<ApiConnection> {
+  const aesKey = parseAesKey(serverEnv().AES_KEY);
+  return platform().withShop(shopId, (tx) => loadApiConnection(tx, connectionId, aesKey));
 }
 
 export async function hostDbOf(shopId: string, connectionId: string): Promise<HostDb> {

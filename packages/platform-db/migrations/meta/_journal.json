@@ -64,6 +64,13 @@
       "when": 1791316235566,
       "tag": "0008_drop_price_tiers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791415605561,
+      "tag": "0009_features_confirmed",
+      "breakpoints": true
     }
   ]
 }

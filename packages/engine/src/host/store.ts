@@ -1,6 +1,7 @@
 import { connections, schemaEntities, schemaFields, type Tx } from "@dokaanbondhu/platform-db";
 import { and, eq, inArray } from "drizzle-orm";
 import { decryptSecret } from "../crypto";
+import type { ApiConnection } from "./api";
 import type { Proposal } from "./mapper";
 import type { HostDb } from "./pool";
 import type { Concept, Dialect, EntityMap, FieldMap, JoinMap, RowFilter, SchemaMap } from "./schema-map";
@@ -32,6 +33,30 @@ export async function loadHostDb(tx: Tx, connectionId: string, aesKey: Buffer): 
     sslMode: (row.sslMode ?? "verify-full") as HostDb["sslMode"],
     sslCa: row.sslCa,
     poolMax: row.poolMax,
+  };
+}
+
+/** An API connection with its secret decrypted (only here, never logged; spec 13.5). */
+export async function loadApiConnection(
+  tx: Tx,
+  connectionId: string,
+  aesKey: Buffer,
+): Promise<ApiConnection> {
+  const [row] = await tx.select().from(connections).where(eq(connections.id, connectionId));
+  if (!row || row.kind !== "api" || !row.baseUrl || !row.authType) {
+    throw new ConnectionNotUsable("not a complete API connection");
+  }
+  return {
+    id: row.id,
+    baseUrl: row.baseUrl,
+    authType: row.authType,
+    authHeader: row.authHeader,
+    secret: decryptSecret(
+      aesKey,
+      { table: "connections", rowId: row.id, column: "secret_encrypted" },
+      row.secretEncrypted,
+    ),
+    features: row.features as Record<string, unknown>,
   };
 }
 
