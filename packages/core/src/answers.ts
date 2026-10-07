@@ -278,7 +278,17 @@ export function question(input: QuestionInput): string {
     case "customer":
     case "supplier":
       text =
-        input.names && input.names.length >= 2 ? `${input.names[0]} নাকি ${input.names[1]}?` : "কার নামে?";
+        input.names && input.names.length >= 2
+          ? `${input.names[0]} নাকি ${input.names[1]}?`
+          : input.slot === "supplier"
+            ? "কার কাছ থেকে?"
+            : "কার নামে?";
+      break;
+    case "amount":
+      text = "কত টাকা?";
+      break;
+    case "unit_price":
+      text = `প্রতি ${input.unit ? quantityUnit(input.unit) : "টা"} দাম কত?`;
       break;
     case "quantity":
       text = `কয় ${input.unit ? quantityUnit(input.unit) : "টা"}?`;

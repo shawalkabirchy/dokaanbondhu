@@ -153,6 +153,12 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     expect(
       question({ slot: "quantity", unit: "set", understood: "রহিম মোটরস, এক্সিওর সামনের ব্রেক প্যাড" }),
     ).toBe("রহিম মোটরস, এক্সিওর সামনের ব্রেক প্যাড — কয় সেট?");
+    // the write path's own questions (D135)
+    expect(question({ slot: "amount" })).toBe("কত টাকা?");
+    expect(question({ slot: "unit_price", unit: "liter" })).toBe("প্রতি লিটার দাম কত?");
+    expect(question({ slot: "unit_cost", unit: "set" })).toBe("প্রতি সেট কেনা দাম কত?");
+    expect(question({ slot: "supplier" })).toBe("কার কাছ থেকে?");
+    expect(question({ slot: "payment" })).toBe("বাকিতে না নগদে?");
   });
 
   it("offers chips with price and stock", () => {
