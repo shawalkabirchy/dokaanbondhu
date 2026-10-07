@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN, spokenText } from "@dokaanbondhu/core";
+import { ASK_AGAIN, spokenText, trimSilence } from "@dokaanbondhu/core";
+import { encryptSecret } from "@dokaanbondhu/engine/crypto";
 import { aiProviders, createPlatform, messages, type Platform } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +18,7 @@ import {
   type HostShop,
 } from "./harness";
 import { startStubLlm, type StubLlm } from "./stub-llm";
+import { ELEVEN_KEY, fakeElevenMp3, startStubElevenLabs, type StubElevenLabs } from "./stub-elevenlabs";
 import { fakeMp3, startStubSpeech, type StubSpeech } from "./stub-speech";
 
 // Voice turns end to end (spec 8.4, 8.5, 9.1, 12.3): PCM chunks, finish, silence trim, the speech worker (a stub on a
@@ -53,6 +55,7 @@ describe.skipIf(!allLocal)("voice turns", () => {
   let admin: Platform;
   let llm: StubLlm;
   let speech: StubSpeech;
+  let eleven: StubElevenLabs;
   let shop: HostShop;
   let routes: {
     conversations: { POST: unknown };
@@ -145,9 +148,32 @@ describe.skipIf(!allLocal)("voice turns", () => {
   };
   const padsQuestion = "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?";
 
+  const elevenRow = { stt: randomUUID(), tts: randomUUID() };
+  /** The ElevenLabs key as set-provider stores it: encrypted for its own row (spec 13.5). */
+  const elevenKey = (rowId: string) =>
+    encryptSecret(aesKey, { table: "ai_providers", rowId, column: "secret_encrypted" }, ELEVEN_KEY);
+
+  /** Runs with the developer's switches set (D98), as after a server restart. */
+  async function withSides(sides: Record<string, string>, run: () => Promise<void>) {
+    const cached = globalThis as { __dokaanServerEnv?: unknown };
+    const before = Object.fromEntries(Object.keys(sides).map((name) => [name, process.env[name]]));
+    Object.assign(process.env, sides);
+    delete cached.__dokaanServerEnv;
+    try {
+      await run();
+    } finally {
+      for (const [name, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      delete cached.__dokaanServerEnv;
+    }
+  }
+
   beforeAll(async () => {
     llm = await startStubLlm();
     speech = await startStubSpeech();
+    eleven = await startStubElevenLabs();
     admin = createPlatform(urls.admin, { max: 1 });
     shop = await createHostShop(admin, aesKey, llm.baseUrl, "Voice shop");
     await admin.withAdmin((tx) =>
@@ -168,13 +194,28 @@ describe.skipIf(!allLocal)("voice turns", () => {
           active: true,
           external: false,
         },
-        // the paid side (D98): chosen only with AI_LISTEN=api, never for evaluation requests
+        // the paid side (D98): chosen only with AI_LISTEN=api or AI_SPEAK=api, never for evaluation requests
         {
+          id: elevenRow.stt,
           shopId: shop.shopId,
           job: "stt",
           provider: "elevenlabs",
           model: "scribe_v2",
+          baseUrl: eleven.baseUrl,
+          secretEncrypted: elevenKey(elevenRow.stt),
           active: false, // one active speech row per shop and job; a side without one uses its first row
+          external: true,
+        },
+        {
+          id: elevenRow.tts,
+          shopId: shop.shopId,
+          job: "tts",
+          provider: "elevenlabs",
+          model: "eleven_v3_conversational",
+          baseUrl: eleven.baseUrl,
+          secretEncrypted: elevenKey(elevenRow.tts),
+          options: { voice_ids: { aditi: "voice-aditi", arjun: "voice-arjun" } },
+          active: false,
           external: true,
         },
       ]),
@@ -194,6 +235,9 @@ describe.skipIf(!allLocal)("voice turns", () => {
     speech.asrRequests.length = 0;
     speech.ttsTexts.length = 0;
     speech.ttsFails = false;
+    eleven.transcripts.length = 0;
+    eleven.scribeRequests.length = 0;
+    eleven.voiceRequests.length = 0;
   });
 
   afterAll(async () => {
@@ -202,6 +246,7 @@ describe.skipIf(!allLocal)("voice turns", () => {
     await hostPools().closeAll();
     await llm.close();
     await speech.close();
+    await eleven.close();
   });
 
   it("answers a spoken question: the trimmed clip with keyterms, the transcript, then each sentence as text and audio", async () => {
@@ -348,31 +393,94 @@ describe.skipIf(!allLocal)("voice turns", () => {
     expect(voice.events.at(-1)).toMatchObject({ type: "done", state: "CLARIFYING" });
   });
 
-  it("uses our own speech models for evaluation requests, whatever AI_LISTEN says (D98)", async () => {
-    const cached = globalThis as { __dokaanServerEnv?: unknown };
-    const before = process.env.AI_LISTEN;
-    process.env.AI_LISTEN = "api";
-    delete cached.__dokaanServerEnv;
-    try {
-      // the paid side is chosen, and it has no adapter yet: speech-to-text is unavailable
-      const paid = await say(spoken());
-      expect(paid.events.find((event) => event.type === "error")).toMatchObject({
+  // The Scribe input tests (spec 13.4, 18.1, D128): with AI_LISTEN=api, ElevenLabs Scribe v2 gets the same trimmed clip
+  // as the speech worker, untouched, and the same quiet, short and empty cases ask again.
+  it("transcribes with Scribe v2 when AI_LISTEN=api: the trimmed clip as recorded, in Bangla, with the keyterms", async () => {
+    await withSides({ AI_LISTEN: "api" }, async () => {
+      eleven.transcripts.push({ text: padsQuestion });
+      llm.script.push(padsCall);
+      const pcm = spoken();
+      const heard = await say(pcm);
+      expect(heard.events.find((event) => event.type === "transcript")).toMatchObject({ text: padsQuestion });
+      expect(heard.reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে");
+      expect(speech.asrRequests).toHaveLength(0); // the paid side only
+
+      const sent = eleven.scribeRequests[0]!;
+      expect(sent.wav.subarray(0, 4).toString("latin1")).toBe("RIFF");
+      // the silence cut on each side (D45), and every sample as recorded: no gain
+      expect(Buffer.from(sent.wav.subarray(44))).toEqual(Buffer.from(trimSilence(pcm).pcm));
+      expect(sent.fields).toMatchObject({
+        model_id: ["scribe_v2"],
+        language_code: ["ben"],
+        timestamps_granularity: ["word"],
+        tag_audio_events: ["false"],
+      });
+      expect(sent.fields.keyterms?.length).toBeGreaterThan(0); // Scribe gets the keyterms the worker does not (D100)
+    });
+  });
+
+  it("asks again with Scribe v2 for a quiet clip, a clip too short, an empty transcript or a failure", async () => {
+    await withSides({ AI_LISTEN: "api" }, async () => {
+      const quiet = await say(silent());
+      expect(quiet.reply).toBe(ASK_AGAIN);
+      const tiny = await say(clip([[200, 0.2]]));
+      expect(tiny.reply).toBe(ASK_AGAIN);
+      expect(eleven.scribeRequests).toHaveLength(0); // neither is sent
+
+      eleven.transcripts.push({ text: "" });
+      const empty = await say(spoken());
+      expect(empty.reply).toBe(ASK_AGAIN);
+      expect(empty.events.filter((event) => event.type === "error")).toEqual([]);
+
+      eleven.transcripts.push({ text: "", status: 500 });
+      const broken = await say(spoken());
+      expect(broken.reply).toBe(ASK_AGAIN);
+      expect(broken.events.find((event) => event.type === "error")).toMatchObject({
         code: "SPEECH_UNAVAILABLE",
       });
-      expect(speech.asrRequests).toHaveLength(0);
+      expect(llm.received).toHaveLength(0);
+    });
+  });
 
+  it("uses our own speech models for evaluation requests, whatever AI_LISTEN says (D98)", async () => {
+    await withSides({ AI_LISTEN: "api" }, async () => {
       speech.asr.push({ text: padsQuestion });
       llm.script.push(padsCall);
       const evaluation = await say(spoken(), { "x-eval-key": EVAL_KEY });
       expect(speech.asrRequests).toHaveLength(1);
+      expect(eleven.scribeRequests).toHaveLength(0);
       expect(evaluation.events.find((event) => event.type === "transcript")).toMatchObject({
         text: padsQuestion,
       });
-    } finally {
-      if (before === undefined) delete process.env.AI_LISTEN;
-      else process.env.AI_LISTEN = before;
-      delete cached.__dokaanServerEnv;
-    }
+    });
+  });
+
+  it("speaks with the ElevenLabs voice the shop's setting names when AI_SPEAK=api, numbers as Bangla words", async () => {
+    await withSides({ AI_SPEAK: "api" }, async () => {
+      llm.script.push(padsCall);
+      const typed = await chatCall(routes.chat.POST, shop.owner.auth, {
+        conversation_id: await newConversation(),
+        text: padsQuestion,
+        speak: true,
+      });
+      const texts = typed.events.filter(
+        (event): event is Extract<ReplyEvent, { type: "text" }> => event.type === "text",
+      );
+      const audio = typed.events.filter(
+        (event): event is Extract<ReplyEvent, { type: "audio" }> => event.type === "audio",
+      );
+      expect(audio.map((event) => event.seq)).toEqual(texts.map((event) => event.seq));
+      expect(Buffer.from(audio[0]!.data, "base64")).toEqual(fakeElevenMp3(spokenText(texts[0]!.text)));
+      expect(eleven.voiceRequests[0]).toMatchObject({
+        voiceId: "voice-aditi", // the shop's voice setting, aditi
+        query: "?output_format=mp3_22050_32",
+        modelId: "eleven_v3_conversational",
+      });
+      expect(eleven.voiceRequests.map((request) => request.text).join(" ")).toContain(
+        "চার হাজার পাঁচশো টাকা",
+      );
+      expect(speech.ttsTexts).toEqual([]); // the paid side only
+    });
   });
 
   // D114: the developer's switch for reading aloud.

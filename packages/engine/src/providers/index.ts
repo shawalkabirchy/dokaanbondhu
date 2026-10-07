@@ -23,12 +23,16 @@ export {
   type SpeakSide,
 } from "./select";
 export {
+  ELEVENLABS_URL,
+  elevenLabsStt,
+  elevenLabsTts,
   SpeechError,
   speechWorkerStt,
   speechWorkerTts,
   sttAdapter,
   ttsAdapter,
   type AsrResult,
+  type ElevenLabsConfig,
   type SpeechWorkerConfig,
   type SttOptions,
   type SttProvider,

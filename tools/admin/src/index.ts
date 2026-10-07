@@ -304,8 +304,9 @@ const commands: Record<string, Command> = {
   },
 
   /**
-   * try-tts --shop <id> --text <text> --out <file.mp3> [--voice <v>]: our own voice says the text into an MP3 for a
-   * listening check (proof P7), and our own speech-to-text writes down what it hears as a first hint. Test data only.
+   * try-tts --shop <id> --text <text> --out <file.mp3> [--voice <v>] [--side own|api]: our own voice says the text into
+   * an MP3 for a listening check (proof P7), and our own speech-to-text writes down what it hears as a first hint; with
+   * --side api, the ElevenLabs voice and Scribe instead (D128). Test data only.
    */
   "try-tts": async (platform, args) => {
     const { values } = parseArgs({
@@ -315,11 +316,13 @@ const commands: Record<string, Command> = {
         text: { type: "string" },
         out: { type: "string" },
         voice: { type: "string" },
+        side: { type: "string" },
       },
     });
     const shopId = uuid.parse(values.shop);
     const text = z.string().min(1).parse(values.text);
     const file = z.string().endsWith(".mp3").parse(values.out);
+    const side = z.enum(["own", "api"]).default("own").parse(values.side);
     if (!env.success) throw new Error("unreachable");
     const aesKey = parseAesKey(env.data.AES_KEY);
     const rows = await platform.withAdmin((tx) =>
@@ -328,10 +331,15 @@ const commands: Record<string, Command> = {
         .from(aiProviders)
         .where(sql`${aiProviders.shopId} = ${shopId} or ${aiProviders.shopId} is null`),
     );
-    const used = selectProviders(rows, shopId, OWN_SIDE);
+    const used = selectProviders(
+      rows,
+      shopId,
+      side === "api" ? { ...OWN_SIDE, listen: "api", speak: "api" } : OWN_SIDE,
+    );
     const tts = used.tts ? ttsAdapter(used.tts, aesKey) : null;
     const stt = used.stt ? sttAdapter(used.stt, aesKey) : null;
-    if (!tts || !stt) throw new Error("no own speech worker applies to this shop");
+    if (!tts || !stt) throw new Error(`no ${side} speech provider with its key applies to this shop`);
+    out(`speaking with ${used.tts!.provider} ${used.tts!.model ?? ""}, listening with ${used.stt!.provider}`);
     const started = Date.now();
     const audio = await tts.synthesize(text, { voice: values.voice ?? "aditi" });
     await writeFile(file, audio.bytes);
