@@ -176,7 +176,8 @@ export interface AnswerFacts {
   warnings: string[];
 }
 
-/** A host's answer read by field names: GearGrid's sale.total_taka and customer.due_balance_taka, or another host's total and customer_due. */
+/** A host's answer read by field names: a nested sale.total_taka and customer.due_balance_taka, or a flat total and
+ * customer_due. */
 export function answerFacts(answer: unknown): AnswerFacts {
   const total = numberOf(find(answer, (key) => /^(grand_)?total(_taka|_amount)?$/.test(key)));
   const customerDue = numberOf(
