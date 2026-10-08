@@ -16,13 +16,14 @@ import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { api, errorText } from "../../../src/lib/api";
 import { takaText } from "../../../src/lib/money";
+import { ApiSetup } from "../../../src/setup-api";
 import { useMe } from "../../../src/lib/session";
 import { useDeviceSettings } from "../../../src/lib/settings-store";
 import { Button, Chips, colors, Field, Heading, Note, Screen, styles } from "../../../src/ui";
 
-// Setup, the database half (spec 15.2, 11.3): the connection, the schema map review with sample values as they will be
+// Setup (spec 15.2): the database half (11.3: the connection, the schema map review with sample values as they will be
 // spoken, the catalog sync, the stock-value formula, the app's own words (D121, D122), and the words the assistant
-// learned (D102). Owner only.
+// learned (D102)), then the API half (src/setup-api.tsx). Owner only.
 
 type Language = "bn" | "en";
 
@@ -513,6 +514,7 @@ export default function Setup() {
           <WordsSection />
         </>
       ) : null}
+      {connections.data ? <ApiSetup connections={connections.data.connections} /> : null}
     </Screen>
   );
 }

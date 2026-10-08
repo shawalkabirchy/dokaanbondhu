@@ -42,7 +42,8 @@ export default function Voice() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const { micAllowed, speechTrouble, refresh } = useHealth();
-  const { messages, busy, runTurn, ensureConversation, send, reset, note, remembered, forget } = useChat();
+  const { messages, busy, runTurn, ensureConversation, send, decide, reset, note, remembered, forget } =
+    useChat();
   /** False when the developer has switched reading aloud off (AI_SPEAK=off, D114). */
   const speaks = useMe().data?.providers.speaks ?? true;
   const { prepareRecording, startRecording, stopRecording } = useAudioRecorder();
@@ -187,6 +188,9 @@ export default function Voice() {
                   { choice: { slot, option_id: option.id }, label: option.label },
                   { speak: true, tap: playerTap() },
                 )
+              }
+              onDecide={(actionId, decision) =>
+                void decide(actionId, decision, t(`confirm.${decision}`), { speak: true, tap: playerTap() })
               }
             />
           ),

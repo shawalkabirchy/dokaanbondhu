@@ -249,4 +249,37 @@ describe("chat store", () => {
     expect(deps.createConversation).toHaveBeenCalledTimes(1);
     expect(deps.createConversation).toHaveBeenCalledWith("voice");
   });
+
+  it("sends the sheet's decision as a turn of the conversation, shown as the user's words (spec 9.9)", async () => {
+    const actionId = "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e";
+    const { useChat, deps, sent } = store([
+      [
+        {
+          type: "confirm",
+          action_id: actionId,
+          text: "ঠিক আছে?",
+          fields: [],
+          warnings: [],
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
+        },
+        { type: "text", seq: 0, text: "ঠিক আছে?", final: true },
+        { type: "done", turn_id: "t1", state: "CONFIRMING", timings_ms: {} },
+      ],
+      [
+        { type: "action_result", action_id: actionId, status: "done", undo_available: true },
+        { type: "text", seq: 0, text: "হয়ে গেছে।", final: true },
+        { type: "done", turn_id: "t2", state: "IDLE", timings_ms: {} },
+      ],
+    ]);
+    await useChat.getState().send({ text: "রহিম মোটরসকে দুই সেট প্যাড বাকিতে দাও" });
+    expect(reply(useChat)[0]!.confirm).toMatchObject({ action_id: actionId });
+    await useChat.getState().decide(actionId, "yes", "হ্যাঁ");
+    expect((deps.stream as jest.Mock).mock.calls[1]![0]).toBe(`/actions/${actionId}/decision`);
+    expect(sent[1]).toEqual({ decision: "yes" });
+    expect(useChat.getState().messages.at(-2)).toMatchObject({ kind: "user", text: "হ্যাঁ" });
+    expect(reply(useChat)[1]).toMatchObject({
+      result: { status: "done", undo_available: true },
+      texts: ["হয়ে গেছে।"],
+    });
+  });
 });

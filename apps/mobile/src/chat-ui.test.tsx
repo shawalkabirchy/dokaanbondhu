@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react-native";
-import { AssistantBubble, PartCards, ResultTable } from "./chat-ui";
-import type { AssistantMessage } from "./lib/chat-store";
+import { fireEvent, render, screen } from "@testing-library/react-native";
+import { AssistantBubble, ConfirmSheet, PartCards, ResultTable } from "./chat-ui";
+import type { AssistantMessage, ConfirmEvent } from "./lib/chat-store";
 
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 
@@ -79,6 +79,8 @@ describe("reply content", () => {
       cards: [],
       tables: [],
       choices: null,
+      confirm: null,
+      result: null,
       error: null,
       done: false,
     });
@@ -88,5 +90,45 @@ describe("reply content", () => {
     await rerender(<AssistantBubble message={reply(["কোন বছরের নোয়া?"])} {...props} />);
     expect(screen.queryByText("status.searching")).toBeNull();
     expect(screen.getByText("কোন বছরের নোয়া?")).toBeTruthy();
+  });
+});
+
+// The confirmation sheet (spec 9.9, 15.2): what will be saved, an unsure field in bold, the app's warnings, and Yes or
+// No only while it lasts and only on the newest reply.
+describe("confirmation sheet", () => {
+  const confirm = (secondsLeft: number): ConfirmEvent => ({
+    type: "confirm",
+    action_id: "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e",
+    text: "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
+    fields: [
+      { label: "কাস্টমার", value: "Rahim Motors", highlight: true },
+      { label: "মোট", value: "৩,২০০ টাকা", highlight: false },
+    ],
+    warnings: ["Rahim Motors-এর বাকি ক্রেডিট লিমিট ছাড়িয়ে যাবে।"],
+    expires_at: new Date(Date.now() + secondsLeft * 1000).toISOString(),
+  });
+
+  it("shows the fields and warnings, and sends Yes or No", async () => {
+    const onDecide = jest.fn();
+    const { unmount } = await render(<ConfirmSheet confirm={confirm(45)} active onDecide={onDecide} />);
+    expect(screen.getByText("Rahim Motors")).toBeTruthy();
+    expect(screen.getByText("৩,২০০ টাকা")).toBeTruthy();
+    expect(screen.getByText("Rahim Motors-এর বাকি ক্রেডিট লিমিট ছাড়িয়ে যাবে।")).toBeTruthy();
+    await fireEvent.press(screen.getByText("confirm.yes"));
+    await fireEvent.press(screen.getByText("confirm.no"));
+    expect(onDecide.mock.calls).toEqual([["yes"], ["no"]]);
+    await unmount(); // its countdown stops with it
+  });
+
+  it("takes no decision on an older reply", async () => {
+    await render(<ConfirmSheet confirm={confirm(45)} active={false} onDecide={jest.fn()} />);
+    expect(screen.getByText("Rahim Motors")).toBeTruthy();
+    expect(screen.queryByText("confirm.yes")).toBeNull();
+  });
+
+  it("takes no decision once its time is up", async () => {
+    await render(<ConfirmSheet confirm={confirm(-5)} active onDecide={jest.fn()} />);
+    expect(screen.queryByText("confirm.yes")).toBeNull();
+    expect(screen.getByText("confirm.expired")).toBeTruthy();
   });
 });

@@ -2,13 +2,13 @@ import type { Remembered, RememberedKey } from "@dokaanbondhu/contracts";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import type { AssistantMessage, ChoicesEvent, PartCard, TableEvent } from "./lib/chat-store";
+import type { AssistantMessage, ChoicesEvent, ConfirmEvent, PartCard, TableEvent } from "./lib/chat-store";
 import { numberText, stockText, takaText } from "./lib/money";
 import type { Language } from "./lib/settings-store";
 import { colors } from "./ui";
 
-// What a reply shows (spec 15.2): its text, part cards, result tables and choice chips. Money arrives in whole taka
-// (D110); large text and large touch targets.
+// What a reply shows (spec 15.2): its text, part cards, result tables, choice chips and the confirmation sheet. Money
+// arrives in whole taka (D110); large text and large touch targets.
 
 const PRICE_TIERS = ["retail", "garage", "wholesale"] as const;
 
@@ -158,6 +158,67 @@ export function MemoryLine(props: { remembered: Remembered; onForget: (key: Reme
   );
 }
 
+/**
+ * The confirmation sheet (spec 9.9, 15.2): what will be saved, field by field (an unsure one in bold), the app's
+ * warnings, and Yes or No while it lasts (60 s). Only the newest reply's sheet takes a decision; nothing is saved
+ * before Yes.
+ */
+export function ConfirmSheet(props: {
+  confirm: ConfirmEvent;
+  active: boolean;
+  onDecide: (decision: "yes" | "no") => void;
+}) {
+  const { t } = useTranslation();
+  const [now, setNow] = useState(() => Date.now());
+  const left = Math.max(0, Math.ceil((Date.parse(props.confirm.expires_at) - now) / 1000));
+  // The seconds count down only while a decision can still be taken.
+  const live = props.active && left > 0;
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+  return (
+    <View style={styles.sheet}>
+      <Text style={styles.sheetTitle}>{t("confirm.title")}</Text>
+      {props.confirm.fields.map((field) => (
+        <View key={field.label} style={styles.sheetRow}>
+          <Text style={styles.sheetLabel}>{field.label}</Text>
+          <Text style={[styles.sheetValue, field.highlight && styles.sheetUnsure]}>{field.value}</Text>
+        </View>
+      ))}
+      {props.confirm.warnings.map((warning, index) => (
+        <Text key={index} style={styles.warn}>
+          {warning}
+        </Text>
+      ))}
+      {live ? (
+        <>
+          <View style={styles.sheetButtons}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => props.onDecide("yes")}
+              style={({ pressed }) => [styles.decision, styles.yes, pressed && styles.faded]}
+            >
+              <Text style={[styles.decisionText, styles.yesText]}>{t("confirm.yes")}</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => props.onDecide("no")}
+              style={({ pressed }) => [styles.decision, pressed && styles.faded]}
+            >
+              <Text style={styles.decisionText}>{t("confirm.no")}</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.muted}>{t("confirm.left", { count: left })}</Text>
+        </>
+      ) : props.active ? (
+        <Text style={styles.muted}>{t("confirm.expired")}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 export function UserBubble({ text }: { text: string }) {
   return (
     <View style={[styles.bubble, styles.userBubble]}>
@@ -172,6 +233,8 @@ export function AssistantBubble(props: {
   newest: boolean;
   busy: boolean;
   onChoose: (slot: string, option: { id: string; label: string }) => void;
+  /** The confirmation sheet's Yes or No. */
+  onDecide?: (actionId: string, decision: "yes" | "no") => void;
 }) {
   const { t } = useTranslation();
   const { message } = props;
@@ -199,6 +262,13 @@ export function AssistantBubble(props: {
           choices={message.choices}
           active={props.newest && !props.busy}
           onChoose={(option) => props.onChoose(message.choices!.slot, option)}
+        />
+      ) : null}
+      {message.confirm && props.onDecide ? (
+        <ConfirmSheet
+          confirm={message.confirm}
+          active={props.newest && !props.busy && !message.result}
+          onDecide={(decision) => props.onDecide!(message.confirm!.action_id, decision)}
         />
       ) : null}
       {message.error ? <Text style={styles.danger}>{t(message.error)}</Text> : null}
@@ -243,6 +313,25 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 18, color: colors.green, fontWeight: "600" },
   chipSub: { fontSize: 14, color: colors.muted },
   faded: { opacity: 0.5 },
+  sheet: { borderWidth: 2, borderColor: colors.green, borderRadius: 16, padding: 14, gap: 8 },
+  sheetTitle: { fontSize: 18, fontWeight: "700", color: colors.ink },
+  sheetRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sheetLabel: { fontSize: 16, color: colors.muted, minWidth: 90 },
+  sheetValue: { fontSize: 18, color: colors.ink, flexShrink: 1 },
+  sheetUnsure: { fontWeight: "700" },
+  sheetButtons: { flexDirection: "row", gap: 12, marginTop: 4 },
+  decision: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: colors.green,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  yes: { backgroundColor: colors.green },
+  decisionText: { fontSize: 20, fontWeight: "700", color: colors.green },
+  yesText: { color: colors.white },
   memory: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingHorizontal: 12 },
   memoryItem: {
     flexDirection: "row",

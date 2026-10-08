@@ -11,6 +11,8 @@ export type Channel = "voice" | "chat";
 export type PartCard = Extract<ReplyEvent, { type: "cards" }>["parts"][number];
 export type TableEvent = Extract<ReplyEvent, { type: "table" }>;
 export type ChoicesEvent = Extract<ReplyEvent, { type: "choices" }>;
+export type ConfirmEvent = Extract<ReplyEvent, { type: "confirm" }>;
+export type ActionResultEvent = Extract<ReplyEvent, { type: "action_result" }>;
 
 export interface UserMessage {
   kind: "user";
@@ -28,6 +30,10 @@ export interface AssistantMessage {
   cards: PartCard[];
   tables: TableEvent[];
   choices: ChoicesEvent | null;
+  /** A write waiting for yes or no: the confirmation sheet (spec 9.9, 15.2). */
+  confirm: ConfirmEvent | null;
+  /** What became of an action decided in this turn. */
+  result: ActionResultEvent | null;
   /** An error message key (errors.<CODE> or common.error). */
   error: string | null;
   done: boolean;
@@ -53,12 +59,16 @@ export function applyEvent(message: AssistantMessage, event: ReplyEvent): Assist
       return { ...message, tables: [...message.tables, event] };
     case "choices":
       return { ...message, choices: event };
+    case "confirm":
+      return { ...message, confirm: event };
+    case "action_result":
+      return { ...message, result: event };
     case "error":
       return { ...message, error: event.message_key };
     case "done":
       return { ...message, turnId: event.turn_id, status: null, done: true };
     default:
-      return message; // audio is played by the page; confirm and action results come with the write step
+      return message; // audio is played by the page
   }
 }
 
@@ -91,6 +101,8 @@ export interface ChatState {
   /** Forgets the remembered car or customer: at once on screen, then on the server (D125). */
   forget: (key: RememberedKey) => Promise<void>;
   send: (input: ChatInput, options?: SendOptions) => Promise<void>;
+  /** The confirmation sheet's yes or no (POST /actions/{id}/decision): a turn of the conversation, shown as said. */
+  decide: (actionId: string, decision: "yes" | "no", label: string, options?: SendOptions) => Promise<void>;
   /**
    * Any turn: shows the user's words (a voice turn's are filled in by its transcript event) and an assistant message
    * that each reply event updates.
@@ -162,6 +174,8 @@ export function createChatStore(deps: ChatDeps) {
             cards: [],
             tables: [],
             choices: null,
+            confirm: null,
+            result: null,
             error: null,
             done: false,
           },
@@ -210,6 +224,8 @@ export function createChatStore(deps: ChatDeps) {
           cards: [],
           tables: [],
           choices: null,
+          confirm: null,
+          result: null,
           error: null,
           done: true,
         };
@@ -259,6 +275,18 @@ export function createChatStore(deps: ChatDeps) {
               onEvent,
             ),
           options.tap,
+        ),
+      decide: (actionId, decision, label, options = {}) =>
+        runTurn(
+          label,
+          (_conversationId, onEvent) =>
+            deps.stream(
+              `/actions/${actionId}/decision`,
+              { decision, ...(options.speak ? { speak: true } : {}) },
+              onEvent,
+            ),
+          options.tap,
+          "status.saving",
         ),
     };
   });

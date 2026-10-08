@@ -20,7 +20,7 @@ import { Button, colors, OfflineBanner } from "../../src/ui";
 export default function Chat() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
-  const { messages, busy, send, reset, remembered, forget } = useChat();
+  const { messages, busy, send, decide, reset, remembered, forget } = useChat();
   const [text, setText] = useState("");
   const [speak, setSpeak] = useState(false);
   const speaks = useMe().data?.providers.speaks ?? true;
@@ -80,6 +80,9 @@ export default function Chat() {
                 busy={busy}
                 onChoose={(slot, option) =>
                   void send({ choice: { slot, option_id: option.id }, label: option.label }, options())
+                }
+                onDecide={(actionId, decision) =>
+                  void decide(actionId, decision, t(`confirm.${decision}`), options())
                 }
               />
             ),
