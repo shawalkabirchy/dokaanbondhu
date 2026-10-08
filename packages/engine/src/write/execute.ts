@@ -240,3 +240,28 @@ export async function undoAction(input: {
     text: resultText("undone", done.preview.template, resultFields(done.preview, answerFacts(response.body))),
   };
 }
+
+/** How long staff may undo their own action (spec 11.9.1, D38). */
+export const STAFF_UNDO_MS = 10 * 60_000;
+
+/**
+ * Who may undo (spec 11.9.1, D38): the owner always; staff only their own action, in the same conversation, within
+ * 10 minutes of its done_at.
+ */
+export function mayUndo(input: {
+  role: "owner" | "staff";
+  userId: string;
+  conversationId: string | null;
+  now: Date;
+  action: { userId: string; conversationId: string | null; doneAt: Date | null };
+}): boolean {
+  if (input.role === "owner") return true;
+  const { action } = input;
+  return (
+    action.userId === input.userId &&
+    action.conversationId !== null &&
+    action.conversationId === input.conversationId &&
+    action.doneAt !== null &&
+    input.now.getTime() - action.doneAt.getTime() <= STAFF_UNDO_MS
+  );
+}

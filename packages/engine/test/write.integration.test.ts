@@ -330,7 +330,10 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       const first = await say(fresh(), text, [
         scripted([{ calls: [{ name: "receive_payment", arguments: args }] }]),
       ]);
-      expect(first.reply).toBe("Rahim Motors নাকি Rahim Auto Garage?");
+      // Both begin with the name said, so they are equal and come in either order.
+      expect(["Rahim Motors নাকি Rahim Auto Garage?", "Rahim Auto Garage নাকি Rahim Motors?"]).toContain(
+        first.reply,
+      );
       const choice = first.events.find((event) => event.type === "choices") as Extract<
         ReplyEvent,
         { type: "choices" }

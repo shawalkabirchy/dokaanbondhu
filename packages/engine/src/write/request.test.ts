@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { importOpenApi } from "../host/openapi-import";
-import { fillBody, UNDO_REASON } from "./execute";
+import { fillBody, mayUndo, UNDO_REASON } from "./execute";
 import { answerFacts, buildBody, dryRunQuery, readPath, refusalOf, setPath } from "./request";
 import { writeTool } from "./tool";
 import type { WriteCapability } from "./types";
@@ -140,5 +140,25 @@ describe("capability tools (spec 9.6)", () => {
     const line = (properties.items as { items: { properties: Record<string, unknown> } }).items.properties;
     expect(Object.keys(line).sort()).toEqual(["part", "quantity", "unit_cost"]);
     expect(JSON.stringify(tool.parameters)).not.toMatch(/supplier_id|part_id|customer_id/);
+  });
+});
+
+describe("who may undo (spec 11.9.1, D38)", () => {
+  const now = new Date("2026-10-08T10:00:00Z");
+  const action = { userId: "staff-1", conversationId: "conv-1", doneAt: new Date("2026-10-08T09:55:00Z") };
+  const staff = (change: Partial<Parameters<typeof mayUndo>[0]> = {}) =>
+    mayUndo({ role: "staff", userId: "staff-1", conversationId: "conv-1", now, action, ...change });
+
+  it("lets the owner undo anything, any time", () => {
+    expect(mayUndo({ role: "owner", userId: "owner", conversationId: null, now, action })).toBe(true);
+  });
+
+  it("lets staff undo their own action, in the same conversation, within 10 minutes", () => {
+    expect(staff()).toBe(true);
+    expect(staff({ userId: "staff-2" })).toBe(false);
+    expect(staff({ conversationId: "conv-2" })).toBe(false);
+    expect(staff({ conversationId: null })).toBe(false);
+    expect(staff({ now: new Date("2026-10-08T10:05:01Z") })).toBe(false);
+    expect(staff({ action: { ...action, doneAt: null } })).toBe(false);
   });
 });

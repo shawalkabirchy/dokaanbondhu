@@ -1,4 +1,13 @@
-export { executeAction, fillBody, undoAction, UNDO_REASON, type Execution, type Undo } from "./execute";
+export {
+  executeAction,
+  fillBody,
+  mayUndo,
+  STAFF_UNDO_MS,
+  undoAction,
+  UNDO_REASON,
+  type Execution,
+  type Undo,
+} from "./execute";
 export {
   answerFacts,
   buildBody,
