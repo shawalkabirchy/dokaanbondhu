@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
-import { HostPools, runSpeechCheck, syncConnection } from "@dokaanbondhu/engine/host";
+import { applyVerification, HostPools, runSpeechCheck, syncConnection } from "@dokaanbondhu/engine/host";
 import {
   llmChain,
   llmStream,
@@ -22,12 +22,12 @@ import {
   type Platform,
 } from "@dokaanbondhu/platform-db";
 import { createClient } from "@supabase/supabase-js";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 // npm run admin -- <command> (spec 7.5): shops, owners, consent and AI providers, as platform_admin. On the laptop
 // it works on dokaan-dev; for dokaan-prod (step 9) it runs in the pod's terminal. Staff logins are made by the
-// owner in the app (D9), not here. import-verification comes in step 5.
+// owner in the app (D9), not here.
 
 const out = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -70,6 +70,21 @@ function supabaseAdmin() {
 }
 
 type Command = (platform: Platform, args: string[]) => Promise<void>;
+
+/** verification-report.json of the sandbox check (spec 11.11). */
+const reportSchema = z.object({
+  host: z.string(),
+  commit: z.string(),
+  date: z.string(),
+  capabilities: z.array(
+    z.object({
+      name: z.string(),
+      schema_hash: z.string(),
+      result: z.enum(["pass", "fail", "skipped"]),
+      checks: z.array(z.object({ name: z.string(), ok: z.boolean(), detail: z.string().optional() })),
+    }),
+  ),
+});
 
 const commands: Record<string, Command> = {
   /** create-shop --name <n> [--market <m>] */
@@ -427,6 +442,38 @@ const commands: Record<string, Command> = {
       `checked ${result.checked}, suggested ${result.suggested}, skipped ${result.skipped}, left ${result.left}` +
         (result.stopped ? `; stopped: ${result.stopped}` : ""),
     );
+  },
+
+  /**
+   * import-verification --shop <id> --file <report.json>: verified_at for each capability of the shop's API connection
+   * whose name and schema hash match a passing entry (spec 11.11); the owner can then switch them on.
+   */
+  "import-verification": async (platform, args) => {
+    const { values } = parseArgs({ args, options: { shop: { type: "string" }, file: { type: "string" } } });
+    const shopId = uuid.parse(values.shop);
+    const report = reportSchema.parse(
+      JSON.parse(await readFile(z.string().min(1).parse(values.file), "utf8")),
+    );
+    const [connection] = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: connections.id })
+        .from(connections)
+        .where(
+          and(eq(connections.shopId, shopId), eq(connections.kind, "api"), eq(connections.status, "active")),
+        )
+        .orderBy(asc(connections.createdAt))
+        .limit(1),
+    );
+    if (!connection) throw new Error("the shop has no active API connection");
+    const result = await platform.withAdmin((tx) => applyVerification(tx, connection.id, report, new Date()));
+    out(`Report of ${report.host} at ${report.commit} (${report.date})`);
+    out(`Verified: ${result.verified.join(", ") || "none"}`);
+    if (result.unmatched.length)
+      out(`Not matched (the shop's capability differs or is missing): ${result.unmatched.join(", ")}`);
+    const failed = report.capabilities
+      .filter((entry) => entry.result !== "pass")
+      .map((entry) => `${entry.name} (${entry.result})`);
+    if (failed.length) out(`Not passed: ${failed.join(", ")}`);
   },
 
   /** disable-user --user <id> */

@@ -22,7 +22,8 @@
     "db:migrate": "drizzle-kit migrate --config packages/platform-db/drizzle.config.ts",
     "db:roles": "node --env-file-if-exists=.env.local --import tsx packages/platform-db/scripts/roles.ts",
     "admin": "node --env-file-if-exists=.env.local --import tsx tools/admin/src/index.ts",
-    "eval": "node --env-file-if-exists=.env.local --import tsx tools/eval/src/index.ts"
+    "eval": "node --env-file-if-exists=.env.local --import tsx tools/eval/src/index.ts",
+    "verify-capabilities": "node --import tsx tools/admin/src/verify-capabilities.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

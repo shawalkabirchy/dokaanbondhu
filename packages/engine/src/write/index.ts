@@ -10,6 +10,8 @@ export {
 } from "./execute";
 export {
   answerFacts,
+  cashMethod,
+  methodParam,
   buildBody,
   coerce,
   dryRunQuery,
@@ -23,3 +25,4 @@ export {
 export { writeTool } from "./tool";
 export * from "./types";
 export { changedAsExpected, savedAnyway, snapshot, type ReadPath, type Snapshot } from "./verify";
+export { verifyCapabilities, writeHostOf, type VerificationEntry, type VerificationReport } from "./sandbox";

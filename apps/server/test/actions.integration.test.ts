@@ -12,8 +12,8 @@ import {
   type Platform,
 } from "@dokaanbondhu/platform-db";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   allLocal,
   chatCall,
@@ -241,6 +241,24 @@ describe.skipIf(!allLocal || !apiLocal)("actions through the server", () => {
     llm.script.length = 0;
     llm.received.length = 0;
     (globalThis as { __dokaanRateLimiter?: unknown }).__dokaanRateLimiter = undefined;
+  });
+
+  // A test that fails after saving still undoes what it saved, so the seed stays as the other files expect it.
+  afterEach(async () => {
+    const left = await admin.withAdmin((tx) =>
+      tx
+        .select({ id: actionLogs.id })
+        .from(actionLogs)
+        .where(
+          and(
+            eq(actionLogs.shopId, shop.shopId),
+            inArray(actionLogs.status, ["done", "review"]),
+            isNull(actionLogs.undoneAt),
+            isNull(actionLogs.undoOf),
+          ),
+        ),
+    );
+    for (const { id } of left) await undo(id).catch(() => null);
   });
 
   afterAll(async () => {

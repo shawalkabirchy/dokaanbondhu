@@ -2,6 +2,7 @@ import type { CapabilityPatch, CapabilityView } from "@dokaanbondhu/contracts";
 import type { ActionTemplate } from "@dokaanbondhu/core";
 import { capabilities, capabilityParams, connections, type Tx } from "@dokaanbondhu/platform-db";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import type { VerificationReport } from "../write/sandbox";
 import type { WriteCapability, WriteHost } from "../write/types";
 import { callHost } from "./api";
 import {
@@ -538,4 +539,36 @@ export async function loadWriteHost(
       call: (request) => callHost(connection, request),
     },
   };
+}
+
+/**
+ * admin import-verification (spec 11.11): verified_at and the report's entry for every capability of the connection
+ * whose name and schema hash match a passing entry; one whose request changed since is not marked.
+ */
+export async function applyVerification(
+  tx: Tx,
+  connectionId: string,
+  report: VerificationReport,
+  now: Date,
+): Promise<{ verified: string[]; unmatched: string[] }> {
+  const verified: string[] = [];
+  const unmatched: string[] = [];
+  for (const entry of report.capabilities.filter((item) => item.result === "pass")) {
+    const marked = await tx
+      .update(capabilities)
+      .set({
+        verifiedAt: now,
+        verificationReport: { ...entry, host: report.host, commit: report.commit, date: report.date },
+      })
+      .where(
+        and(
+          eq(capabilities.connectionId, connectionId),
+          eq(capabilities.name, entry.name),
+          eq(capabilities.schemaHash, entry.schema_hash),
+        ),
+      )
+      .returning({ id: capabilities.id });
+    (marked.length ? verified : unmatched).push(entry.name);
+  }
+  return { verified, unmatched };
 }

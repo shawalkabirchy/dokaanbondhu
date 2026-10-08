@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { CapabilityView, DiscoverResult } from "@dokaanbondhu/contracts";
-import { importOpenApi, saveImport } from "@dokaanbondhu/engine/host";
+import { applyVerification, importOpenApi, saveImport } from "@dokaanbondhu/engine/host";
 import {
   capabilities,
   connections,
@@ -481,5 +481,28 @@ describe.skipIf(!allLocal || !apiLocal)("setup endpoints, API half", () => {
       params: { id: (wrong.body.connection as { id: string }).id },
     });
     expect(refused.body).toMatchObject({ ok: false, error: expect.stringMatching(/401/) });
+  });
+
+  it("marks a capability verified only when the sandbox report has it passing with its current hash (spec 11.11)", async () => {
+    const all = (await call(routes.capabilities!.GET, { query: `?connection_id=${connectionId}` })).body
+      .capabilities as CapabilityView[];
+    const payment = byName(all, "receive_payment");
+    const stockIn = byName(all, "stock_in");
+    const price = byName(all, "update_price");
+    const report = {
+      host: "test host",
+      commit: "ci",
+      date: new Date().toISOString(),
+      capabilities: [
+        { name: "receive_payment", schema_hash: payment.schema_hash, result: "pass" as const, checks: [] },
+        { name: "stock_in", schema_hash: "0".repeat(64), result: "pass" as const, checks: [] },
+        { name: "update_price", schema_hash: price.schema_hash, result: "fail" as const, checks: [] },
+      ],
+    };
+    const result = await admin.withAdmin((tx) => applyVerification(tx, connectionId, report, new Date()));
+    expect(result).toEqual({ verified: ["receive_payment"], unmatched: ["stock_in"] });
+    expect((await capability(payment.id)).verified_at).not.toBeNull();
+    expect((await capability(stockIn.id)).verified_at).toBeNull();
+    expect((await capability(price.id)).verified_at).toBeNull();
   });
 });

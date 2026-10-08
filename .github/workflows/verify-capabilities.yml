@@ -1,0 +1,76 @@
+# The sandbox check (spec 11.11; D139), run by hand: a throw-away copy of the test host (its migrations, roles, seed
+# and API, as in CI), every write run with sample values from the seed, its effects checked through the read-only
+# role, each compensation run, and verification-report.json kept as the run's artifact for
+# `npm run admin -- import-verification --shop <id> --file verification-report.json`.
+name: Verify capabilities
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The test host's branch or commit to check
+        default: main
+        required: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env: # throwaway values, local to the job's container
+      GEARGRID_ENV: ci
+      MIGRATION_DATABASE_URL: postgres://postgres:ci@localhost:5432/geargrid
+      APP_API_PASSWORD: ci-app-api
+      DOKAAN_RO_PASSWORD: ci-dokaan-ro
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/checkout@v5 # GearGrid is public, so no key is needed (D66)
+        with:
+          repository: shawalkabirchy/geargrid
+          ref: ${{ inputs.ref }}
+          path: geargrid
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            geargrid/package-lock.json
+      - name: The sandbox database and its API key
+        run: |
+          psql postgres://postgres:ci@localhost:5432/postgres -v ON_ERROR_STOP=1 -c "create database geargrid"
+          echo "SEED_API_KEY=ggk_$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+      - name: The test host (bootstrap, migrate, roles, seed)
+        working-directory: geargrid
+        run: |
+          npm ci
+          psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/bootstrap.sql
+          npm run db:migrate && npm run db:roles && npm run db:seed
+      - name: Its API on port 4000, as app_api
+        working-directory: geargrid/apps/web
+        env:
+          DATABASE_URL: postgres://app_api:ci-app-api@localhost:5432/geargrid
+        run: |
+          npx next build
+          nohup npx next start -p 4000 > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:4000/api/v1/health && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/api.log"; exit 1
+      - run: npm ci
+      - name: The sandbox check
+        env:
+          SANDBOX_API_URL: http://localhost:4000
+          SANDBOX_API_SECRET: ${{ env.SEED_API_KEY }}
+          SANDBOX_READ_URL: postgres://dokaanbondhu_ro:ci-dokaan-ro@localhost:5432/geargrid
+        run: >
+          npm run verify-capabilities -- --map packages/engine/test/geargrid-map.ts --host geargrid
+          --commit "$(git -C geargrid rev-parse HEAD)" --out verification-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verification-report
+          path: verification-report.json

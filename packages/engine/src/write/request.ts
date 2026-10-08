@@ -138,6 +138,25 @@ function hasPath(body: Json, path: string): boolean {
   );
 }
 
+/** The parameter that names how a payment is made. */
+export const methodParam = (capability: WriteCapability) =>
+  capability.params.find((param) => param.semanticSlot === "payment" && /method/.test(leafOf(param.path))) ??
+  null;
+
+/** The host's value for cash, from the confirmed spoken words or the values themselves. */
+export function cashMethod(capability: WriteCapability): string | null {
+  const param = methodParam(capability);
+  if (!param) return null;
+  const map = param.spokenMap ?? {};
+  return (
+    map["নগদে"] ??
+    map["নগদ"] ??
+    map.nogode ??
+    param.enumValues?.find((value) => value.toLowerCase() === "cash") ??
+    null
+  );
+}
+
 /** The dry-run switch of the feature list ("?dry_run=true") as query parameters, or null without one. */
 export function dryRunQuery(features: Json): Record<string, string> | null {
   const hint = features.dry_run;

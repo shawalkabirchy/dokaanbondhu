@@ -28,7 +28,16 @@ import {
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { HostCallFailed } from "../host/api";
 import type { FindPartsResult, PartQuery } from "../host/find-parts";
-import { answerFacts, buildBody, dryRunQuery, leafOf, refusalOf, type ResolvedWrite } from "../write/request";
+import {
+  answerFacts,
+  buildBody,
+  cashMethod,
+  dryRunQuery,
+  leafOf,
+  methodParam,
+  refusalOf,
+  type ResolvedWrite,
+} from "../write/request";
 import type { ActionPreview, PendingAction, WriteCapability, WriteHost } from "../write/types";
 import {
   correctedSlot,
@@ -186,23 +195,6 @@ export function writeFrame(
 
 const slotsOf = (capability: WriteCapability) =>
   new Set(capability.params.map((param) => param.semanticSlot));
-const methodParam = (capability: WriteCapability) =>
-  capability.params.find((param) => param.semanticSlot === "payment" && /method/.test(leafOf(param.path))) ??
-  null;
-
-/** The host's value for cash, from the confirmed spoken words or the values themselves. */
-function cashMethod(capability: WriteCapability): string | null {
-  const param = methodParam(capability);
-  if (!param) return null;
-  const map = param.spokenMap ?? {};
-  return (
-    map["নগদে"] ??
-    map["নগদ"] ??
-    map.nogode ??
-    param.enumValues?.find((value) => value.toLowerCase() === "cash") ??
-    null
-  );
-}
 
 /** A payment word: on credit, a method of the host, or null when it is not one. */
 export function paymentOf(

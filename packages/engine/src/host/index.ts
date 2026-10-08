@@ -100,6 +100,7 @@ export {
   changeCapability,
   saveImport,
   type ImportSummary,
+  applyVerification,
   loadWriteHost,
   writeCapabilityOf,
 } from "./registry";

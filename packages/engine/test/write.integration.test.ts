@@ -1,7 +1,7 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { buildDictionary, formatTaka, type ActionTemplate } from "@dokaanbondhu/core";
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { runTurn, type TurnDeps, type TurnState } from "../src/conversation/turn";
 import { callHost, type ApiConnection, type HostRequest } from "../src/host/api";
 import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
@@ -169,6 +169,11 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       .filter((event) => event.type === "text")
       .map((event) => (event as { text: string }).text)
       .join(" ");
+    for (const action of outcome.actions) {
+      if (action.preview) previews.set(action.id, action.preview);
+      if ((action.status === "done" || action.status === "review") && action.response)
+        saved.set(action.id, action);
+    }
     return { reply, events, outcome, state: outcome.state };
   }
 
@@ -184,8 +189,13 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
   /** Every call sent so far went as a dry run, or was a read: nothing was saved. */
   const nothingSent = () => calls.every((call) => call.method === "GET" || call.query?.dry_run === "true");
 
+  /** Every action saved and not undone yet, with what its confirmation showed: undone after each test (below). */
+  const saved = new Map<string, ActionRecord>();
+  const previews = new Map<string, NonNullable<ActionRecord["preview"]>>();
+
   /** Undo of a done action, as the history page's button asks for it (spec 11.9.1). */
   async function undo(record: ActionRecord, pending: { preview: NonNullable<ActionRecord["preview"]> }) {
+    saved.delete(record.id);
     const capability = writes.capabilities.find((item) => item.id === record.capabilityId)!;
     return undoAction({
       capability,
@@ -213,6 +223,12 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     catalog = toCatalog(await pools.readOnly(db, (run) => readCatalog(run, geargridMap)));
     const document = await (await fetch(new URL("/api/openapi.json", apiUrl))).json();
     writes = registryOf(document, calls);
+  });
+
+  // A test that fails after saving still undoes what it saved, so the seed stays as the other files expect it.
+  afterEach(async () => {
+    for (const record of [...saved.values()])
+      await undo(record, { preview: previews.get(record.id)! }).catch(() => null);
   });
 
   afterAll(async () => {

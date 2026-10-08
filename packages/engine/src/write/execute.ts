@@ -128,8 +128,11 @@ export async function executeAction(input: {
         method: operation.httpMethod,
         path: operation.path.replace(/\{[^}]+\}/, encodeURIComponent(String(id))),
       });
-      checked = true;
-      if (!found || found.status !== 200) mismatch = true;
+      // No answer is no evidence either way: the stock and balance check below still decides (D136).
+      if (found) {
+        checked = true;
+        if (found.status !== 200) mismatch = true;
+      }
     }
   }
   if (read && before) {
