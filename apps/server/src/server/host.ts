@@ -8,17 +8,19 @@ import {
   loadCatalog,
   loadHostDb,
   loadSchemaMap,
+  loadWriteHost,
   type AppWords,
   type Catalog,
   type ReportName,
 } from "@dokaanbondhu/engine/host";
+import type { WriteCapability } from "@dokaanbondhu/engine/write";
 import { aliases, connections, fitmentExtra, rackExtra, reportFormulas } from "@dokaanbondhu/platform-db";
 import { and, asc, eq, max } from "drizzle-orm";
 import { serverEnv } from "../env";
 import { logger, platform } from "./singletons";
 
-// The shop's host for a turn (spec 11.4): its active database connection, the schema map, the catalog, and
-// DokaanBondhu's own fitment and rack rows, kept in memory per shop. A turn checks the catalog's newest sync time and
+// The shop's host for a turn (spec 11.4): its active database connection, the schema map, the catalog,
+// DokaanBondhu's own fitment and rack rows, and its API connection's writes (spec 9.6), kept in memory per shop. A turn checks the catalog's newest sync time and
 // the shop's newest alias (words learned, D102) when the entry is older than 60 s and reloads it when either changed;
 // a setup change clears the entry at once.
 
@@ -30,6 +32,8 @@ export interface ShopHost {
   dictionary: Dictionary;
   /** "alias = catalog term" for the system prompt (spec 9.7). */
   shopWords: string[];
+  /** Every write of the API connection, switched on or not: an action is decided and undone by its own (spec 11.9). */
+  allWrites: WriteCapability[];
 }
 
 interface Entry {
@@ -64,6 +68,9 @@ async function load(shopId: string): Promise<Entry> {
     const own = await tx.select().from(aliases).where(eq(aliases.shopId, shopId));
     const wordsVersion = own.reduce((latest, row) => Math.max(latest, row.createdAt.getTime()), 0);
     const shopWords = own.slice(0, SHOP_WORDS).map((row) => `${row.aliasText} = ${row.targetValue}`);
+    const writes = await loadWriteHost(tx, aesKey);
+    const writeHost = writes ? { writes: writes.host } : {};
+    const allWrites = writes?.all ?? [];
 
     const [connection] = await tx
       .select({ id: connections.id, appWords: connections.appWords })
@@ -81,9 +88,10 @@ async function load(shopId: string): Promise<Entry> {
         rackExtra: new Map(),
         formulas: [],
         hostReports: [],
+        ...writeHost,
       };
       return {
-        value: { host, dictionary, shopWords },
+        value: { host, dictionary, shopWords, allWrites },
         connectionId: null,
         version: versionOf(null, wordsVersion),
         checkedAt: Date.now(),
@@ -133,9 +141,10 @@ async function load(shopId: string): Promise<Entry> {
       })),
       hostReports: [], // a host's own report endpoints come with API connections (spec 11.13)
       appWords: connection.appWords as AppWords,
+      ...writeHost,
     };
     return {
-      value: { host, dictionary, shopWords },
+      value: { host, dictionary, shopWords, allWrites },
       connectionId: connection.id,
       version: versionOf(catalog.syncedAt, wordsVersion),
       checkedAt: Date.now(),

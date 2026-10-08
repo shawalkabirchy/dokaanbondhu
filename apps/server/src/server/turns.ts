@@ -3,6 +3,7 @@ import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
 import { ASK_AGAIN, pcmDurationMs, pcmToWav, trimSilence } from "@dokaanbondhu/core";
 import {
   buildKeyterms,
+  CONFIRM_TTL_MS,
   runTurn,
   type ConversationState,
   type Offer,
@@ -13,7 +14,16 @@ import {
 } from "@dokaanbondhu/engine/conversation";
 import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
 import { SpeechError, type AsrResult } from "@dokaanbondhu/engine/providers";
-import { aliasSuggestions, conversations, messages, requestFrames, type Tx } from "@dokaanbondhu/platform-db";
+import type { ActionPreview, ActionRecord, HostCall, PendingAction } from "@dokaanbondhu/engine/write";
+import {
+  actionLogs,
+  aliasSuggestions,
+  conversations,
+  messages,
+  requestFrames,
+  users,
+  type Tx,
+} from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { serverEnv } from "../env";
 import { appError } from "./errors";
@@ -31,6 +41,56 @@ import { logger, platform } from "./singletons";
 const HISTORY = 6;
 
 type FrameRow = typeof requestFrames.$inferSelect;
+type ActionRow = typeof actionLogs.$inferSelect;
+
+/** The action waiting for yes or no; it expires 60 s after it was made (spec 9.9). */
+function pendingOf(row: ActionRow): PendingAction {
+  return {
+    id: row.id,
+    capabilityId: row.capabilityId,
+    request: row.request as HostCall,
+    preview: row.preview as ActionPreview,
+    idempotencyKey: row.idempotencyKey,
+    expiresAt: new Date(row.createdAt.getTime() + CONFIRM_TTL_MS).toISOString(),
+  };
+}
+
+/** Saves the turn's changes to action_logs: a new pending action, or the decision on one (spec 9.9, 11.9 step 7). */
+async function saveActions(
+  tx: Tx,
+  caller: Caller,
+  conversationId: string,
+  turnId: string,
+  records: ActionRecord[],
+) {
+  for (const record of records) {
+    if (record.status === "pending" && record.request && record.preview && record.idempotencyKey) {
+      await tx.insert(actionLogs).values({
+        id: record.id,
+        shopId: caller.shopId,
+        userId: caller.userId,
+        conversationId,
+        turnId,
+        capabilityId: record.capabilityId,
+        request: record.request,
+        preview: record.preview,
+        status: "pending",
+        idempotencyKey: record.idempotencyKey,
+      });
+      continue;
+    }
+    await tx
+      .update(actionLogs)
+      .set({
+        status: record.status,
+        ...(record.response !== undefined ? { response: record.response } : {}),
+        ...(record.verifyStatus ? { verifyStatus: record.verifyStatus } : {}),
+        ...(record.confirmedAt ? { confirmedAt: new Date(record.confirmedAt) } : {}),
+        ...(record.doneAt ? { doneAt: new Date(record.doneAt) } : {}),
+      })
+      .where(eq(actionLogs.id, record.id));
+  }
+}
 
 function frameOf(row: FrameRow): RequestFrame {
   return {
@@ -103,6 +163,8 @@ export interface LoadedConversation {
   id: string;
   state: TurnState;
   frameId: string | null;
+  /** The user's name: the acting user of a write (spec 11.9). */
+  userName: string;
 }
 
 /** The caller's conversation with its open frame and last messages; someone else's is not found. */
@@ -132,6 +194,19 @@ export async function loadConversation(caller: Caller, conversationId: string): 
           .orderBy(desc(requestFrames.updatedAt))
           .limit(1);
     const frame = latest;
+    const [pending] = await tx
+      .select()
+      .from(actionLogs)
+      .where(
+        and(
+          eq(actionLogs.conversationId, conversationId),
+          eq(actionLogs.userId, caller.userId),
+          eq(actionLogs.status, "pending"),
+        ),
+      )
+      .orderBy(desc(actionLogs.createdAt))
+      .limit(1);
+    const [user] = await tx.select({ name: users.name }).from(users).where(eq(users.id, caller.userId));
     const last = await tx
       .select({ role: messages.role, text: messages.text })
       .from(messages)
@@ -141,10 +216,12 @@ export async function loadConversation(caller: Caller, conversationId: string): 
     return {
       id: conversation.id,
       frameId: frame?.id ?? null,
+      userName: user?.name ?? "",
       state: {
         state: conversation.state as ConversationState,
         context: conversation.context as SessionContext,
         frame: frame ? frameOf(frame) : null,
+        action: pending ? pendingOf(pending) : null,
         history: last.reverse().map((message) => ({
           role: message.role as "user" | "assistant",
           text: message.text ?? "",
@@ -234,6 +311,8 @@ async function answer(
       newId: () => randomUUID(),
       evalMode: request.evalMode,
       shopWords: shopHostValue.shopWords,
+      role: caller.role,
+      actingUser: conversation.userName,
     },
     (event) => {
       if (event.type === "done") {
@@ -288,6 +367,7 @@ async function answer(
         );
     }
     if (next) await saveFrame(tx, caller.shopId, conversation.id, next);
+    await saveActions(tx, caller, conversation.id, outcome.turnId, outcome.actions);
     // Words learned from an answered question (D102 B): counted, and shown to the owner once seen twice.
     for (const word of outcome.learned) {
       await tx

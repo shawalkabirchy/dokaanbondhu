@@ -29,7 +29,9 @@ import {
   banglaOf,
   banglaNumbers,
   carLabel,
+  decisionOf,
   formatTaka,
+  resultText,
   type Dictionary,
   type PartRow,
   type PartsContext,
@@ -59,6 +61,10 @@ import { llmHistory } from "./history";
 import { systemPrompt } from "./prompt";
 import type { ConversationState } from "./state";
 import { CANNOT_HELP, readTools } from "./tools";
+import { executeAction } from "../write/execute";
+import { writeTool } from "../write/tool";
+import type { ActionRecord, PendingAction, WriteCapability, WriteHost } from "../write/types";
+import { advanceWrite, correctWrite, writeFrame, type WriteStep, type WriteTurn } from "./write-flow";
 
 // One chat turn (spec 9.1): normalize, candidates, frame answer, the LLM tool loop (at most 4 calls, D15),
 // resolution, decide, respond sentence by sentence with the grounding check (spec 12), and what to persist.
@@ -122,6 +128,8 @@ export interface TurnHost {
   hostReports: ReportName[];
   /** The owner's choices for the app's own words: price levels, quality, position, unit (D121, D122). */
   appWords?: AppWords;
+  /** The API connection's enabled writes (spec 9.6, 11.9); absent: the assistant only reads. */
+  writes?: WriteHost;
 }
 
 export interface TurnState {
@@ -130,6 +138,8 @@ export interface TurnState {
   frame: RequestFrame | null;
   /** The last messages, oldest first (the loop sends the last 6). */
   history: { role: "user" | "assistant"; text: string }[];
+  /** The action waiting for yes or no (spec 9.9), from action_logs. */
+  action?: PendingAction | null;
 }
 
 export interface TurnDeps {
@@ -140,6 +150,10 @@ export interface TurnDeps {
   newId: () => string;
   evalMode: boolean;
   shopWords: string[];
+  /** The user's role: a write whose required role is owner is not offered to staff (spec 9.6). Default staff. */
+  role?: "owner" | "staff";
+  /** The user's name, sent as the acting-user header where the host has one (spec 11.9). */
+  actingUser?: string;
 }
 
 export interface TurnTrace {
@@ -184,6 +198,26 @@ export interface TurnOutcome {
    * it, and what the answer resolved it to. The server records them as suggestions for the owner.
    */
   learned: { heard: string; concept: "vehicle_model" | "part_type"; value: string }[];
+  /** Changes to action_logs the server saves with the turn: a new pending action, or a decided one (spec 9.9). */
+  actions: ActionRecord[];
+}
+
+/** Tool names the read path already uses: a capability named like one is not offered. */
+const READ_TOOL_NAMES = new Set([
+  "find_parts",
+  "run_read_query",
+  "get_report",
+  "resolve_customer",
+  "ask_user",
+  "cannot_help",
+]);
+
+/** The writes a user may call as tools: enabled ones their role allows (spec 9.6); compensations never reach here (D52). */
+export function offeredWrites(writes: WriteHost | undefined, role: "owner" | "staff"): WriteCapability[] {
+  return (writes?.capabilities ?? []).filter(
+    (capability) =>
+      !READ_TOOL_NAMES.has(capability.name) && (role === "owner" || capability.requiredRole === "staff"),
+  );
 }
 
 type Emit = (event: ReplyEvent) => void;
@@ -455,7 +489,11 @@ export async function runTurn(
   let final:
     | { kind: "answer"; text: string }
     | { kind: "question"; text: string; slot: string; offers: Offer[] }
+    | { kind: "confirm"; text: string }
     | null = null;
+  const role = deps.role ?? "staff";
+  const offered = offeredWrites(deps.host.writes, role);
+  const actions: ActionRecord[] = [];
 
   const tier: PriceTier = state.context.customer?.tier ?? "retail";
   /** The customer's Bangla name when the host stores one, for the rate sentence (D119). */
@@ -490,11 +528,8 @@ export async function runTurn(
    * find_parts with its outcome handled: a question, facts for the answer, or nothing. `remembered` names the slots
    * that came from the session context, not from the user (D125).
    */
-  const findAndDecide = async (
-    query: PartQuery,
-    frame: RequestFrame,
-    remembered: ReadonlySet<string> = new Set(),
-  ): Promise<"asked" | "facts"> => {
+  /** One part search (spec 11.5), timed and traced. */
+  const lookup = async (query: PartQuery): Promise<FindPartsResult> => {
     const resolveStart = Date.now();
     const result = await findParts({
       query,
@@ -523,6 +558,31 @@ export async function runTurn(
       result: result.kind,
       parts: result.kind === "rows" ? result.rows.map((row) => numbersOf(row.hostPartId)) : [],
     });
+    return result;
+  };
+
+  /** Facts for the parts answer: the cards, and every number and rack the answer may say. */
+  const partsFacts = (query: PartQuery, result: Exclude<FindPartsResult, { kind: "ask" }>) => {
+    if (result.kind === "rows") {
+      facts.allowed.addResult(result.rows).addNumber(result.rows.length);
+      for (const row of result.rows) {
+        for (const rack of row.racks ?? [row.rack]) facts.allowed.addRack(rack);
+        if (row.vehicle) facts.allowed.addNumber(row.vehicle.yearFrom).addNumber(row.vehicle.yearTo ?? null);
+      }
+      if (result.resolved.year) facts.allowed.addNumber(result.resolved.year);
+      emit(cardsOf(result.rows));
+    } else {
+      facts.allowed.addResult([...result.closeVehicle, ...result.mentioned]);
+    }
+    facts.parts = { result, context: partsContext(query, result) };
+  };
+
+  const findAndDecide = async (
+    query: PartQuery,
+    frame: RequestFrame,
+    remembered: ReadonlySet<string> = new Set(),
+  ): Promise<"asked" | "facts"> => {
+    const result = await lookup(query);
     for (const [key, value] of Object.entries(query)) {
       frame.slots[key] = { value, status: "understood", source: remembered.has(key) ? "context" : "user" };
     }
@@ -553,37 +613,27 @@ export async function runTurn(
         engine: result.resolved.engine,
       };
     }
-    if (result.kind === "rows") {
-      facts.allowed.addResult(result.rows).addNumber(result.rows.length);
-      for (const row of result.rows) {
-        for (const rack of row.racks ?? [row.rack]) facts.allowed.addRack(rack);
-        if (row.vehicle) facts.allowed.addNumber(row.vehicle.yearFrom).addNumber(row.vehicle.yearTo ?? null);
+    partsFacts(query, result);
+    if (result.kind === "rows" && result.rows.length > LIST_KINDS) {
+      const separated = separatingSlot(result.rows, tier);
+      if (separated) {
+        delete facts.parts; // the cards are shown, the answer waits for the question
+        const chips = slotChips(separated.slot, separated.options);
+        const offers = chips.map((chip, index) => ({
+          id: chip.id,
+          label: chip.label,
+          value: separated.options[index]!.value,
+        }));
+        emit({ type: "choices", slot: separated.slot, options: chips });
+        ask(
+          frame,
+          separated.slot,
+          question({ slot: separated.slot as QuestionSlot, vehicle: context.vehicle }),
+          offers,
+        );
+        return "asked";
       }
-      if (result.resolved.year) facts.allowed.addNumber(result.resolved.year);
-      emit(cardsOf(result.rows));
-      if (result.rows.length > LIST_KINDS) {
-        const separated = separatingSlot(result.rows, tier);
-        if (separated) {
-          const chips = slotChips(separated.slot, separated.options);
-          const offers = chips.map((chip, index) => ({
-            id: chip.id,
-            label: chip.label,
-            value: separated.options[index]!.value,
-          }));
-          emit({ type: "choices", slot: separated.slot, options: chips });
-          ask(
-            frame,
-            separated.slot,
-            question({ slot: separated.slot as QuestionSlot, vehicle: context.vehicle }),
-            offers,
-          );
-          return "asked";
-        }
-      }
-    } else {
-      facts.allowed.addResult([...result.closeVehicle, ...result.mentioned]);
     }
-    facts.parts = { result, context };
     frame.status = "done";
     state.frame = frame;
     return "facts";
@@ -650,6 +700,80 @@ export async function runTurn(
   const carOf = (said: string) => {
     const best = matchConcept("vehicle_model", said, [], deps.dictionary).candidates[0];
     return best && best.score >= 0.7 ? best.value : null;
+  };
+
+  /** The write flow's view of this turn (spec 9.6, 11.9). */
+  const writeTurn = (said: string): WriteTurn => ({
+    capabilities: offered,
+    host: deps.host.writes!,
+    dictionary: deps.dictionary,
+    customers: deps.host.catalog.customers,
+    suppliers: deps.host.catalog.suppliers.map((supplier) => ({
+      hostId: supplier.hostId,
+      name: supplier.name,
+      nameBn: supplier.nameBn ?? null,
+    })),
+    tier,
+    rememberedCustomer: state.context.customer
+      ? { hostId: state.context.customer.hostId, name: state.context.customer.name }
+      : null,
+    now,
+    newId: deps.newId,
+    request: said,
+    // The car a write names is remembered like a search's (D125).
+    find: async (query) => {
+      const result = await lookup(query);
+      if (result.kind !== "ask" && result.resolved.vehicle) {
+        state.context.vehicle = {
+          model: result.resolved.vehicle,
+          year: result.resolved.year,
+          engine: result.resolved.engine,
+        };
+      }
+      return result;
+    },
+    complete: completed,
+    emit,
+    ask,
+  });
+
+  /** A write step in this turn: a question (asked already), the confirmation, an answer, or the parts answer. */
+  const tookStep = (frame: RequestFrame, step: WriteStep) => {
+    state.frame = frame;
+    if (step.kind === "asked") return;
+    if (step.kind === "confirm") {
+      frame.status = "confirming";
+      renew(frame, now);
+      state.action = step.action;
+      actions.push({
+        id: step.action.id,
+        capabilityId: step.action.capabilityId,
+        status: "pending",
+        request: step.action.request,
+        preview: step.action.preview,
+        idempotencyKey: step.action.idempotencyKey,
+      });
+      // The customer of a write is remembered, with their price level (D119, D125).
+      const customer = step.action.preview.customer;
+      const known = customer
+        ? deps.host.catalog.customers.find((item) => item.hostId === customer.hostId)
+        : null;
+      if (customer && known) {
+        state.context.customer = {
+          hostId: customer.hostId,
+          name: known.name,
+          tier: customerTier(known.attrs, deps.host.appWords),
+        };
+      }
+      final = { kind: "confirm", text: step.text };
+      return;
+    }
+    frame.status = "done";
+    if (step.kind === "parts") {
+      if (step.result.kind !== "ask") partsFacts(step.query, step.result);
+      return;
+    }
+    final = { kind: "answer", text: step.text };
   };
 
   /** find_parts for the LLM: the tool result, or "stop" when the turn asks a question. */
@@ -853,26 +977,108 @@ export async function runTurn(
         final = { kind: "answer", text: helpAnswer() };
         return "stop";
       }
-      default:
+      default: {
+        // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
+        const capability = offered.find((item) => item.name === call.name);
+        if (capability && deps.host.writes) {
+          const frame = writeFrame(capability, args, writeTurn(text));
+          record("write");
+          tookStep(frame, await advanceWrite(frame, writeTurn(text)));
+          return "stop";
+        }
         record("unknown_tool");
         return JSON.stringify({ error: `no tool ${call.name}` });
+      }
     }
   };
 
   // Stage 4: the frame answer. A question's answer fills its slot and the request runs again, without the LLM.
   since = Date.now();
   let request = text;
+  // A confirmation waiting for yes or no (spec 9.9): yes sends it, no cancels it, a correction changes its slot and
+  // confirms again, anything else repeats it. An expired one is cancelled, and said so when the input was yes or no.
+  const pending = state.action ?? null;
+  if (pending) {
+    state.action = null;
+    const frame = state.frame?.status === "confirming" ? state.frame : null;
+    const capability = offered.find((item) => item.id === pending.capabilityId) ?? null;
+    const decision = input.text ? decisionOf(text) : null;
+    const cancel = () => {
+      actions.push({ id: pending.id, capabilityId: pending.capabilityId, status: "cancelled" });
+      emit({ type: "action_result", action_id: pending.id, status: "cancelled", undo_available: false });
+    };
+    if (Date.parse(pending.expiresAt) <= now.getTime() || !frame || !capability || !deps.host.writes) {
+      cancel();
+      if (frame) state.frame = { ...frame, status: "expired" };
+      if (decision) final = { kind: "answer", text: resultText("expired", pending.preview.template) };
+    } else if (decision === "yes") {
+      emit({ type: "status", state: "EXECUTING", label_key: "status.saving" });
+      const result = await executeAction({
+        capability,
+        action: pending,
+        host: deps.host.writes,
+        actingUser: deps.actingUser ?? "",
+        read: deps.host.map && deps.host.run ? { map: deps.host.map, run: deps.host.run } : null,
+        now: deps.now,
+      });
+      actions.push({
+        id: pending.id,
+        capabilityId: pending.capabilityId,
+        status: result.status,
+        response: result.response,
+        verifyStatus: result.verifyStatus,
+        confirmedAt: now.toISOString(),
+        doneAt: deps.now().toISOString(),
+      });
+      emit({
+        type: "action_result",
+        action_id: pending.id,
+        status: result.status,
+        undo_available: result.undoAvailable,
+      });
+      frame.status = "done";
+      state.frame = frame;
+      final = { kind: "answer", text: result.text };
+    } else if (decision === "no") {
+      cancel();
+      frame.status = "cancelled";
+      state.frame = frame;
+      final = { kind: "answer", text: resultText("cancelled", pending.preview.template) };
+    } else if (input.text && correctWrite(frame, text, capability, writeTurn(frame.request ?? text))) {
+      cancel();
+      frame.status = "active";
+      renew(frame, now);
+      tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
+    } else {
+      state.action = pending;
+      emit({
+        type: "confirm",
+        action_id: pending.id,
+        text: pending.preview.text,
+        fields: pending.preview.fields,
+        warnings: pending.preview.warnings,
+        expires_at: pending.expiresAt,
+      });
+      final = { kind: "confirm", text: pending.preview.text };
+    }
+  }
   // An input that names another car than the waiting request's, while it asks anything but the car, is a new request:
   // "নোয়া সেলফ মোটর আছে?" after "কোন পার্ট লাগবে?" about an Axio. The waiting one is set aside and the input goes to
   // the LLM without it; "না, প্রিমিও" stays a correction (spec 9.3 rule 3, D127).
-  if (frameOpen && state.frame && state.frame.asking !== "vehicle" && !splitCorrection(text).correction) {
+  if (
+    !final &&
+    frameOpen &&
+    state.frame &&
+    state.frame.asking !== "vehicle" &&
+    !splitCorrection(text).correction
+  ) {
     const heardCar = heardSlots.get("vehicle_model");
     const asked = state.frame.slots.vehicle?.value;
     const frameCar =
       typeof asked === "string" ? carOf(asked) : state.frame.request ? carOf(state.frame.request) : null;
     if (heardCar && frameCar && heardCar !== frameCar) state.frame = { ...state.frame, status: "set_aside" };
   }
-  if (frameOpen && state.frame && state.frame.status !== "set_aside") {
+  if (!final && frameOpen && state.frame && state.frame.status === "active") {
     const frame = state.frame;
     // What the request had for the asked slot, before the answer replaces it (D102 B).
     const asked = frame.asking;
@@ -882,9 +1088,24 @@ export async function runTurn(
       ...(input.choice ? { choice: input.choice } : {}),
       dictionary: deps.dictionary,
       customers: deps.host.catalog.customers,
+      suppliers: deps.host.catalog.suppliers.map((supplier) => ({
+        hostId: supplier.hostId,
+        name: supplier.name,
+        nameBn: supplier.nameBn ?? null,
+      })),
       now,
     });
     const correction = filled ? null : correctedSlot(text, deps.dictionary, now);
+    if ((filled || correction) && frame.capabilityId && deps.host.writes) {
+      // A write's answer, or "না, X" for a part detail: the write goes on from where it was (spec 9.3 rule 3).
+      if (correction) {
+        frame.slots[correction.slot] = { value: correction.value, status: "understood", source: "user" };
+        delete frame.slots.part;
+        delete frame.slots.part_pick;
+      }
+      renew(frame, now);
+      tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
+    }
     if (correction && frame.intent === "find_parts")
       frame.slots[correction.slot] = { value: correction.value, status: "understood", source: "user" };
     if ((filled || correction) && frame.intent === "find_parts" && deps.host.map && deps.host.run) {
@@ -996,7 +1217,7 @@ export async function runTurn(
         content: `${request}${candidates.length ? `\n(candidates: ${candidates.join("; ")})` : ""}`,
       },
     ];
-    const tools = readTools(deps.host.map);
+    const tools = [...readTools(deps.host.map), ...offered.map(writeTool)];
     try {
       let forced = false;
       for (let round = 0; round < TOOL_ROUNDS && trace.llm_calls < LLM_CALLS - 1 && !final; round++) {
@@ -1070,6 +1291,9 @@ export async function runTurn(
   if (final && (final as { kind: string }).kind === "question") {
     reply = (final as { text: string }).text;
     state.state = "CLARIFYING";
+  } else if (final && (final as { kind: string }).kind === "confirm") {
+    reply = (final as { text: string }).text;
+    state.state = "CONFIRMING";
   } else if (final) {
     reply = (final as { text: string }).text;
     state.state = "RESPONDING";
@@ -1109,7 +1333,11 @@ export async function runTurn(
   );
   trace.answer = reply;
   trace.fallbacks = fallbacks;
-  const finalState: ConversationState = state.state === "CLARIFYING" ? "CLARIFYING" : "IDLE";
+  const finalState: ConversationState = state.action
+    ? "CONFIRMING"
+    : state.state === "CLARIFYING"
+      ? "CLARIFYING"
+      : "IDLE";
   state.state = finalState;
   state.context.updatedAt = now.toISOString();
   state.history.push(
@@ -1140,6 +1368,7 @@ export async function runTurn(
     },
     trace,
     learned,
+    actions,
   };
 }
 

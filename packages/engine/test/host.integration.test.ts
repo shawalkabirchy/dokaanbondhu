@@ -185,11 +185,16 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
   });
 
   it("never counts a reversed payment, a reversed purchase or its lines, whatever SQL the LLM writes (D17, D94)", async () => {
-    // The seed has no reversal, so one payment and one purchase are marked reversed for this test and put back after.
+    // One completed payment and purchase are marked reversed for this test and put back after (the write tests leave
+    // reversals of their own, so the first rows may be reversed already).
     const owner = new pg.Client({ connectionString: migrationUrl });
     await owner.connect();
-    const [payment] = (await owner.query("SELECT id FROM customer_payments ORDER BY id LIMIT 1")).rows;
-    const [purchase] = (await owner.query("SELECT id FROM purchases ORDER BY id LIMIT 1")).rows;
+    const [payment] = (
+      await owner.query("SELECT id FROM customer_payments WHERE status = 'completed' ORDER BY id LIMIT 1")
+    ).rows;
+    const [purchase] = (
+      await owner.query("SELECT id FROM purchases WHERE status = 'completed' ORDER BY id LIMIT 1")
+    ).rows;
     const read = (sql: string) => pools.readOnly(db, (run) => runReadQuery(geargridMap, run, sql));
     const paymentSql = `SELECT COUNT(*) AS n FROM customer_payments WHERE id = '${payment.id}'`;
     const purchaseSql = `SELECT COUNT(*) AS n FROM purchases WHERE id = '${purchase.id}'`;

@@ -53,6 +53,7 @@
   },
   "status": {
     "listening": "শুনছি…",
+    "saving": "সেভ করছি…",
     "searching": "খুঁজছি…",
     "understanding": "বুঝছি…"
   },

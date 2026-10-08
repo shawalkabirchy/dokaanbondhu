@@ -1,12 +1,16 @@
 import type { CapabilityPatch, CapabilityView } from "@dokaanbondhu/contracts";
-import { capabilities, capabilityParams, type Tx } from "@dokaanbondhu/platform-db";
+import type { ActionTemplate } from "@dokaanbondhu/core";
+import { capabilities, capabilityParams, connections, type Tx } from "@dokaanbondhu/platform-db";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import type { WriteCapability, WriteHost } from "../write/types";
+import { callHost } from "./api";
 import {
   SAFETY_CRITICAL_SLOTS,
   type ImportedCapability,
   type ImportedDocument,
   type ImportedParam,
 } from "./openapi-import";
+import { loadApiConnection } from "./store";
 
 // The capability registry (spec 7.2, 11.8; D134): an import saved with the re-import rules, the owner's changes, and
 // the rules for switching a capability on. Every call runs inside the caller's withShop() transaction.
@@ -441,4 +445,97 @@ export async function changeCapability(
   }
   await tx.update(capabilities).set(set).where(eq(capabilities.id, capabilityId));
   return (await capabilityViews(tx, { id: capabilityId }))[0]!;
+}
+
+/** A capability as the write path uses it (spec 9.6, 11.9). */
+export function writeCapabilityOf(row: CapabilityRow, params: ParamRow[]): WriteCapability {
+  const compensation = row.compensation as Compensation | null;
+  const readBack = row.readBack as ReadBack | null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    template: (row.template ?? "generic") as ActionTemplate,
+    requiredRole: row.requiredRole as WriteCapability["requiredRole"],
+    httpMethod: row.httpMethod ?? "POST",
+    path: row.path ?? "",
+    dryRun: (row.preview as { dry_run?: boolean } | null)?.dry_run === true,
+    params: params
+      .filter((param) => param.capabilityId === row.id)
+      .map((param) => ({
+        path: param.path,
+        location: param.location as WriteCapability["params"][number]["location"],
+        type: param.type,
+        required: param.required,
+        enumValues: (param.enumValues as string[] | null) ?? null,
+        entityConcept: param.entityConcept,
+        semanticSlot: param.semanticSlot,
+        spokenMap: (param.spokenMap as Record<string, string> | null) ?? null,
+      })),
+    compensation:
+      compensation && row.compensatingCapabilityId
+        ? {
+            capabilityId: row.compensatingCapabilityId,
+            operation: compensation.operation,
+            idFrom: compensation.id_from,
+            body: compensation.body ?? {},
+          }
+        : null,
+    readBack: readBack ? { operation: readBack.operation, idFrom: readBack.id_from } : null,
+  };
+}
+
+/**
+ * The shop's active API connection for the write path: its enabled, verified writes that are no other capability's
+ * compensation (D52), every operation by name for read-backs and undo, its feature list, and calls through its auth
+ * adapter (spec 11.12). `all` has every write, for deciding and undoing an action whose capability was switched off
+ * since. Null without an active API connection.
+ */
+export async function loadWriteHost(
+  tx: Tx,
+  aesKey: Buffer,
+): Promise<{ host: WriteHost; all: WriteCapability[] } | null> {
+  const [api] = await tx
+    .select()
+    .from(connections)
+    .where(and(eq(connections.kind, "api"), eq(connections.status, "active")))
+    .orderBy(asc(connections.createdAt))
+    .limit(1);
+  if (!api) return null;
+  const rows = await tx.select().from(capabilities).where(eq(capabilities.connectionId, api.id));
+  const params = rows.length
+    ? await tx
+        .select()
+        .from(capabilityParams)
+        .where(
+          inArray(
+            capabilityParams.capabilityId,
+            rows.map((row) => row.id),
+          ),
+        )
+    : [];
+  const connection = await loadApiConnection(tx, api.id, aesKey);
+  const undoOnly = new Set(
+    rows
+      .filter((row) => row.compensatingCapabilityId && row.compensatingCapabilityId !== row.id)
+      .map((row) => row.compensatingCapabilityId),
+  );
+  const all = rows.filter((row) => row.kind === "write").map((row) => writeCapabilityOf(row, params));
+  const usable = new Set(
+    rows.filter((row) => row.enabled && row.verifiedAt && !undoOnly.has(row.id)).map((row) => row.id),
+  );
+  return {
+    all,
+    host: {
+      capabilities: all.filter((capability) => usable.has(capability.id)),
+      operations: Object.fromEntries(
+        rows.map((row) => [
+          row.name,
+          { id: row.id, name: row.name, httpMethod: row.httpMethod ?? "GET", path: row.path ?? "" },
+        ]),
+      ),
+      features: connection.features,
+      call: (request) => callHost(connection, request),
+    },
+  };
 }

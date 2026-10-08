@@ -52,6 +52,11 @@ const UNIT_BN: Record<string, string> = {
   dozen: "ডজন",
 };
 
+/** A unit's Bangla word: set -> সেট, piece -> টা; another unit as the host writes it. */
+export function unitWord(unit: string): string {
+  return UNIT_BN[unit] ?? unit;
+}
+
 /** A quantity with its unit word: "২ সেট", "৩টা", "১.৫ লিটার". */
 export function quantity(value: number, unit: string): string {
   const number = banglaDigits(String(value));

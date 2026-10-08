@@ -2,6 +2,7 @@ import { featuresPutSchema, hostFeaturesSchema, type FeaturesView } from "@dokaa
 import { connections } from "@dokaanbondhu/platform-db";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { readBody, route } from "../../../../../src/server/route";
+import { clearHostCache } from "../../../../../src/server/host";
 import { apiConnectionRow } from "../../../../../src/server/setup";
 import { platform } from "../../../../../src/server/singletons";
 
@@ -45,6 +46,7 @@ export const PUT = route({ role: "owner", limit: "setup" }, async ({ request, ca
       .where(eq(connections.id, row.id))
       .returning(),
   );
+  clearHostCache(caller.shopId);
   return Response.json({
     connection_id: saved!.id,
     label: saved!.label,

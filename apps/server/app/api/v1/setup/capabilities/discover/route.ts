@@ -10,6 +10,7 @@ import {
 import { connections } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
 import { appError } from "../../../../../../src/server/errors";
+import { clearHostCache } from "../../../../../../src/server/host";
 import { readBody, route } from "../../../../../../src/server/route";
 import { apiConnectionOf, apiConnectionRow } from "../../../../../../src/server/setup";
 import { platform } from "../../../../../../src/server/singletons";
@@ -50,5 +51,6 @@ export const POST = route({ role: "owner", limit: "setup" }, async ({ request, c
       capabilities: await capabilityViews(tx, { connectionId: row.id }),
     };
   });
+  clearHostCache(caller.shopId); // the turn's tools come from these capabilities
   return Response.json(result);
 });

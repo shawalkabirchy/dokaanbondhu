@@ -2,6 +2,7 @@ import { capabilityPatchSchema } from "@dokaanbondhu/contracts";
 import { CapabilityChangeRefused, capabilityViews, changeCapability } from "@dokaanbondhu/engine/host";
 import { z } from "zod";
 import { appError } from "../../../../../../src/server/errors";
+import { clearHostCache } from "../../../../../../src/server/host";
 import { readBody, route } from "../../../../../../src/server/route";
 import { platform } from "../../../../../../src/server/singletons";
 
@@ -35,6 +36,7 @@ export const PATCH = route<{ id: string }>(
     try {
       const capability = await platform().withShop(caller.shopId, (tx) => changeCapability(tx, id, body));
       if (!capability) throw appError("NOT_FOUND", 404, { entity: "capability" });
+      clearHostCache(caller.shopId);
       return Response.json({ capability });
     } catch (error) {
       if (error instanceof CapabilityChangeRefused) {

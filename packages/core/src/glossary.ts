@@ -74,8 +74,10 @@ export interface ConceptMatch {
   decision: Understanding;
 }
 
-/** The word sequences of one text, n-grams of up to three tokens, each token as it is or without its ending. */
-function* ngrams(normalized: Normalized): Generator<{ text: string; heard: string }> {
+/** The word sequences of one text, n-grams of up to three tokens, longest first, each token as it is or without its ending. */
+function* ngrams(
+  normalized: Normalized,
+): Generator<{ text: string; heard: string; start: number; size: number }> {
   const { forms, tokens } = normalized;
   for (let size = Math.min(3, tokens.length); size >= 1; size -= 1) {
     for (let start = 0; start + size <= tokens.length; start += 1) {
@@ -84,7 +86,7 @@ function* ngrams(normalized: Normalized): Generator<{ text: string; heard: strin
       for (let index = start; index < start + size; index += 1) {
         combos = combos.flatMap((combo) => (forms[index] ?? []).map((form) => [...combo, form]));
       }
-      for (const combo of combos) yield { text: combo.join(" "), heard };
+      for (const combo of combos) yield { text: combo.join(" "), heard, start, size };
     }
   }
 }
@@ -117,7 +119,12 @@ export function matchConcept(
   ];
   for (const source of sources) {
     const normalized = normalize(source.text, dictionary.variants);
+    // Words an exact match of more words has taken: "জেনুইন" in "নন জেনুইন" is not also genuine (spec 10.2, longest
+    // first; D136).
+    const taken: [number, number][] = [];
     for (const gram of ngrams(normalized)) {
+      const end = gram.start + gram.size;
+      if (taken.some(([from, to]) => gram.start >= from && end <= to && gram.size < to - from)) continue;
       const key = phoneticKey(gram.text);
       if (source.nearSaid && keySimilarity(key, saidKey) < SAME_PLACE) continue;
       const words = gram.text.split(" ");
@@ -125,6 +132,7 @@ export function matchConcept(
       const weight = source.weight;
       for (const term of terms) {
         const exact = gram.text === term.text;
+        if (exact) taken.push([gram.start, end]);
         // A two-letter key is too little to go on beyond one word: "toyota aqua" is "tk", and so are "তাকে কী" and
         // "টাকা"; "e ki ki" is Aqua's "ek" (D108).
         const tooShort =

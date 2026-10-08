@@ -25,6 +25,21 @@ describe("matching (spec 10.2, 10.3)", () => {
     expect(match.decision).toBe("understood");
   });
 
+  it.each(["নন-জেনুইন", "non genuine", "non-genuine"])(
+    "takes the longest exact match: %s is non-genuine, not also genuine (D136)",
+    (said) => {
+      const match = matchConcept("quality", said, [], dictionary);
+      expect(match.candidates[0]).toMatchObject({ value: "aftermarket", exact: true });
+      expect(match.decision).toBe("understood");
+    },
+  );
+
+  it.each(["জেনুইন", "genuine"])("still takes %s alone as genuine", (said) => {
+    const match = matchConcept("quality", said, [], dictionary);
+    expect(match.candidates[0]).toMatchObject({ value: "genuine", exact: true });
+    expect(match.decision).toBe("understood");
+  });
+
   it("matches a word with its grammatical ending and a Banglish spelling variant", () => {
     expect(matchConcept("vehicle_model", "নোয়ার", [], dictionary).candidates[0]).toMatchObject({
       value: "Toyota Noah",
