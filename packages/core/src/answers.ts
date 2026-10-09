@@ -92,6 +92,14 @@ function priceOf(row: PartRow, tier: PartsContext["tier"]): bigint | null {
   return tierPrice ?? row.retailTaka;
 }
 
+/** The price as said; one asked at a level the part has no price for is its retail price, marked so (D141). */
+function priceText(row: PartRow, tier: PartsContext["tier"]): string | null {
+  const price = priceOf(row, tier);
+  if (price === null) return null;
+  const tierPrice = tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : price;
+  return tierPrice === null ? `${money(price)} (খুচরা)` : money(price);
+}
+
 function stockText(row: PartRow): string {
   if (row.stock === null) return "";
   if (row.stock <= 0) return "নেই";
@@ -114,8 +122,8 @@ function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, w
   const brand = withBrand && row.brand ? `(${row.brand})` : null;
   const head = [quality, brand, stock].filter(Boolean).join(" ");
   if (head) bits.push(head);
-  const price = priceOf(row, tier);
-  if (price !== null && (row.stock ?? 1) > 0) bits.push(money(price));
+  const price = priceText(row, tier);
+  if (price !== null && (row.stock ?? 1) > 0) bits.push(price);
   const rack = rackText(row);
   if (withRack && rack && (row.stock ?? 1) > 0) bits.push(`${rack} তাকে`);
   return bits.join(", ");
@@ -167,7 +175,7 @@ export function partsAnswer(rows: PartRow[], asked: PartsContext, pairUsed: stri
     const quality = row.quality ? `${banglaOf("quality", row.quality)} ` : "";
     const [head, ...tail] = [
       `${possessive(vehiclePhrase(context))} ${context.position ? `${banglaOf("position", context.position)} ` : ""}${quality}${banglaOf("part_type", pairUsed ?? context.partType)} ${stockText(row)} আছে`,
-      ...(priceOf(row, context.tier) !== null ? [money(priceOf(row, context.tier)!)] : []),
+      ...(priceText(row, context.tier) !== null ? [priceText(row, context.tier)!] : []),
       ...(rackText(row) ? [`${rackText(row)} তাকে`] : []),
     ];
     return `${[head, ...tail].join(", ")}।${rate}`;

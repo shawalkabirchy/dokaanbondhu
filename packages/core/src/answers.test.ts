@@ -93,9 +93,13 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: 1650n }], garage)).toBe(
       "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম গ্যারেজ রেটে।",
     );
-    // No garage price recorded: the retail price is said, so no rate is named.
+    // No garage price recorded: the retail price is said, marked so, and no rate is named.
     expect(partsAnswer([row({ garageTaka: null })], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা, B-3 তাকে।",
+      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা (খুচরা), B-3 তাকে।",
+    );
+    // One kind without it among others with it: that one is marked retail.
+    expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: null }], garage)).toBe(
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা (খুচরা)। দুটোই B-3 তাকে। দাম গ্যারেজ রেটে।",
     );
   });
 
