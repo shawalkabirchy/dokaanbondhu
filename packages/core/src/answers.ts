@@ -1,6 +1,6 @@
 import { money, quantity as quantityText, year as yearText } from "./format";
 import { GLOSSARY, type AliasConcept } from "./glossary";
-import type { PartRow, SeparatingSlot, SlotOption } from "./resolve";
+import { levelPrice, type PartRow, type PriceLevel, type SeparatingSlot, type SlotOption } from "./resolve";
 import { banglaDigits } from "./text";
 
 // Template questions and answers (spec 9.4, 12.2): deterministic Bangla, never LLM text. Parts answers follow the
@@ -59,11 +59,11 @@ export interface PartsContext {
   yearRange?: [number, number | null] | null;
   partType: string; // glossary value, e.g. Brake Pad
   position: string | null;
-  /** The price level the question named, else retail (D141). */
-  tier: "retail" | "garage" | "wholesale";
+  /** The price level the question named (paikari), else retail (D141, D142). */
+  tier: PriceLevel;
 }
 
-const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি" } as const;
+const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি", paikari: "পাইকারি" } as const;
 
 /** A car as said in answers and on the app's memory line: "এক্সিও ২০১৪" (D125). */
 export function carLabel(model: string, year: number | null): string {
@@ -88,16 +88,14 @@ export function partPhrase(context: PartsContext, partType = context.partType): 
 }
 
 function priceOf(row: PartRow, tier: PartsContext["tier"]): bigint | null {
-  const tierPrice = tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : null;
-  return tierPrice ?? row.retailTaka;
+  return levelPrice(row, tier) ?? row.retailTaka;
 }
 
 /** The price as said; one asked at a level the part has no price for is its retail price, marked so (D141). */
 function priceText(row: PartRow, tier: PartsContext["tier"]): string | null {
   const price = priceOf(row, tier);
   if (price === null) return null;
-  const tierPrice = tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : price;
-  return tierPrice === null ? `${money(price)} (খুচরা)` : money(price);
+  return levelPrice(row, tier) === null ? `${money(price)} (খুচরা)` : money(price);
 }
 
 function stockText(row: PartRow): string {
@@ -138,7 +136,7 @@ export function missingAnswer(
   return `${partPhrase(context, pairUsed ?? context.partType)} ${missing} নেই।`;
 }
 
-/** "দাম পাইকারি রেটে।" when a price said is the level the question named, not retail (D141). */
+/** "দাম পাইকারি রেটে।" when a price said is the level the question named, not retail (D141, D142). */
 function rateSentence(rows: PartRow[], context: PartsContext): string {
   if (context.tier === "retail") return "";
   const differs = rows.some((row) => {

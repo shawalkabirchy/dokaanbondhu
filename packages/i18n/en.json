@@ -78,6 +78,7 @@
     "more_rows": "There are more rows; open the shop's app to see them all.",
     "prices": {
       "retail": "Retail",
+      "paikari": "Paikari (trade)",
       "garage": "Garage",
       "wholesale": "Wholesale"
     },

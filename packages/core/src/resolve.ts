@@ -171,6 +171,20 @@ function slotValue(row: PartRow, slot: SeparatingSlot): string | null {
   }
 }
 
+/**
+ * A price level: a customer's own (retail, garage, wholesale, which the shop app bills at) or the one a question says
+ * (D142): retail, or paikari, the trade price, which is the app's garage price, else its wholesale price.
+ */
+export type PriceLevel = "retail" | "garage" | "wholesale" | "paikari";
+
+/** A part's price at a level, or null when it has none there (then its retail price is said). */
+export function levelPrice(row: PartRow, level: PriceLevel): bigint | null {
+  if (level === "garage") return row.garageTaka;
+  if (level === "wholesale") return row.wholesaleTaka;
+  if (level === "paikari") return row.garageTaka ?? row.wholesaleTaka;
+  return row.retailTaka;
+}
+
 export interface SlotOption {
   value: string;
   rows: PartRow[];
@@ -185,7 +199,7 @@ export interface SlotOption {
  */
 export function separatingSlot(
   rows: readonly PartRow[],
-  tier: "retail" | "garage" | "wholesale" = "retail",
+  tier: PriceLevel = "retail",
 ): { slot: SeparatingSlot; options: SlotOption[] } | null {
   let chosen: SeparatingSlot | null = null;
   let most = 1;
@@ -204,8 +218,7 @@ export function separatingSlot(
     if (value === null) continue;
     groups.set(value, [...(groups.get(value) ?? []), row]);
   }
-  const price = (row: PartRow) =>
-    (tier === "garage" ? row.garageTaka : tier === "wholesale" ? row.wholesaleTaka : null) ?? row.retailTaka;
+  const price = (row: PartRow) => levelPrice(row, tier) ?? row.retailTaka;
   const options = [...groups.entries()].map(([value, group]) => {
     const prices = group.map(price).filter((taka): taka is bigint => taka !== null);
     return {

@@ -413,7 +413,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(match.candidates[0]?.customer.hostId).toBe(rahman.hostId);
   });
 
-  it("bills a customer at its own level, but says a level only when the question names it (D141)", () => {
+  it("bills a customer at its own level, but says paikari only when the question asks it (D141, D142)", () => {
     // Shop B's own word for Rahman Auto Works' level is still read, for the bill the app makes.
     expect(
       customerTier(catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!.attrs),
@@ -444,9 +444,9 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       /৪,৫০০ টাকা, B-3 তাকে।$/,
     );
     expect(partsAnswer([pad], context("এক্সিওর প্যাডের গ্যারেজের দাম কত?"))).toMatch(
-      /৪,২০০ টাকা, B-3 তাকে। দাম গ্যারেজ রেটে।$/,
+      /৪,২০০ টাকা, B-3 তাকে। দাম পাইকারি রেটে।$/,
     );
-    expect(partsAnswer([pad], context("axio r pad er garage dam koto?"))).toMatch(/দাম গ্যারেজ রেটে।$/);
+    expect(partsAnswer([pad], context("axio r pad er paikari dam koto?"))).toMatch(/দাম পাইকারি রেটে।$/);
   });
 
   it("values the stock per part with the newest cost, over both branches", async () => {

@@ -85,15 +85,18 @@ describe("app words", () => {
   });
 });
 
-describe("the price level a question names (D141)", () => {
+describe("the price level a question names (D141, D142)", () => {
+  // Two prices only: the normal one and paikari; every trade word asks for paikari.
   it.each([
-    ["এক্সিওর অয়েল ফিল্টারের পাইকারি দাম কত?", "wholesale"],
-    ["axio r oil filter er paikari dam koto?", "wholesale"],
-    ["oil filter wholesale price koto", "wholesale"],
-    ["এক্সিওর প্যাডের গ্যারেজের দাম কত?", "garage"],
-    ["axio r pad er garage dam koto?", "garage"],
-  ] as const)("%s names %s", (text, level) => {
-    expect(priceLevelIn(text)).toBe(level);
+    "এক্সিওর অয়েল ফিল্টারের পাইকারি দাম কত?",
+    "axio r oil filter er paikari dam koto?",
+    "oil filter wholesale price koto",
+    "এক্সিওর প্যাডের গ্যারেজের দাম কত?",
+    "axio r pad er garage dam koto?",
+    "ডিলার দাম কত",
+    "dealer dam koto",
+  ])("%s asks the paikari price", (text) => {
+    expect(priceLevelIn(text)).toBe("paikari");
   });
 
   it.each([

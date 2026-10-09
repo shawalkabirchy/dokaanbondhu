@@ -40,6 +40,8 @@ import {
   type PartRow,
   type PartsContext,
   type QuestionSlot,
+  levelPrice,
+  type PriceLevel,
   type PriceTier,
 } from "@dokaanbondhu/core";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
@@ -297,10 +299,8 @@ function partQueryOf(args: Record<string, unknown>): PartQuery {
   return query;
 }
 
-const TIER_PRICE = { retail: "retailTaka", garage: "garageTaka", wholesale: "wholesaleTaka" } as const;
-
-/** Part cards with the one price the answer says: the level the question named, else retail (D141). */
-function cardsOf(rows: PartRow[], tier: PriceTier): ReplyEvent {
+/** Part cards with the one price the answer says: paikari when the question asked it, else retail (D141, D142). */
+function cardsOf(rows: PartRow[], tier: PriceLevel): ReplyEvent {
   return {
     type: "cards",
     parts: rows.map((row) => ({
@@ -312,8 +312,8 @@ function cardsOf(rows: PartRow[], tier: PriceTier): ReplyEvent {
       unit: row.unit,
       stock: row.stock,
       price_taka:
-        row[TIER_PRICE[tier]] !== null
-          ? { [tier]: Number(row[TIER_PRICE[tier]]) }
+        levelPrice(row, tier) !== null
+          ? { [tier]: Number(levelPrice(row, tier)) }
           : row.retailTaka !== null
             ? { retail: Number(row.retailTaka) }
             : {},
@@ -508,7 +508,7 @@ export async function runTurn(
 
   // Prices are said at retail unless the question itself names a level ("পাইকারি দাম", "garage price"); a
   // remembered customer never changes them, and a question's answer keeps the level of the request it answers (D141).
-  const tier: PriceTier =
+  const tier: PriceLevel =
     priceLevelIn(
       text,
       named.map((name) => name.heard),

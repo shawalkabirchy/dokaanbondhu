@@ -68,10 +68,11 @@ export function priceTierOf(value: string | null | undefined): PriceTier | null 
 }
 
 /**
- * The price level a question itself names ("পাইকারি দাম", "paikari dam", "wholesale price", "গ্যারেজের দাম"), or null
- * for the normal price (D141). Words inside a name the question says ("নিউ ঢাকা গ্যারেজ") are not a level.
+ * Paikari when a question itself asks the trade price ("পাইকারি দাম", "paikari dam", "wholesale price", "গ্যারেজের
+ * দাম": every trade word of the list means the one trade price, D142), else null for the normal price (D141). Words
+ * inside a name the question says ("নিউ ঢাকা গ্যারেজ") are not a level.
  */
-export function priceLevelIn(text: string, names: readonly string[] = []): PriceTier | null {
+export function priceLevelIn(text: string, names: readonly string[] = []): "paikari" | null {
   let said = ` ${plain(text).replace(/[?।!,;:]/g, " ")} `;
   for (const name of names) if (name.trim()) said = said.replace(` ${plain(name)} `, " ");
   const tokens = said.split(" ").filter(Boolean);
@@ -81,7 +82,7 @@ export function priceLevelIn(text: string, names: readonly string[] = []): Price
       const phrase = tokens.slice(start, start + size).join(" ");
       // "গ্যারেজের", "garage er": the possessive ending is not part of the word.
       const level = byWord.get(phrase) ?? byWord.get(phrase.replace(/(ের|এর|র)$/, ""));
-      if (level === "garage" || level === "wholesale") return level;
+      if (level === "garage" || level === "wholesale") return "paikari";
     }
   }
   return null;

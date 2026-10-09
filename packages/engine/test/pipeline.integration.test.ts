@@ -180,15 +180,17 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       args: { part_type: "oil filter", vehicle: "axio", year: "2014" },
     },
   ])(
-    "says the wholesale price when the question names it, with no customer's name (D141; $style)",
+    "says the paikari price when the question asks it, with no customer's name (D141, D142; $style)",
     async ({ text, args }) => {
       const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
       const { reply, events } = await turn(text, fresh(), [llm]);
-      expect(reply).toMatch(/৪০০ টাকা/);
-      expect(reply).toMatch(/২৪০ টাকা/);
+      // Paikari is the app's garage price: ৪১০ and ২৬০; the third filter has none, so its normal price is marked.
+      expect(reply).toMatch(/৪১০ টাকা/);
+      expect(reply).toMatch(/২৬০ টাকা/);
+      expect(reply).toMatch(/১৮০ টাকা \(খুচরা\)/);
       expect(reply).toMatch(/দাম পাইকারি রেটে।$/);
       const cards = events.find((event) => event.type === "cards") as Extract<ReplyEvent, { type: "cards" }>;
-      expect(cards.parts.some((part) => part.price_taka.wholesale === 400)).toBe(true);
+      expect(cards.parts.some((part) => part.price_taka.paikari === 410)).toBe(true);
       expect(cards.parts.every((part) => Object.keys(part.price_taka).length === 1)).toBe(true);
     },
   );

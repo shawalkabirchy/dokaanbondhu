@@ -85,21 +85,21 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
-  it("says the price level the question named, with no customer's name (D141), and leaves out what the host does not record", () => {
-    const garage: PartsContext = { ...axio, tier: "garage" };
+  it("says the paikari price when the question asks it, with no customer's name (D141, D142), and leaves out what the host does not record", () => {
+    const garage: PartsContext = { ...axio, tier: "paikari" };
     expect(partsAnswer([row({ rack: null, quality: null })], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা। দাম গ্যারেজ রেটে।",
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা। দাম পাইকারি রেটে।",
     );
     expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: 1650n }], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম গ্যারেজ রেটে।",
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম পাইকারি রেটে।",
     );
-    // No garage price recorded: the retail price is said, marked so, and no rate is named.
+    // No trade price recorded: the retail price is said, marked so, and no rate is named.
     expect(partsAnswer([row({ garageTaka: null })], garage)).toBe(
       "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,৫০০ টাকা (খুচরা), B-3 তাকে।",
     );
     // One kind without it among others with it: that one is marked retail.
     expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: null }], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা (খুচরা)। দুটোই B-3 তাকে। দাম গ্যারেজ রেটে।",
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা (খুচরা)। দুটোই B-3 তাকে। দাম পাইকারি রেটে।",
     );
   });
 
@@ -214,5 +214,14 @@ describe("sentences (spec 12.3)", () => {
     ]);
     const long = Array.from({ length: 12 }, (_, i) => `অংশ নম্বর ${i + 1} এর বর্ণনা`).join(", ");
     expect(splitSentences(long).every((piece) => piece.length <= 180)).toBe(true);
+  });
+});
+
+describe("paikari is the app's garage price, else its wholesale price (D142)", () => {
+  it("says a wholesale-only app's price as paikari too", () => {
+    const pads = [{ ...row({}), garageTaka: null, wholesaleTaka: 4000n }];
+    expect(partsAnswer(pads, { ...axio, tier: "paikari" })).toBe(
+      "এক্সিও ২০১৪-এর সামনের জেনুইন ব্রেক প্যাড ৩ সেট আছে, ৪,০০০ টাকা, B-3 তাকে। দাম পাইকারি রেটে।",
+    );
   });
 });
