@@ -13,6 +13,7 @@ import {
   quantity as quantityText,
   resolveCustomer,
   resultText,
+  saidNumbers,
   separatingSlot,
   slotChips,
   type ActionFields,
@@ -170,22 +171,30 @@ export function writeFrame(
     const text = str(value);
     if (text) frame.slots[name] = understood(text);
   };
+  // A number is kept only when the user said it: the model never fills in a quantity, price or amount (D140).
+  const said = saidNumbers(turn.request);
+  const putSaid = (name: string, value: unknown, read: (text: string) => number | null) => {
+    const text = str(value);
+    const number = text ? read(text) : null;
+    if (text && number !== null && said.has(number)) frame.slots[name] = understood(text);
+  };
+  const quantityOf = (text: string) => parseQuantity(normalize(text).tokens)?.value ?? null;
   for (const party of ["customer", "supplier"] as const) {
-    const said = str(args[party]);
-    if (said) frame.slots[party] = { value: said, status: "unclear", source: "user" }; // resolved below
+    const name = str(args[party]);
+    if (name) frame.slots[party] = { value: name, status: "unclear", source: "user" }; // resolved below
   }
   const items = Array.isArray(args.items) ? (args.items as Record<string, unknown>[]) : [];
   if (items.length > 1) frame.slots.lines = understood(items.length);
   const item = items[0] ?? {};
   const part = (item.part ?? args.part ?? {}) as Record<string, unknown>;
   for (const key of PART_KEYS) put(key, part[key]);
-  put("quantity", item.quantity);
-  put("unit_cost", item.unit_cost);
+  putSaid("quantity", item.quantity, quantityOf);
+  putSaid("unit_cost", item.unit_cost, parseAmount);
   const payment = (args.payment ?? {}) as Record<string, unknown>;
   put("payment", payment.method_word);
-  put("paid_amount", payment.amount);
+  putSaid("paid_amount", payment.amount, parseAmount);
   put("trx_id", payment.trx_id);
-  put("amount", args.amount);
+  putSaid("amount", args.amount, parseAmount);
   put("note", args.note);
   put("reason", args.reason);
   for (const [key, value] of Object.entries(args))

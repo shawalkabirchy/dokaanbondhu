@@ -6,6 +6,8 @@ import {
   parseAmount,
   paymentText,
   refusalText,
+  saidNumbers,
+  writeCueOf,
   resultText,
 } from "./actions";
 
@@ -163,5 +165,44 @@ describe("result templates", () => {
     expect(resultText("undone", "sale", { customer: "রহিম মোটরস", due: 20_200n })).toBe(
       "আগের কাজটা ফিরিয়ে নেওয়া হয়েছে। রহিম মোটরসের মোট বাকি এখন ২০,২০০ টাকা।",
     );
+  });
+});
+
+describe("what asks for a write (D140)", () => {
+  it.each([
+    ["রহিম মোটরসকে এক্সিওর সামনের ব্রেক প্যাড বাকিতে দাও", true, "sale"],
+    ["Rahim Motors ke axior samner brake pad bakite dao", true, "sale"],
+    ["এক সেট প্যাড নগদে দাও", false, "sale"],
+    ["ek set pad nogode dao", false, "sale"],
+    ["রহিম থেকে ১০ হাজার টাকা জমা নাও", false, "payment"],
+    ["Rahim theke 10 hajar taka joma nao", false, "payment"],
+    ["নবাবপুর থেকে ৫ সেট প্যাড কিনলাম", true, "stock_in"],
+    ["Nawabpur theke 5 set pad kinlam", true, "stock_in"],
+  ] as const)("%s is a %s", (text, partyNamed, kind) => {
+    expect(writeCueOf(text, { partyNamed })).toBe(kind);
+  });
+
+  it.each([
+    ["প্যাডটা দাও", false],
+    ["padta dao", false],
+    ["রহিম মোটরসকে প্যাডের দাম দাও", true],
+    ["Rahim Motors ke pad er dam dao", true],
+    ["রহিম মোটরসের বাকি কত?", true],
+    ["Rahim Motors er baki koto?", true],
+    ["আজ কত জমা হলো", false],
+    ["aj koto joma holo", false],
+  ] as const)("%s asks no write", (text, partyNamed) => {
+    expect(writeCueOf(text, { partyNamed })).toBeNull();
+  });
+});
+
+describe("numbers said", () => {
+  it("reads every number a request says, in either script", () => {
+    expect([...saidNumbers("এক্সিও ২০১৪ সামনের প্যাড দুই সেট")]).toEqual(expect.arrayContaining([2014, 2]));
+    expect([...saidNumbers("axio 2014 samner pad dui set")]).toEqual(expect.arrayContaining([2014, 2]));
+    expect([...saidNumbers("10 hajar taka joma nao")]).toEqual(expect.arrayContaining([10_000]));
+    expect([...saidNumbers("১০,০০০ টাকা")]).toEqual(expect.arrayContaining([10_000]));
+    expect([...saidNumbers("দুইটা প্লাগ দাও")]).toEqual(expect.arrayContaining([2]));
+    expect(saidNumbers("রহিম মোটরসকে প্যাড বাকিতে দাও").size).toBe(0);
   });
 });

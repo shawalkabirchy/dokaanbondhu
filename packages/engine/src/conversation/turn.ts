@@ -13,6 +13,8 @@ import {
   type NamedInText,
   noFitmentAnswer,
   normalize,
+  parseAmount,
+  parseQuantity,
   parseYear,
   partPhrase,
   racksInText,
@@ -32,6 +34,7 @@ import {
   decisionOf,
   formatTaka,
   resultText,
+  writeCueOf,
   type Dictionary,
   type PartRow,
   type PartsContext,
@@ -494,6 +497,15 @@ export async function runTurn(
   const role = deps.role ?? "staff";
   const offered = offeredWrites(deps.host.writes, role);
   const actions: ActionRecord[] = [];
+  // A write said as an instruction ("…বাকিতে দাও", "joma nao", "kinlam"): the matching capability, which the turn
+  // starts even when the model reaches for a search or a lookup first (D140).
+  const cueKind = text
+    ? writeCueOf(text, {
+        partyNamed: named.some((name) => name.kind === "customer" || name.kind === "supplier"),
+      })
+    : null;
+  const cued =
+    cueKind && deps.host.writes ? (offered.find((item) => item.template === cueKind) ?? null) : null;
 
   const tier: PriceTier = state.context.customer?.tier ?? "retail";
   /** The customer's Bangla name when the host stores one, for the rate sentence (D119). */
@@ -776,6 +788,53 @@ export async function runTurn(
     final = { kind: "answer", text: step.text };
   };
 
+  /**
+   * The cued write, started from what the model understood: the part it searched for (completed from the request
+   * like a search, D118), the customer it looked up, and the quantity, unit cost and amount as the request says them
+   * (D140). Its questions and confirmation follow as for the write's own tool.
+   */
+  const startCued = async (capability: WriteCapability, part: Record<string, unknown>, customer?: string) => {
+    const tokens = normalize(text, deps.dictionary.variants).tokens;
+    // A quantity only with its unit ("দুই সেট", "5 set", "দুইটা"), so a year is never taken for one.
+    const quantity = tokens
+      .map((_, index) => parseQuantity(tokens.slice(index, index + 2)))
+      .find((said) => said?.unit && said.value <= 1000);
+    const per = tokens.findIndex((token) => ["প্রতি", "proti", "per"].includes(token));
+    const unitCost = per >= 0 ? parseAmount(tokens.slice(per + 1).join(" ")) : null;
+    const party = (kind: string) => named.find((name) => name.kind === kind)?.name;
+    const who = customer ?? party("customer");
+    const args: Record<string, unknown> =
+      capability.template === "payment"
+        ? {
+            ...(who ? { customer: who } : {}),
+            ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+          }
+        : {
+            ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
+            ...(party("supplier") ? { supplier: party("supplier") } : {}),
+            items: [
+              {
+                part: {
+                  ...Object.fromEntries(
+                    (["part_type", "vehicle_model", "position", "quality"] as const)
+                      .filter((concept) => heardSlots.has(concept))
+                      .map((concept) => [
+                        concept === "vehicle_model" ? "vehicle" : concept,
+                        heardSlots.get(concept),
+                      ]),
+                  ),
+                  ...part,
+                },
+                ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
+                ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
+              },
+            ],
+          };
+    const frame = writeFrame(capability, args, writeTurn(text));
+    tookStep(frame, await advanceWrite(frame, writeTurn(text)));
+    return "stop" as const;
+  };
+
   /** find_parts for the LLM: the tool result, or "stop" when the turn asks a question. */
   const partsTool = async (query: PartQuery, record: (result: string) => void): Promise<string | "stop"> => {
     const frame = newFrame(deps.newId(), "find_parts", now, text);
@@ -807,6 +866,10 @@ export async function runTurn(
         if (!deps.host.map || !deps.host.run) {
           record("no_connection");
           return JSON.stringify({ error: "no shop database connected" });
+        }
+        if (cued && cued.template !== "payment") {
+          record(`write: ${cued.name}`);
+          return startCued(cued, partQueryOf(args) as Record<string, unknown>);
         }
         return partsTool(partQueryOf(args), record);
       }
@@ -874,6 +937,11 @@ export async function runTurn(
         });
       }
       case "resolve_customer": {
+        if (cued) {
+          // The write resolves the name itself, and asks between two (D140).
+          record(`write: ${cued.name}`);
+          return startCued(cued, {}, str(args.name));
+        }
         const match = resolveCustomer(
           String(args.name ?? ""),
           others,
@@ -927,6 +995,11 @@ export async function runTurn(
         return JSON.stringify({ customer: first.customer.name });
       }
       case "ask_user": {
+        if (cued) {
+          // The write asks what is missing, in its own order (spec 9.4, D140).
+          record(`write: ${cued.name}`);
+          return startCued(cued, {});
+        }
         const slot = str(args.slot) ?? "other";
         // The car asked for while one is remembered and the request names a part and no car: the part search for the
         // remembered car, whose answer names it (D125, D126).
@@ -1214,7 +1287,9 @@ export async function runTurn(
       }),
       {
         role: "user",
-        content: `${request}${candidates.length ? `\n(candidates: ${candidates.join("; ")})` : ""}`,
+        content: `${request}${candidates.length ? `\n(candidates: ${candidates.join("; ")})` : ""}${
+          cued ? `\n(this asks to record it: call ${cued.name})` : ""
+        }`,
       },
     ];
     const tools = [...readTools(deps.host.map), ...offered.map(writeTool)];

@@ -2,6 +2,7 @@ import numbers from "../data/bn-numbers.json";
 import { banglaOf, carLabel, possessive } from "./answers";
 import { money } from "./format";
 import { wordNumber } from "./numbers";
+import { parseQuantity } from "./quantity";
 import { asciiDigits, normalize } from "./text";
 
 // The write path's words (spec 9.9, 11.10; D135): amounts as said, the yes and no of a confirmation, and the
@@ -289,4 +290,107 @@ export function refusalText(status: number): string {
   if (status === 409) return "অ্যাপের হিসাবের সাথে মেলেনি।";
   if (status === 422 || status === 400) return "অ্যাপ তথ্যগুলো নেয়নি।";
   return "অ্যাপে সমস্যা হয়েছে।";
+}
+
+// Words that ask for a write (D140): a sale, a received payment or a purchase said as an instruction. A sentence with
+// a question word ("দাম", "কত", "আছে?") asks something and is never taken as one. Matched on normalized words.
+const WRITE_CUES: Record<"sale" | "payment" | "stock_in", string[]> = {
+  sale: [
+    "দাও",
+    "দিয়ে দাও",
+    "দিন",
+    "বিক্রি",
+    "বেচো",
+    "বেচলাম",
+    "dao",
+    "diye dao",
+    "din",
+    "bikri",
+    "becho",
+    "sell",
+  ],
+  payment: [
+    "জমা নাও",
+    "জমা নিলাম",
+    "জমা দিল",
+    "জমা দিয়েছে",
+    "জমা",
+    "joma nao",
+    "joma nilam",
+    "joma dilo",
+    "joma",
+  ],
+  stock_in: ["কিনলাম", "কিনেছি", "স্টকে তোলো", "স্টক ইন", "kinlam", "kinechi", "stock e tolo", "stock in"],
+};
+const PAYMENT_WORDS = [
+  "বাকিতে",
+  "নগদে",
+  "ক্যাশে",
+  "বিকাশে",
+  "bakite",
+  "nogode",
+  "cash e",
+  "bikashe",
+  "bkash e",
+];
+const QUESTION_WORDS = new Set(
+  [
+    "কত",
+    "দাম",
+    "আছে",
+    "কি",
+    "কী",
+    "কোন",
+    "কয়",
+    "কেমন",
+    "দেখাও",
+    "বলো",
+    "koto",
+    "dam",
+    "ache",
+    "ki",
+    "kon",
+    "koy",
+    "dekhao",
+    "bolo",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
+const said = (tokens: string[], phrase: string) =>
+  ` ${tokens.join(" ")} `.includes(` ${normalize(phrase).tokens.join(" ")} `);
+
+/**
+ * The kind of write a sentence asks for, or null: a sale ("দাও", "dao" with a payment word or a named customer), a
+ * received payment ("জমা নাও", "joma nao") or a purchase ("কিনলাম", "kinlam"). A question is never one.
+ */
+export function writeCueOf(
+  text: string,
+  options: { partyNamed: boolean },
+): "sale" | "payment" | "stock_in" | null {
+  const tokens = normalize(text).tokens;
+  if (!tokens.length || text.trim().endsWith("?") || tokens.some((token) => QUESTION_WORDS.has(token)))
+    return null;
+  if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
+  if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
+  if (
+    WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
+    (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))
+  )
+    return "sale";
+  return null;
+}
+
+/** Every number a text says, in any form ("২০১৪", "দুই", "dui set", "১০ হাজার", "দুইটা"): what the user said, so a
+ * number the model adds is not taken (D140). */
+export function saidNumbers(text: string): Set<number> {
+  const tokens = normalize(asciiDigits(text).replace(/(\d)[,،](?=\d{2,3}(\D|$))/g, "$1")).tokens;
+  const numbers = new Set<number>();
+  tokens.forEach((token, index) => {
+    const amount = parseAmount(tokens.slice(index).join(" "));
+    const value = valueOf(token);
+    if (value !== null) numbers.add(value);
+    if (amount !== null && valueOf(token) !== null) numbers.add(amount);
+    const counted = parseQuantity([token]);
+    if (counted) numbers.add(counted.value);
+  });
+  return numbers;
 }

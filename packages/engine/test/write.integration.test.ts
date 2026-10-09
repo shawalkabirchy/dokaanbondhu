@@ -491,4 +491,68 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     });
     expect(nothingSent()).toBe(true);
   });
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "রহিম মোটরসকে এক্সিওর সামনের ব্রেক প্যাড বাকিতে দাও",
+      search: { part_type: "Brake Pad", vehicle: "Axio", position: "front" },
+      answers: ["২০১৪", "নন-জেনুইন", "দুই সেট", "না"],
+    },
+    {
+      style: "Banglish",
+      text: "Rahim Motors ke axior samner brake pad bakite dao",
+      search: { part_type: "brake pad", vehicle: "axio", position: "samner" },
+      answers: ["2014", "non genuine", "dui set", "na"],
+    },
+  ])(
+    "starts the sale a sentence asks for even when the model searches first, as the laptop's model does (D140; $style)",
+    async ({ text, search, answers }) => {
+      calls.length = 0;
+      const first = await say(fresh(), text, [
+        scripted([{ calls: [{ name: "find_parts", arguments: search }] }]),
+      ]);
+      expect(first.reply).toMatch(/এক্সিওর সামনের ব্রেক প্যাড — কোন বছরের এক্সিও\?$/);
+      const quality = await say(first.state, answers[0]!);
+      expect(quality.reply).toBe("জেনুইন না নন-জেনুইন?");
+      const quantity = await say(quality.state, answers[1]!);
+      expect(quantity.reply).toBe("কয় সেট?");
+      const confirm = await say(quantity.state, answers[2]!);
+      expect(confirm.reply).toBe(
+        "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
+      );
+      expect((await say(confirm.state, answers[3]!)).reply).toBe("বাতিল করা হয়েছে, কিছু সেভ হয়নি।");
+      expect(nothingSent()).toBe(true);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "রহিম মোটরসকে এক্সিও ২০১৪ সামনের নন-জেনুইন ব্রেক প্যাড বাকিতে দাও" },
+    { style: "Banglish", text: "Rahim Motors ke axio 2014 samner non genuine brake pad bakite dao" },
+  ])(
+    "asks a quantity the user did not say, even when the model fills one in (D140; $style)",
+    async ({ text }) => {
+      const args = {
+        customer: "Rahim Motors",
+        items: [
+          {
+            part: {
+              part_type: "brake pad",
+              vehicle: "axio",
+              year: "2014",
+              position: "front",
+              quality: "non genuine",
+            },
+            quantity: "1 set",
+          },
+        ],
+        payment: { method_word: "bakite" },
+      };
+      const first = await say(fresh(), text, [
+        scripted([{ calls: [{ name: "record_sale", arguments: args }] }]),
+      ]);
+      expect(first.reply).toMatch(/কয় সেট\?$/);
+      expect(first.outcome.actions).toEqual([]);
+    },
+  );
 });
