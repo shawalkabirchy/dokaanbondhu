@@ -1,4 +1,4 @@
-import type { AppWordsView, ConnectionView, SchemaView } from "@dokaanbondhu/contracts";
+import type { AppWordsView, ConnectionView, PaikariPriceView, SchemaView } from "@dokaanbondhu/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import Setup from "../app/(app)/setup/index";
@@ -72,7 +72,7 @@ const words: AppWordsView = {
   groups: {
     price_tier: [
       { value: "VIP", count: 4, our: null, decided_by: null },
-      { value: "Garage", count: 9, our: "garage", decided_by: "words" },
+      { value: "Garage", count: 9, our: "paikari", decided_by: "words" },
     ],
     quality: [],
     position: [
@@ -81,6 +81,16 @@ const words: AppWordsView = {
     ],
     unit: [],
   },
+};
+
+// An app with two trade prices (D146), like test shop B.
+const paikari: PaikariPriceView = {
+  connection_id: connection.id,
+  options: [
+    { field: "garage_price", column: "workshop_rate", example: { part: "ব্রেক প্যাড", taka: 4200 } },
+    { field: "wholesale_price", column: "dealer_rate", example: { part: "ব্রেক প্যাড", taka: 4000 } },
+  ],
+  chosen: null,
 };
 
 function answer(connections: ConnectionView[]) {
@@ -98,6 +108,7 @@ function answer(connections: ConnectionView[]) {
     }
     if (path.startsWith("/setup/schema/") && init?.method === "PUT") return { schema } as never;
     if (path.startsWith("/setup/app-words")) return { words } as never;
+    if (path.startsWith("/setup/paikari-price")) return { paikari } as never;
     throw new Error(`unexpected ${path}`);
   });
 }
@@ -147,11 +158,11 @@ describe("setup page", () => {
     expect(screen.getByText("“R”")).toBeTruthy();
     expect(screen.getAllByText(/setup\.app_words_ask/)).toHaveLength(2);
     expect(screen.getByText(/setup\.our\.position\.front setup\.our\.position\.left/)).toBeTruthy();
-    fireEvent.press(screen.getAllByText("setup.our.price_tier.wholesale")[0]!);
+    fireEvent.press(screen.getAllByText("setup.our.price_tier.paikari")[0]!);
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith("/setup/app-words", {
         method: "PUT",
-        body: { connection_id: connection.id, concept: "price_tier", value: "VIP", our: "wholesale" },
+        body: { connection_id: connection.id, concept: "price_tier", value: "VIP", our: "paikari" },
       }),
     );
     fireEvent.press(screen.getAllByText("setup.our.position.rear")[0]!);
@@ -171,6 +182,20 @@ describe("setup page", () => {
       expect(apiMock).toHaveBeenCalledWith(`/setup/schema/${schema.entities[0]!.id}`, {
         method: "PUT",
         body: {},
+      }),
+    );
+  });
+
+  it("asks which of the app's two trade prices is paikari, each with an example, and saves the choice (D146)", async () => {
+    answer([connection]);
+    await show();
+    expect(await screen.findByText("setup.paikari_question", {}, { timeout: 15_000 })).toBeTruthy();
+    expect(screen.getByText(/^workshop_rate · ব্রেক প্যাড: /)).toBeTruthy();
+    await fireEvent.press(screen.getByText(/^dealer_rate · ব্রেক প্যাড: /));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith("/setup/paikari-price", {
+        method: "PUT",
+        body: { connection_id: connection.id, field: "wholesale_price" },
       }),
     );
   });

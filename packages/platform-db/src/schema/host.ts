@@ -24,6 +24,7 @@ import {
   DIALECTS,
   FITMENT_EXTRA_SOURCES,
   ID_TYPES,
+  PAIKARI_FIELDS,
   PARAM_LOCATIONS,
   REQUIRED_ROLES,
   SETUP_TOKEN_PURPOSES,
@@ -66,6 +67,7 @@ export const connections = pgTable(
     appWords: jsonb("app_words")
       .notNull()
       .default(sql`'{}'::jsonb`), // the owner's value for an app word the word list does not know (D121, D122)
+    paikariPrice: text("paikari_price"), // which trade price is paikari; null = garage, else wholesale (D146)
     poolMax: integer("pool_max").notNull().default(3),
     status: text("status").notNull(),
     lastCheckedAt: timestamptz("last_checked_at"),
@@ -78,6 +80,7 @@ export const connections = pgTable(
     check("connections_ssl_mode_check", oneOf(t.sslMode, SSL_MODES)),
     check("connections_auth_type_check", oneOf(t.authType, AUTH_TYPES)),
     check("connections_status_check", oneOf(t.status, CONNECTION_STATUSES)),
+    check("connections_paikari_price_check", oneOf(t.paikariPrice, PAIKARI_FIELDS)),
     index("connections_shop_id_idx").on(t.shopId),
   ],
 );

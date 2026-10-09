@@ -71,6 +71,13 @@
       "when": 1791415605561,
       "tag": "0009_features_confirmed",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791568826475,
+      "tag": "0010_paikari_price",
+      "breakpoints": true
     }
   ]
 }

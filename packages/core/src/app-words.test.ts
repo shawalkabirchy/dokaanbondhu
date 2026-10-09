@@ -2,21 +2,21 @@ import { describe, expect, it } from "vitest";
 import { appWord, isAppWordValue, priceLevelIn, priceTierOf } from "./app-words";
 
 // A shop app's own words for price levels and a part's quality, position and unit (D121, D122), however it writes
-// them; what the list does not know is asked in setup.
+// them; what the list does not know is asked in setup. Every garage or wholesale word is the one paikari price (D145).
 
 describe("app words", () => {
   it.each([
-    ["garage", "garage"],
-    ["Garage", "garage"],
-    ["MECHANIC", "garage"],
-    ["Workshop", "garage"],
-    ["গ্যারেজ", "garage"],
-    ["মেকানিক", "garage"],
-    ["Garage price", "garage"],
-    ["wholesale", "wholesale"],
-    ["Dealer", "wholesale"],
-    ["Wholesale_Customer", "wholesale"],
-    ["পাইকারি", "wholesale"],
+    ["garage", "paikari"],
+    ["Garage", "paikari"],
+    ["MECHANIC", "paikari"],
+    ["Workshop", "paikari"],
+    ["গ্যারেজ", "paikari"],
+    ["মেকানিক", "paikari"],
+    ["Garage price", "paikari"],
+    ["wholesale", "paikari"],
+    ["Dealer", "paikari"],
+    ["Wholesale_Customer", "paikari"],
+    ["পাইকারি", "paikari"],
     ["retail", "retail"],
     ["Walk-In", "retail"],
     ["walk in customer", "retail"],

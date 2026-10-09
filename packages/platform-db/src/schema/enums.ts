@@ -8,6 +8,7 @@ export const DIALECTS = ["postgres", "mysql"] as const;
 export const SSL_MODES = ["verify-full", "require", "disable"] as const;
 export const AUTH_TYPES = ["api_key", "bearer", "session"] as const;
 export const CONNECTION_STATUSES = ["pending", "active", "error", "disabled"] as const;
+export const PAIKARI_FIELDS = ["garage_price", "wholesale_price"] as const; // D146
 
 export const CONCEPTS = [
   "Part",

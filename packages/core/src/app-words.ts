@@ -2,20 +2,21 @@ import words from "../data/app-words.json";
 
 // The words a shop app writes for a customer's price level and a part's quality, position and unit (D121, D122):
 // "Garage", "MECHANIC", "Dealer", "পাইকারি"; "OEM", "Copy"; "F", "FL", "Rear"; "pcs", "ltr". The word list is shared by
-// every host; a value it does not know is asked once in setup, and the owner's answer wins.
+// every host; a value it does not know is asked once in setup, and the owner's answer wins. A price level is retail
+// or paikari, the one trade price, whatever the app calls it (garage, wholesale, dealer; D145).
 
 export type AppWordConcept = "price_tier" | "quality" | "position" | "unit";
 export const APP_WORD_CONCEPTS: readonly AppWordConcept[] = ["price_tier", "quality", "position", "unit"];
 
 /** Our values of each concept, the ones the owner may choose in setup. */
 export const APP_WORD_VALUES: Record<AppWordConcept, readonly string[]> = {
-  price_tier: ["retail", "garage", "wholesale"],
+  price_tier: ["retail", "paikari"],
   quality: ["genuine", "aftermarket", "reconditioned", "used"],
   position: ["front", "rear", "left", "right"],
   unit: ["piece", "set", "pair", "hali", "dozen", "liter", "tin", "box"],
 };
 
-export type PriceTier = "retail" | "garage" | "wholesale";
+export type PriceTier = "retail" | "paikari";
 
 /** Lower case, NFC, dashes, slashes, dots and underscores as spaces, single spaces ("Walk-In_Customer" -> "walk in customer"). */
 function plain(value: string): string {
@@ -69,7 +70,7 @@ export function priceTierOf(value: string | null | undefined): PriceTier | null 
 
 /**
  * Paikari when a question itself asks the trade price ("পাইকারি দাম", "paikari dam", "wholesale price", "গ্যারেজের
- * দাম": every trade word of the list means the one trade price, D142), else null for the normal price (D141). Words
+ * দাম": every trade word of the list means the one trade price, D142, D145), else null for the normal price (D141). Words
  * inside a name the question says ("নিউ ঢাকা গ্যারেজ") are not a level.
  */
 export function priceLevelIn(text: string, names: readonly string[] = []): "paikari" | null {
@@ -82,7 +83,7 @@ export function priceLevelIn(text: string, names: readonly string[] = []): "paik
       const phrase = tokens.slice(start, start + size).join(" ");
       // "গ্যারেজের", "garage er": the possessive ending is not part of the word.
       const level = byWord.get(phrase) ?? byWord.get(phrase.replace(/(ের|এর|র)$/, ""));
-      if (level === "garage" || level === "wholesale") return "paikari";
+      if (level === "paikari") return "paikari";
     }
   }
   return null;

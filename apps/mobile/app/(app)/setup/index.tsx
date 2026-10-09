@@ -6,6 +6,7 @@ import {
   type ConnectionTest,
   type ConnectionView,
   type EntityView,
+  type PaikariPriceView,
   type ReportsView,
   type SchemaView,
   type WordsView,
@@ -400,6 +401,50 @@ function AppWordsSection({ connectionId }: { connectionId: string }) {
 }
 
 /**
+ * Which of the app's two trade prices is paikari (D143, D146): asked only when the app keeps both a garage and a
+ * wholesale price, each column shown as the app names it with one part's price in it.
+ */
+function PaikariSection({ connectionId, language }: { connectionId: string; language: Language }) {
+  const { t } = useTranslation();
+  const message = useErrorText();
+  const queryClient = useQueryClient();
+  const key = ["setup", "paikari-price", connectionId];
+  const paikari = useQuery({
+    queryKey: key,
+    queryFn: () => api<{ paikari: PaikariPriceView }>(`/setup/paikari-price?connection_id=${connectionId}`),
+  });
+  const choose = useMutation({
+    mutationFn: (field: string) =>
+      api<{ paikari: PaikariPriceView }>("/setup/paikari-price", {
+        method: "PUT",
+        body: { connection_id: connectionId, field },
+      }),
+    onSuccess: (data) => queryClient.setQueryData(key, data),
+  });
+  const view = paikari.data?.paikari;
+  if (!view || view.options.length < 2) return null;
+  return (
+    <View style={[styles.card, { gap: 8 }]}>
+      <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>
+        {t("setup.paikari_question")}
+      </Text>
+      <Note>{t("setup.paikari_note")}</Note>
+      <Chips<string>
+        value={view.chosen ?? ""}
+        options={view.options.map((option) => ({
+          value: option.field,
+          label: option.example
+            ? `${option.column} · ${option.example.part}: ${takaText(option.example.taka, language)}`
+            : option.column,
+        }))}
+        onChange={(field) => choose.mutate(field)}
+      />
+      {choose.isError ? <Note tone="danger">{message(choose.error)}</Note> : null}
+    </View>
+  );
+}
+
+/**
  * Words the assistant learned (D102, D105): spellings the listening check found, and car or part names it did not
  * understand at first and then got from an answer (seen twice); the owner adds each (understood straight away next
  * time) or dismisses it. Nothing learned is used before the owner adds it.
@@ -509,6 +554,7 @@ export default function Setup() {
           <Heading>{t("setup.step_reports")}</Heading>
           <ReportsSection connectionId={current.id} language={language} />
           <Heading>{t("setup.step_app_words")}</Heading>
+          <PaikariSection connectionId={current.id} language={language} />
           <AppWordsSection connectionId={current.id} />
           <Heading>{t("setup.step_words")}</Heading>
           <WordsSection />

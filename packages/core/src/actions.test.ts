@@ -123,11 +123,11 @@ describe("confirmation templates", () => {
     expect(
       confirmationText("price_update", {
         lines: [{ part: "ব্রেক প্যাড" }],
-        tier: "garage",
+        tier: "paikari",
         oldPrice: 4200n,
         newPrice: 4400n,
       }),
-    ).toBe("ব্রেক প্যাডের গ্যারেজ দাম ৪,২০০ টাকা থেকে ৪,৪০০ টাকা। ঠিক আছে?");
+    ).toBe("ব্রেক প্যাডের পাইকারি দাম ৪,২০০ টাকা থেকে ৪,৪০০ টাকা। ঠিক আছে?");
     expect(confirmationText("generic", { label: "অর্ডার", pairs: [{ label: "নম্বর", value: "১২" }] })).toBe(
       "অর্ডার, নম্বর: ১২। ঠিক আছে?",
     );

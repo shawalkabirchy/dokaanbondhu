@@ -16,18 +16,20 @@ const customer = (hostId: string, attrs: Record<string, unknown>): CatalogRow =>
 
 describe("customer price levels", () => {
   it("reads the tier or the type in any wording, the tier first", () => {
-    expect(customerTier({ price_tier: "Garage" })).toBe("garage");
-    expect(customerTier({ type: "MECHANIC" })).toBe("garage"); // no tier stored: the type decides
-    expect(customerTier({ price_tier: "পাইকারি", type: "garage" })).toBe("wholesale");
-    expect(customerTier({ price_tier: "B", type: "workshop" })).toBe("garage"); // an unknown tier: the type decides
-    expect(customerTier({ type: "Dealer" })).toBe("wholesale");
+    // Garage, wholesale and dealer words are all the one paikari price (D145).
+    expect(customerTier({ price_tier: "Garage" })).toBe("paikari");
+    expect(customerTier({ type: "MECHANIC" })).toBe("paikari"); // no tier stored: the type decides
+    expect(customerTier({ price_tier: "খুচরা", type: "garage" })).toBe("retail");
+    expect(customerTier({ price_tier: "B", type: "workshop" })).toBe("paikari"); // an unknown tier: the type decides
+    expect(customerTier({ type: "Dealer" })).toBe("paikari");
+    expect(customerTier({ type: "পাইকারি" })).toBe("paikari");
   });
 
   it("answers at retail when the value is unknown or missing, until the owner chooses its level", () => {
     expect(customerTier({ price_tier: "VIP" })).toBe("retail");
     expect(customerTier({})).toBe("retail");
     expect(customerTier(undefined)).toBe("retail");
-    expect(customerTier({ price_tier: "VIP" }, { price_tier: { VIP: "wholesale" } })).toBe("wholesale");
+    expect(customerTier({ price_tier: "VIP" }, { price_tier: { VIP: "paikari" } })).toBe("paikari");
     expect(customerTier({ price_tier: "Garage" }, { price_tier: { Garage: "retail" } })).toBe("retail"); // the owner wins
     expect(customerTier({ price_tier: "VIP" }, { price_tier: { VIP: "nonsense" } })).toBe("retail");
   });
@@ -42,12 +44,12 @@ describe("customer price levels", () => {
     ]);
     expect(appWordsOf(catalog, "price_tier", {})).toEqual([
       { value: "VIP", our: null, decidedBy: null, count: 1 },
-      { value: "Garage", our: "garage", decidedBy: "words", count: 2 },
+      { value: "Garage", our: "paikari", decidedBy: "words", count: 2 },
       { value: "walk-in", our: "retail", decidedBy: "words", count: 1 },
     ]);
-    expect(appWordsOf(catalog, "price_tier", { price_tier: { VIP: "wholesale" } })[0]).toEqual({
+    expect(appWordsOf(catalog, "price_tier", { price_tier: { VIP: "paikari" } })[0]).toEqual({
       value: "Garage",
-      our: "garage",
+      our: "paikari",
       decidedBy: "words",
       count: 2,
     });

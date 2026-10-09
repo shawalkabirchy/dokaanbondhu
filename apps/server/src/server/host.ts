@@ -3,6 +3,7 @@ import type { TurnHost } from "@dokaanbondhu/engine/conversation";
 import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
   catalogVersion,
+  chosenPaikari,
   HostConnectionError,
   HostPools,
   loadCatalog,
@@ -73,7 +74,7 @@ async function load(shopId: string): Promise<Entry> {
     const allWrites = writes?.all ?? [];
 
     const [connection] = await tx
-      .select({ id: connections.id, appWords: connections.appWords })
+      .select({ id: connections.id, appWords: connections.appWords, paikariPrice: connections.paikariPrice })
       .from(connections)
       .where(and(eq(connections.kind, "db"), eq(connections.status, "active")))
       .orderBy(asc(connections.createdAt))
@@ -141,6 +142,7 @@ async function load(shopId: string): Promise<Entry> {
       })),
       hostReports: [], // a host's own report endpoints come with API connections (spec 11.13)
       appWords: connection.appWords as AppWords,
+      paikari: chosenPaikari(map, connection.paikariPrice),
       ...writeHost,
     };
     return {

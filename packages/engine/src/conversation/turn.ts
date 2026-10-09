@@ -134,6 +134,8 @@ export interface TurnHost {
   hostReports: ReportName[];
   /** The owner's choices for the app's own words: price levels, quality, position, unit (D121, D122). */
   appWords?: AppWords;
+  /** Which trade price is paikari, when the owner chose one (D146). */
+  paikari?: "garage_price" | "wholesale_price" | null;
   /** The API connection's enabled writes (spec 9.6, 11.9); absent: the assistant only reads. */
   writes?: WriteHost;
 }
@@ -333,7 +335,7 @@ function rowsForLlm(rows: PartRow[]) {
     brand: row.brand,
     stock: row.stock === null ? null : quantity(row.stock, row.unit ?? "piece"),
     retail_price: row.retailTaka === null ? null : money(row.retailTaka),
-    garage_price: row.garageTaka === null ? null : money(row.garageTaka),
+    paikari_price: levelPrice(row, "paikari") === null ? null : money(levelPrice(row, "paikari")!),
     rack: rackText(row),
     fitment_recorded: row.fitmentVerified,
   }));
@@ -559,6 +561,7 @@ export async function runTurn(
       fitmentExtra: deps.host.fitmentExtra,
       rackExtra: deps.host.rackExtra,
       ...(deps.host.appWords ? { appWords: deps.host.appWords } : {}),
+      ...(deps.host.paikari ? { paikari: deps.host.paikari } : {}),
       now,
     });
     timings.resolve = (timings.resolve ?? 0) + (Date.now() - resolveStart);

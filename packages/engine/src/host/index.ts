@@ -104,3 +104,10 @@ export {
   loadWriteHost,
   writeCapabilityOf,
 } from "./registry";
+export {
+  chosenPaikari,
+  paikariOptions,
+  PAIKARI_FIELDS,
+  type PaikariField,
+  type PaikariOption,
+} from "./paikari";

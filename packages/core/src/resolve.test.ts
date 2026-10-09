@@ -152,7 +152,7 @@ describe("part resolver (spec 10.7)", () => {
         stock: 6,
       }),
     ];
-    const separated = separatingSlot(rows, "garage");
+    const separated = separatingSlot(rows, "paikari");
     expect(separated?.slot).toBe("quality"); // quality and brand tie; quality comes first
     expect(separated?.options).toMatchObject([
       { value: "genuine", priceTaka: 4200n, stock: 3 },

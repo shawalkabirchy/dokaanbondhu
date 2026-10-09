@@ -61,6 +61,8 @@ export interface FindPartsInput {
   rackExtra: ReadonlyMap<string, string>;
   /** The owner's choices for the app's own words (D121, D122). */
   appWords?: AppWords;
+  /** Which trade price is paikari, when the owner chose one (D146); else the garage price, else the wholesale price. */
+  paikari?: "garage_price" | "wholesale_price" | null;
   now?: Date;
 }
 
@@ -330,6 +332,9 @@ async function queryRows(
       retailTaka: toTaka(price.retail_price),
       garageTaka: toTaka(price.garage_price),
       wholesaleTaka: toTaka(price.wholesale_price),
+      paikariTaka: input.paikari
+        ? toTaka(price[input.paikari])
+        : (toTaka(price.garage_price) ?? toTaka(price.wholesale_price)),
       rack: racks[0] ?? null,
       ...(racks.length > 1 ? { racks } : {}),
       fitmentVerified: vehicleIds ? verified : false,

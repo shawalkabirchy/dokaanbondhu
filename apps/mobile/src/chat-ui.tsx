@@ -10,7 +10,7 @@ import { colors } from "./ui";
 // What a reply shows (spec 15.2): its text, part cards, result tables, choice chips and the confirmation sheet. Money
 // arrives in whole taka (D110); large text and large touch targets.
 
-const PRICE_TIERS = ["retail", "paikari", "garage", "wholesale"] as const;
+const PRICE_TIERS = ["retail", "paikari"] as const; // the only two price kinds the owner sees (D145)
 
 export function PartCards({ parts, language }: { parts: PartCard[]; language: Language }) {
   const { t } = useTranslation();

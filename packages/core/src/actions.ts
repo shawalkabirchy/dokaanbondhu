@@ -142,7 +142,8 @@ export interface ActionFields {
   payment?: string | null;
   date?: string | null;
   refund?: string | null;
-  tier?: "retail" | "garage" | "wholesale";
+  /** The price changed: the only two kinds the owner sees (D145). */
+  tier?: "retail" | "paikari";
   oldPrice?: bigint | null;
   newPrice?: bigint | null;
   years?: string | null;
@@ -184,7 +185,7 @@ function lineText(line: ActionLine): string {
     .join(", ");
 }
 
-const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি" } as const;
+const TIER_BN = { retail: "খুচরা", paikari: "পাইকারি" } as const;
 
 /** The confirmation of spec 11.10, ending in its question. */
 export function confirmationText(kind: ActionTemplate, fields: ActionFields): string {

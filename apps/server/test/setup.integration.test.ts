@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { AppWordsView, SchemaView } from "@dokaanbondhu/contracts";
+import type { AppWordsView, PaikariPriceView, SchemaView } from "@dokaanbondhu/contracts";
 import {
   aiProviders,
   connections,
@@ -10,7 +10,7 @@ import {
 } from "@dokaanbondhu/platform-db";
 import { eq } from "drizzle-orm";
 import { SignJWT } from "jose";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { geargridMap } from "../../../packages/engine/test/geargrid-map";
 import { startStubLlm, type StubLlm } from "./stub-llm";
 
@@ -69,7 +69,7 @@ const proposal = {
 
 type Handler = (request: Request, context: { params: Promise<Record<string, string>> }) => Promise<Response>;
 type Routes = Record<
-  "connections" | "test" | "propose" | "schema" | "entity" | "sync" | "reports" | "words",
+  "connections" | "test" | "propose" | "schema" | "entity" | "sync" | "reports" | "words" | "paikari",
   Record<string, unknown>
 >;
 
@@ -155,7 +155,13 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
       sync: await import("../app/api/v1/setup/catalog/sync/route"),
       reports: await import("../app/api/v1/setup/reports/route"),
       words: await import("../app/api/v1/setup/app-words/route"),
+      paikari: await import("../app/api/v1/setup/paikari-price/route"),
     };
+  });
+
+  beforeEach(() => {
+    // A fresh minute of setup calls for each test: together they make more than the 30 a minute a shop may (spec 8.7).
+    (globalThis as { __dokaanRateLimiter?: unknown }).__dokaanRateLimiter = undefined;
   });
 
   afterAll(async () => {
@@ -305,16 +311,16 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     }
     expect(listed.groups.price_tier.reduce((sum, word) => sum + word.count, 0)).toBe(30);
     expect(listed.groups.quality.map((word) => word.our)).toContain("genuine");
-    const garage = listed.groups.price_tier.find((word) => word.our === "garage")!;
+    const garage = listed.groups.price_tier.find((word) => word.our === "paikari")!; // D145
 
     const chosen = await call(routes.words.PUT, {
       method: "PUT",
-      body: { connection_id: connectionId, concept: "price_tier", value: garage.value, our: "wholesale" },
+      body: { connection_id: connectionId, concept: "price_tier", value: garage.value, our: "paikari" },
     });
     expect((chosen.body.words as AppWordsView).groups.price_tier).toContainEqual({
       value: garage.value,
       count: garage.count,
-      our: "wholesale",
+      our: "paikari",
       decided_by: "owner",
     });
     const second = await call(routes.words.PUT, {
@@ -324,12 +330,37 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     const after = second.body.words as AppWordsView;
     expect(after.groups.position).toContainEqual(expect.objectContaining({ value: "front", our: "rear" }));
     expect(after.groups.price_tier).toContainEqual(
-      expect.objectContaining({ value: garage.value, our: "wholesale" }),
+      expect.objectContaining({ value: garage.value, our: "paikari" }),
     );
     const refused = await call(routes.words.PUT, {
       method: "PUT",
       body: { connection_id: connectionId, concept: "price_tier", value: garage.value, our: "front" },
     });
     expect(refused.status).toBe(400);
+    const old = await call(routes.words.PUT, {
+      method: "PUT",
+      body: { connection_id: connectionId, concept: "price_tier", value: garage.value, our: "garage" },
+    });
+    expect(old.status).toBe(400); // only খুচরা and পাইকারি are ours now (D145)
+  });
+
+  it("asks which trade price is paikari only when the app keeps two (D146)", async () => {
+    const query = `?connection_id=${connectionId}`;
+    expect((await call(routes.paikari.GET, { auth: staff.auth, query })).status).toBe(403);
+    // GearGrid keeps one trade price, its garage price (D144): nothing to choose.
+    const view = (await call(routes.paikari.GET, { query })).body.paikari as PaikariPriceView;
+    expect(view.options).toEqual([
+      {
+        field: "garage_price",
+        column: "garage_price",
+        example: expect.objectContaining({ taka: expect.any(Number) }),
+      },
+    ]);
+    expect(view.chosen).toBeNull();
+    const missing = await call(routes.paikari.PUT, {
+      method: "PUT",
+      body: { connection_id: connectionId, field: "wholesale_price" },
+    });
+    expect(missing.status).toBe(400); // not a column of this app
   });
 });

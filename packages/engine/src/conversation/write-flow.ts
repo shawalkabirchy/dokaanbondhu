@@ -2,6 +2,7 @@ import {
   banglaOf,
   checkQuantity,
   confirmationText,
+  levelPrice,
   methodText,
   money,
   normalize,
@@ -21,6 +22,7 @@ import {
   type CatalogCustomer,
   type Dictionary,
   type PartRow,
+  type PriceLevel,
   type QuestionInput,
   type QuestionSlot,
   type SaidQuantity,
@@ -92,7 +94,7 @@ export interface WriteTurn {
   dictionary: Dictionary;
   customers: CatalogCustomer[];
   suppliers: CatalogCustomer[];
-  tier: "retail" | "garage" | "wholesale";
+  tier: "retail" | "paikari";
   /** The remembered customer (spec 9.8): used only where the action needs one and none was named. */
   rememberedCustomer: { hostId: string; name: string } | null;
   now: Date;
@@ -128,14 +130,12 @@ interface ChosenPart {
   partType: string | null;
 }
 
-const TIER_PRICE = { retail: "retailTaka", garage: "garageTaka", wholesale: "wholesaleTaka" } as const;
-
 function chosenOf(
   row: PartRow,
   resolved: { vehicle: string | null; year: number | null; partType: string | null },
-  tier: keyof typeof TIER_PRICE,
+  tier: PriceLevel,
 ): ChosenPart {
-  const price = row[TIER_PRICE[tier]] ?? row.retailTaka;
+  const price = levelPrice(row, tier) ?? row.retailTaka;
   return {
     hostPartId: row.hostPartId,
     name: row.name,

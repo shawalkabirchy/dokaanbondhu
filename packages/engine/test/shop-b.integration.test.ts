@@ -18,6 +18,7 @@ import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "
 import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
 import { parsedFitments } from "../src/host/fitment-text";
 import { introspect } from "../src/host/introspect";
+import { paikariOptions } from "../src/host/paikari";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
 import { stockValue } from "../src/host/reports";
@@ -113,15 +114,15 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(read("position")).toEqual({ F: "front", FL: "front left", R: null });
     expect(read("unit")).toEqual({ set: "set", pcs: "piece", ltr: "liter" });
     expect(read("price_tier")).toEqual({
-      Mechanic: "garage",
-      Dealer: "wholesale",
+      Mechanic: "paikari",
+      Dealer: "paikari",
       VIP: null,
       "Walk-in": "retail",
     });
     const customer = (name: string) => catalog.customers.find((candidate) => candidate.name === name)!.attrs;
-    expect(customerTier(customer("Rahman Auto Works"))).toBe("garage");
+    expect(customerTier(customer("Rahman Auto Works"))).toBe("paikari");
     expect(customerTier(customer("Mr. Karim"))).toBe("retail");
-    expect(customerTier(customer("Mr. Karim"), { price_tier: { VIP: "wholesale" } })).toBe("wholesale");
+    expect(customerTier(customer("Mr. Karim"), { price_tier: { VIP: "paikari" } })).toBe("paikari");
   });
 
   it("finds its cars without a make column, with years written as text; two Axio generations ask the year (D122)", () => {
@@ -138,6 +139,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(result.rows).toHaveLength(1);
     const [pad] = result.rows;
     expect(pad).toMatchObject({ stock: 5, retailTaka: 4500n, garageTaka: 4200n, wholesaleTaka: 4000n });
+    expect(pad?.paikariTaka).toBe(4200n); // until the owner chooses: the workshop (garage) price (D146)
     expect(pad).toMatchObject({ quality: "genuine", position: "front", unit: "set" });
     expect([...(pad!.racks ?? [])].sort()).toEqual(["B-3", "G-1"]);
   });
@@ -417,7 +419,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     // Shop B's own word for Rahman Auto Works' level is still read, for the bill the app makes.
     expect(
       customerTier(catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!.attrs),
-    ).toBe("garage");
+    ).toBe("paikari");
     const pad = {
       hostPartId: "1",
       name: "x",
@@ -447,6 +449,37 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       /৪,২০০ টাকা, B-3 তাকে। দাম পাইকারি রেটে।$/,
     );
     expect(partsAnswer([pad], context("axio r pad er paikari dam koto?"))).toMatch(/দাম পাইকারি রেটে।$/);
+  });
+
+  it("asks which of its two trade prices is paikari, and then says that one (D143, D146)", async () => {
+    const run: FindPartsInput["run"] = (built) => pools.readOnly(db, (query) => query(built));
+    const options = await paikariOptions(shopBMap, run, catalog);
+    expect(options.map((option) => [option.field, option.column])).toEqual([
+      ["garage_price", "workshop_rate"],
+      ["wholesale_price", "dealer_rate"],
+    ]);
+    // One part for both, with two different prices, so the owner sees which number is which.
+    const [workshop, dealer] = options;
+    expect(workshop!.example?.part).toBe(dealer!.example?.part);
+    expect(workshop!.example?.taka).not.toBe(dealer!.example?.taka);
+
+    const result = await findParts({ ...input({ part_number: "04465-12610" }), paikari: "wholesale_price" });
+    if (result.kind !== "rows") throw new Error(result.kind);
+    const [pad] = result.rows;
+    expect(pad).toMatchObject({ garageTaka: 4200n, wholesaleTaka: 4000n, paikariTaka: 4000n });
+    const context = (text: string): PartsContext => ({
+      vehicle: "Toyota Axio",
+      year: 2014,
+      partType: "Brake Pad",
+      position: "front",
+      tier: priceLevelIn(text) ?? "retail",
+    });
+    for (const text of ["এক্সিওর প্যাডের পাইকারি দাম কত?", "axio r pad er paikari dam koto?"]) {
+      const said = partsAnswer([pad!], context(text));
+      expect(said).toContain("৪,০০০ টাকা");
+      expect(said).toMatch(/দাম পাইকারি রেটে।$/);
+    }
+    expect(partsAnswer([pad!], context("axio r pad er dam koto?"))).toContain("৪,৫০০ টাকা");
   });
 
   it("values the stock per part with the newest cost, over both branches", async () => {

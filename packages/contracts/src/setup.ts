@@ -174,7 +174,7 @@ export const appWordConceptSchema = z.enum(["price_tier", "quality", "position",
 export type AppWordConceptName = z.infer<typeof appWordConceptSchema>;
 
 export const appWordOurValues = {
-  price_tier: ["retail", "garage", "wholesale"],
+  price_tier: ["retail", "paikari"], // the only two price kinds the owner sees (D145)
   quality: ["genuine", "aftermarket", "reconditioned", "used"],
   position: ["front", "rear", "left", "right"],
   unit: ["piece", "set", "pair", "hali", "dozen", "liter", "tin", "box"],
@@ -210,6 +210,30 @@ export const appWordDecisionSchema = z
     path: ["our"],
     message: "not one of ours for this concept",
   });
+
+// Which of the app's trade prices is paikari (D143, D146): the map's garage and wholesale price columns, each with one
+// part's price in it as an example. The owner is asked only when there are two.
+export const paikariFieldSchema = z.enum(["garage_price", "wholesale_price"]);
+export type PaikariFieldName = z.infer<typeof paikariFieldSchema>;
+
+export const paikariPriceViewSchema = z.object({
+  connection_id: z.uuid(),
+  options: z.array(
+    z.object({
+      field: paikariFieldSchema,
+      /** The column as the app names it ("dealer_rate"). */
+      column: z.string(),
+      example: z.object({ part: z.string(), taka: z.number().int() }).nullable(),
+    }),
+  ),
+  /** null until the owner chooses: the garage price, else the wholesale price. */
+  chosen: paikariFieldSchema.nullable(),
+});
+export type PaikariPriceView = z.infer<typeof paikariPriceViewSchema>;
+
+export const paikariPriceChoiceSchema = z
+  .object({ connection_id: z.uuid(), field: paikariFieldSchema })
+  .strict();
 
 // Words the assistant learned (D102, D105), for the owner to add or dismiss: the listening check's suggestions, and
 // the words learned from answered questions once seen twice; and what the listening check has done.

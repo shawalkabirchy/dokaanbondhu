@@ -59,11 +59,11 @@ export interface PartsContext {
   yearRange?: [number, number | null] | null;
   partType: string; // glossary value, e.g. Brake Pad
   position: string | null;
-  /** The price level the question named (paikari), else retail (D141, D142). */
+  /** The price level the question named (paikari), else retail (D141, D142, D145). */
   tier: PriceLevel;
 }
 
-const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি", paikari: "পাইকারি" } as const;
+const TIER_BN = { retail: "খুচরা", paikari: "পাইকারি" } as const;
 
 /** A car as said in answers and on the app's memory line: "এক্সিও ২০১৪" (D125). */
 export function carLabel(model: string, year: number | null): string {

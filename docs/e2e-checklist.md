@@ -63,11 +63,12 @@ Speak at a normal distance in a quiet room. Hold the button, speak, let go.
 
 ## D. Setup and learned words (owner)
 
-| #   | Do                                                                                          | Expect                                                                                                                               |
-| --- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| D1  | More → setup → "Sync now"                                                                   | "Synced … parts, … vehicles, … customers and … suppliers."                                                                           |
-| D2  | "Words the assistant learned": **Add** a car word (for example "প্রো বক্স" → Toyota Probox) | It leaves the list; then in chat "প্রো বক্স ২০১২ এর ব্রেক প্যাড আছে?" and "pro box 2012 er brake pad ache?" do not ask "কোন গাড়ির?" |
-| D3  | **Dismiss** an everyday word (for example "ড্রেস" → Honda Grace)                            | It leaves the list and does not come back                                                                                            |
+| #   | Do                                                                                          | Expect                                                                                                                                                                                       |
+| --- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | More → setup → "Sync now"                                                                   | "Synced … parts, … vehicles, … customers and … suppliers."                                                                                                                                   |
+| D2  | "Words the assistant learned": **Add** a car word (for example "প্রো বক্স" → Toyota Probox) | It leaves the list; then in chat "প্রো বক্স ২০১২ এর ব্রেক প্যাড আছে?" and "pro box 2012 er brake pad ache?" do not ask "কোন গাড়ির?"                                                         |
+| D3  | **Dismiss** an everyday word (for example "ড্রেস" → Honda Grace)                            | It leaves the list and does not come back                                                                                                                                                    |
+| D4  | Setup → "৫. অ্যাপের শব্দ": look at "Customer price"                                         | Each customer kind means only খুচরা or পাইকারি (no গ্যারেজ, D145); GearGrid keeps one trade price, so "আপনার পাইকারি দাম কোনটা?" does not appear (it appears only for an app with two, D146) |
 
 ## E. Staff
 

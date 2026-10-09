@@ -158,7 +158,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       const garage = catalog.customers.find((customer) => customer.name === "New Dhaka Garage")!;
       const state: TurnState = {
         ...fresh(),
-        context: { customer: { hostId: garage.hostId, name: garage.name, tier: "garage" } },
+        context: { customer: { hostId: garage.hostId, name: garage.name, tier: "paikari" } },
       };
       const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
       const { reply, events } = await turn(text, state, [llm]);
@@ -490,7 +490,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       ...fresh(),
       context: {
         vehicle: { model: "Toyota Axio", year: 2014, engine: null },
-        customer: { hostId: garage.hostId, name: garage.name, tier: "garage" },
+        customer: { hostId: garage.hostId, name: garage.name, tier: "paikari" },
         updatedAt: new Date(Date.now() - minutes * 60_000).toISOString(),
       },
     });

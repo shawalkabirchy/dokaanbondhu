@@ -41,7 +41,8 @@
       "রিটেইল",
       "নগদ"
     ],
-    "garage": [
+    "paikari": [
+      "garage",
       "garages",
       "mechanic",
       "mechanics",
@@ -54,9 +55,8 @@
       "মেকানিক",
       "মিস্ত্রি",
       "মিস্ত্রী",
-      "ওয়ার্কশপ"
-    ],
-    "wholesale": [
+      "ওয়ার্কশপ",
+      "wholesale",
       "wholesaler",
       "dealer",
       "dealers",
@@ -64,7 +64,6 @@
       "distributor",
       "trade",
       "trader",
-      "paikari",
       "paikar",
       "পাইকারি",
       "পাইকারী",

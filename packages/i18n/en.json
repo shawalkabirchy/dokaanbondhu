@@ -78,9 +78,7 @@
     "more_rows": "There are more rows; open the shop's app to see them all.",
     "prices": {
       "retail": "Retail",
-      "paikari": "Paikari (trade)",
-      "garage": "Garage",
-      "wholesale": "Wholesale"
+      "paikari": "Paikari (trade)"
     },
     "quality": {
       "genuine": "Genuine",
@@ -192,6 +190,8 @@
     "see_in_app": "Profit and cash book stay in the shop's app; the assistant will not say them.",
     "unknown": "unknown",
     "step_app_words": "5. The app's words",
+    "paikari_question": "Which one is your paikari price?",
+    "paikari_note": "The shop's app keeps two trade prices. Choose the one that is your paikari price; until you do, the first one is used.",
     "app_words_note": "How the shop's app writes a customer type and a part's quality, side and unit. Choose the meaning of any the assistant does not know; until then such a customer gets the retail price, and such parts are not matched in a search.",
     "app_words_none": "The app's words show here after the catalog sync.",
     "app_words_customers": "{{count}} customers",
@@ -206,7 +206,7 @@
       "unit": "Unit"
     },
     "our": {
-      "price_tier": { "retail": "Retail", "garage": "Garage", "wholesale": "Wholesale" },
+      "price_tier": { "retail": "Retail", "paikari": "Paikari (trade)" },
       "quality": {
         "genuine": "Genuine",
         "aftermarket": "Non-genuine",

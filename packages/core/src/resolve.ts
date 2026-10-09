@@ -44,6 +44,11 @@ export interface PartRow {
   retailTaka: bigint | null;
   garageTaka: bigint | null;
   wholesaleTaka: bigint | null;
+  /**
+   * The one paikari price (D146): the column the owner chose, else garage, else wholesale; find_parts sets it, and
+   * without it the default rule is used.
+   */
+  paikariTaka?: bigint | null;
   rack: string | null;
   /** Every rack the part is kept on when there are several (branches, godowns; D122); rack is the first. */
   racks?: string[];
@@ -172,16 +177,15 @@ function slotValue(row: PartRow, slot: SeparatingSlot): string | null {
 }
 
 /**
- * A price level: a customer's own (retail, garage, wholesale, which the shop app bills at) or the one a question says
- * (D142): retail, or paikari, the trade price, which is the app's garage price, else its wholesale price.
+ * A price level, a customer's own or the one a question says: retail, or paikari, the one trade price, whatever the app
+ * calls it (D142, D145, D146).
  */
-export type PriceLevel = "retail" | "garage" | "wholesale" | "paikari";
+export type PriceLevel = "retail" | "paikari";
 
 /** A part's price at a level, or null when it has none there (then its retail price is said). */
 export function levelPrice(row: PartRow, level: PriceLevel): bigint | null {
-  if (level === "garage") return row.garageTaka;
-  if (level === "wholesale") return row.wholesaleTaka;
-  if (level === "paikari") return row.garageTaka ?? row.wholesaleTaka;
+  if (level === "paikari")
+    return row.paikariTaka === undefined ? (row.garageTaka ?? row.wholesaleTaka) : row.paikariTaka;
   return row.retailTaka;
 }
 
