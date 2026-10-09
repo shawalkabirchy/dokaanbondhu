@@ -100,7 +100,6 @@ export const geargridMap: SchemaMap = {
         part_id: "id",
         retail_price: ["parts", "retail_price"],
         garage_price: ["parts", "garage_price"],
-        wholesale_price: ["parts", "wholesale_price"],
         cost: ["parts", "avg_cost"],
       }),
     }),

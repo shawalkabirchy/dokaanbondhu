@@ -297,7 +297,7 @@ describe.skipIf(!allLocal)("setup endpoints, database half", () => {
     const query = `?connection_id=${connectionId}`;
     expect((await call(routes.words.GET, { auth: staff.auth, query })).status).toBe(403);
     const listed = (await call(routes.words.GET, { query })).body.words as AppWordsView;
-    // GearGrid writes retail, garage and wholesale, and genuine, aftermarket, front and rear, which the list knows.
+    // GearGrid writes retail and garage (D144), and genuine, aftermarket, front and rear, which the list knows.
     for (const concept of ["price_tier", "quality", "position", "unit"] as const) {
       expect(listed.groups[concept].every((word) => word.our !== null && word.decided_by === "words")).toBe(
         true,
