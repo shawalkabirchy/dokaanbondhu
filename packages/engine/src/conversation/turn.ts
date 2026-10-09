@@ -802,6 +802,25 @@ export async function runTurn(
    * like a search, D118), the customer it looked up, and the quantity, unit cost and amount as the request says them
    * (D140). Its questions and confirmation follow as for the write's own tool.
    */
+  /**
+   * A write's one item without the part type, car, year, quality or side the request itself says: the request's own
+   * words complete it, as they complete a part search (D118, D148). The model may leave one out.
+   */
+  const withHeardPart = (args: Record<string, unknown>): Record<string, unknown> => {
+    const items = Array.isArray(args.items) ? args.items : null;
+    const item = items?.length === 1 && items[0] && typeof items[0] === "object" ? items[0] : null;
+    if (!item) return args;
+    const part = { ...((item as { part?: Record<string, unknown> }).part ?? {}) };
+    const missing = (key: string) => part[key] === undefined || part[key] === null || part[key] === "";
+    for (const concept of ["part_type", "vehicle_model", "position", "quality"] as const) {
+      const key = concept === "vehicle_model" ? "vehicle" : concept;
+      const heard = heardSlots.get(concept);
+      if (heard && missing(key)) part[key] = heard;
+    }
+    if (saidYear && missing("year")) part.year = String(saidYear);
+    return { ...args, items: [{ ...item, part }] };
+  };
+
   const startCued = async (capability: WriteCapability, part: Record<string, unknown>, customer?: string) => {
     const tokens = normalize(text, deps.dictionary.variants).tokens;
     // A quantity only with its unit ("দুই সেট", "5 set", "দুইটা"), so a year is never taken for one.
@@ -1063,7 +1082,7 @@ export async function runTurn(
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
         if (capability && deps.host.writes) {
-          const frame = writeFrame(capability, args, writeTurn(text));
+          const frame = writeFrame(capability, withHeardPart(args), writeTurn(text));
           record("write");
           tookStep(frame, await advanceWrite(frame, writeTurn(text)));
           return "stop";

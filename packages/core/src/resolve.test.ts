@@ -190,6 +190,23 @@ describe("customer resolver (spec 10.7)", () => {
     expect(resolveCustomer("করিম অটো", [], customers, dictionary).candidates[0]?.customer.hostId).toBe("c3");
   });
 
+  it.each([
+    ["নবাবপুর অটো পার্টস", "understood"],
+    ["nawabpur auto parts", "understood"],
+    ["Nawabpur Auto Parts Limited", "understood"],
+    // As the speech service heard it on 9 Oct, in both scripts.
+    ["নাওয়াবপুর অটোপার্স", "understood_bold"],
+    ["nawabpur autopars", "understood_bold"],
+  ] as const)("matches a name without its company ending, as people say it (D148): %s", (heard, decision) => {
+    const suppliers: CatalogCustomer[] = [
+      { hostId: "s1", name: "Nawabpur Auto Parts Ltd.", nameBn: null },
+      { hostId: "s2", name: "Bangshal Motor Supply", nameBn: null },
+    ];
+    const match = resolveCustomer(heard, [], suppliers, dictionary);
+    expect(match.decision).toBe(decision);
+    expect(match.candidates[0]?.customer.hostId).toBe("s1");
+  });
+
   it("leaves an unknown name unclear", () => {
     expect(resolveCustomer("Jamal Traders", [], customers, dictionary).decision).toBe("unclear");
   });

@@ -528,6 +528,47 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
   it.each([
     {
       style: "Bangla",
+      text: "নওয়াপুর অটোপাস থেকে এক্সিও ২০১৪ সামনের নন-জেনুইন ব্রেক প্যাড ৫ সেট কিনলাম, প্রতি সেট ১২০০ টাকা, বাকিতে",
+      // The model left out the part type, year and quality, and kept the supplier as the speech service heard it.
+      args: {
+        supplier: "নওয়াপুর অটোপাস",
+        items: [{ part: { vehicle: "এক্সিও", position: "সামনের" }, quantity: "৫ সেট", unit_cost: "১২০০" }],
+        payment: { method_word: "বাকিতে" },
+      },
+    },
+    {
+      style: "Banglish",
+      text: "Nowapur Autopas theke axio 2014 samner non genuine brake pad 5 set kinlam, proti set 1200 taka, bakite",
+      args: {
+        supplier: "Nowapur Autopas",
+        items: [{ part: { vehicle: "axio", position: "samner" }, quantity: "5 set", unit_cost: "1200" }],
+        payment: { method_word: "bakite" },
+      },
+    },
+  ])(
+    "a stock-in the model left half-filled: the request's words fill the part, a misheard supplier is a button (D148; $style)",
+    async ({ text, args }) => {
+      calls.length = 0;
+      const first = await say(fresh(), text, [
+        scripted([{ calls: [{ name: "stock_in", arguments: args }] }]),
+      ]);
+      expect(first.reply).toMatch(/কার কাছ থেকে\?$/);
+      const choices = first.events.find((event) => event.type === "choices");
+      expect(choices).toMatchObject({ slot: "supplier" });
+      const options = (choices as Extract<ReplyEvent, { type: "choices" }>).options;
+      expect(options[0]?.label).toBe("Nawabpur Auto Parts Ltd.");
+      const picked = await say(first.state, { choice: { slot: "supplier", optionId: options[0]!.id } });
+      expect(picked.reply).toBe(
+        "Nawabpur Auto Parts Ltd. থেকে ব্রেক প্যাড, ৫ সেট, প্রতি সেট ১,২০০ টাকা, মোট ৬,০০০ টাকা। ঠিক আছে?",
+      );
+      expect(picked.outcome.actions).toEqual([expect.objectContaining({ status: "pending" })]);
+      expect(nothingSent()).toBe(true);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
       text: "রহিম মোটরসকে এক্সিও ২০১৪ সামনের জেনুইন ব্রেক প্যাড এক সেট নগদে দাও",
       no: "না",
       party: "রহিম মোটরস",

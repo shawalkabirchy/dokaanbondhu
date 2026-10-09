@@ -59,6 +59,8 @@ import {
 export const CONFIRM_TTL_MS = 60_000;
 export const ONE_LINE = "একবারে একটা পার্ট বলুন।";
 const NO_ANSWER = "অ্যাপ সাড়া দেয়নি।";
+/** A name this close to a customer or supplier is offered as a button when it is not clear enough to take (D148). */
+const NEAR_NAME = 0.5;
 
 const PART_KEYS = [
   "part_type",
@@ -383,8 +385,20 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         delete frame.slots[party];
         return askSlot(party, question({ slot: party, names: offers.map((offer) => offer.label) }), offers);
       } else {
+        // Not clear enough to take: the closest names as buttons, so a misheard name is one tap away (D148).
         delete frame.slots[party];
-        return ask(party);
+        const near = match.candidates.filter((candidate) => candidate.score >= NEAR_NAME).slice(0, 3);
+        if (!near.length) return ask(party);
+        const offers = near.map((candidate, index) => ({
+          id: `opt-${index + 1}`,
+          label: candidate.customer.name,
+          value: candidate.customer.hostId,
+        }));
+        return askSlot(
+          party,
+          question({ slot: party, ...(first ? { understood: understoodSoFar(frame) } : {}) }),
+          offers,
+        );
       }
     } else if (!slot && required) {
       if (party === "customer" && turn.rememberedCustomer) {

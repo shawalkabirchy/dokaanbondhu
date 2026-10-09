@@ -248,6 +248,31 @@ export interface CustomerMatch {
 /** Score of a name that the spoken words begin (Rahim -> Rahim Motors): enough to be asked about, not assumed. */
 const BEGINS_NAME = 0.85;
 
+/** Company endings nobody says when naming a shop: "Nawabpur Auto Parts Ltd." is said "নবাবপুর অটো পার্টস" (D148). */
+const COMPANY_ENDINGS = new Set([
+  "ltd",
+  "limited",
+  "pvt",
+  "private",
+  "co",
+  "company",
+  "inc",
+  "corp",
+  "লিমিটেড",
+  "লিঃ",
+  "লি",
+  "প্রাইভেট",
+  "কোম্পানি",
+]);
+
+/** A name's words without its company endings; never fewer than one word. */
+function nameTokens(name: string, dictionary: Dictionary): string[] {
+  const tokens = tokensOf(name, dictionary);
+  let end = tokens.length;
+  while (end > 1 && COMPANY_ENDINGS.has(tokens[end - 1]!)) end -= 1;
+  return tokens.slice(0, end);
+}
+
 /**
  * Matches a said customer name (and the other N-best hypotheses' words at the same place) against the catalog. Two
  * candidates at 0.85 or more, two within 0.05, or spoken words that begin several names are ambiguous and asked with
@@ -259,7 +284,7 @@ export function resolveCustomer(
   customers: readonly CatalogCustomer[],
   dictionary: Dictionary,
 ): CustomerMatch {
-  const saidTokens = tokensOf(said, dictionary);
+  const saidTokens = nameTokens(said, dictionary);
   const saidKey = phoneticKey(saidTokens.join(" "));
   const saidKeys = saidTokens.map((token) => phoneticKey(token));
   const texts = [
@@ -270,7 +295,7 @@ export function resolveCustomer(
   ];
   const beginning = customers.filter((customer) => {
     const keys = [customer.name, customer.nameBn ?? ""].map((name) =>
-      tokensOf(name, dictionary).map((token) => phoneticKey(token)),
+      nameTokens(name, dictionary).map((token) => phoneticKey(token)),
     );
     return keys.some(
       (name) =>
@@ -283,10 +308,10 @@ export function resolveCustomer(
       for (const name of [customer.name, customer.nameBn].filter((value): value is string =>
         Boolean(value),
       )) {
-        const nameText = tokensOf(name, dictionary).join(" ");
+        const nameText = nameTokens(name, dictionary).join(" ");
         const nameKey = phoneticKey(nameText);
         for (const { text, weight } of texts) {
-          const heard = tokensOf(text, dictionary).join(" ");
+          const heard = nameTokens(text, dictionary).join(" ");
           const exact = heard === nameText;
           const key = phoneticKey(heard);
           if (!exact && text !== said && keySimilarity(key, saidKey) < 0.5) continue;
