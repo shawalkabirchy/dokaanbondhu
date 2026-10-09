@@ -5,6 +5,7 @@ import {
   matchVehicles,
   namesInText,
   partsAnswer,
+  priceLevelIn,
   resolveCustomer,
   type Dictionary,
   type PartsContext,
@@ -412,7 +413,11 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(match.candidates[0]?.customer.hostId).toBe(rahman.hostId);
   });
 
-  it("names a garage's rate with its Bangla name (D119)", () => {
+  it("bills a customer at its own level, but says a level only when the question names it (D141)", () => {
+    // Shop B's own word for Rahman Auto Works' level is still read, for the bill the app makes.
+    expect(
+      customerTier(catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!.attrs),
+    ).toBe("garage");
     const pad = {
       hostPartId: "1",
       name: "x",
@@ -428,15 +433,20 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       rack: "B-3",
       fitmentVerified: true,
     };
-    const context: PartsContext = {
+    const context = (text: string): PartsContext => ({
       vehicle: "Toyota Axio",
       year: 2014,
       partType: "Brake Pad",
       position: "front",
-      tier: customerTier(catalog.customers.find((customer) => customer.name === "Rahman Auto Works")!.attrs),
-      customer: "রহমান অটো ওয়ার্কস",
-    };
-    expect(partsAnswer([pad], context)).toMatch(/৪,২০০ টাকা, B-3 তাকে। দাম রহমান অটো ওয়ার্কসের রেটে।$/);
+      tier: priceLevelIn(text) ?? "retail",
+    });
+    expect(partsAnswer([pad], context("রহমান অটো ওয়ার্কসের জন্য এক্সিওর প্যাড আছে?"))).toMatch(
+      /৪,৫০০ টাকা, B-3 তাকে।$/,
+    );
+    expect(partsAnswer([pad], context("এক্সিওর প্যাডের গ্যারেজের দাম কত?"))).toMatch(
+      /৪,২০০ টাকা, B-3 তাকে। দাম গ্যারেজ রেটে।$/,
+    );
+    expect(partsAnswer([pad], context("axio r pad er garage dam koto?"))).toMatch(/দাম গ্যারেজ রেটে।$/);
   });
 
   it("values the stock per part with the newest cost, over both branches", async () => {

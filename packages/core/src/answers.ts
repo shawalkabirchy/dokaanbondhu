@@ -59,9 +59,8 @@ export interface PartsContext {
   yearRange?: [number, number | null] | null;
   partType: string; // glossary value, e.g. Brake Pad
   position: string | null;
+  /** The price level the question named, else retail (D141). */
   tier: "retail" | "garage" | "wholesale";
-  /** The customer whose tier it is (session context), named when the answer uses that price (D119). */
-  customer?: string;
 }
 
 const TIER_BN = { retail: "খুচরা", garage: "গ্যারেজ", wholesale: "পাইকারি" } as const;
@@ -131,7 +130,7 @@ export function missingAnswer(
   return `${partPhrase(context, pairUsed ?? context.partType)} ${missing} নেই।`;
 }
 
-/** "দাম নিউ ঢাকা গ্যারেজের রেটে।" when a price said is the customer's tier price, not retail (D119). */
+/** "দাম পাইকারি রেটে।" when a price said is the level the question named, not retail (D141). */
 function rateSentence(rows: PartRow[], context: PartsContext): string {
   if (context.tier === "retail") return "";
   const differs = rows.some((row) => {
@@ -139,7 +138,7 @@ function rateSentence(rows: PartRow[], context: PartsContext): string {
     return (row.stock ?? 1) > 0 && price !== null && price !== row.retailTaka;
   });
   if (!differs) return "";
-  return ` দাম ${context.customer ? possessive(context.customer) : TIER_BN[context.tier]} রেটে।`;
+  return ` দাম ${TIER_BN[context.tier]} রেটে।`;
 }
 
 /** Said when a fit is read only from a part's name or notes, never confirmed by the app's records (D122). */

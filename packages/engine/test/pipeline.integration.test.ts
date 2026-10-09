@@ -140,7 +140,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
-  // D119: a garage named earlier in the session sets the price, and the answer says whose rate it is.
+  // D141: a remembered customer never changes the price said; only a level the question names does.
   it.each([
     {
       style: "Bangla",
@@ -152,18 +152,46 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       text: "axio 2014 er samner brake pad ache?",
       args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
     },
-  ])("answers at the session customer's garage price and names the rate ($style)", async ({ text, args }) => {
-    const garage = catalog.customers.find((customer) => customer.name === "New Dhaka Garage")!;
-    const state: TurnState = {
-      ...fresh(),
-      context: { customer: { hostId: garage.hostId, name: garage.name, tier: "garage" } },
-    };
-    const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
-    const { reply } = await turn(text, state, [llm]);
-    expect(reply).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬০০ টাকা। দুটোই B-3 তাকে। দাম New Dhaka Garage-এর রেটে।",
-    );
-  });
+  ])(
+    "says the normal price though a garage is remembered, one price per card (D141; $style)",
+    async ({ text, args }) => {
+      const garage = catalog.customers.find((customer) => customer.name === "New Dhaka Garage")!;
+      const state: TurnState = {
+        ...fresh(),
+        context: { customer: { hostId: garage.hostId, name: garage.name, tier: "garage" } },
+      };
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+      const { reply, events } = await turn(text, state, [llm]);
+      expect(reply).toBe(a1Answer);
+      const cards = events.find((event) => event.type === "cards") as Extract<ReplyEvent, { type: "cards" }>;
+      expect(cards.parts.map((part) => part.price_taka)).toEqual([{ retail: 4500 }, { retail: 1800 }]);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর অয়েল ফিল্টারের পাইকারি দাম কত?",
+      args: { part_type: "অয়েল ফিল্টার", vehicle: "এক্সিও", year: "২০১৪" },
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er oil filter er paikari dam koto?",
+      args: { part_type: "oil filter", vehicle: "axio", year: "2014" },
+    },
+  ])(
+    "says the wholesale price when the question names it, with no customer's name (D141; $style)",
+    async ({ text, args }) => {
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+      const { reply, events } = await turn(text, fresh(), [llm]);
+      expect(reply).toMatch(/৪০০ টাকা/);
+      expect(reply).toMatch(/২৪০ টাকা/);
+      expect(reply).toMatch(/দাম পাইকারি রেটে।$/);
+      const cards = events.find((event) => event.type === "cards") as Extract<ReplyEvent, { type: "cards" }>;
+      expect(cards.parts.some((part) => part.price_taka.wholesale === 400)).toBe(true);
+      expect(cards.parts.every((part) => Object.keys(part.price_taka).length === 1)).toBe(true);
+    },
+  );
 
   const rahimMotorsDue = {
     name: "run_read_query",
@@ -449,7 +477,8 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
-  // D125: the customer, and so their rate, is forgotten after 10 minutes without a turn; the car after 30.
+  // D125: the customer is forgotten after 10 minutes without a turn; the car after 30. The price said is the normal
+  // one either way (D141).
   it.each([
     { style: "Bangla", text: "এয়ার ফিল্টার আছে?", part: "এয়ার ফিল্টার" },
     { style: "Banglish", text: "air filter ache?", part: "air filter" },
@@ -467,7 +496,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
 
     const soon = await turn(text, idleFor(5), [search()]);
     expect(soon.reply).toContain("এক্সিও ২০১৪-এর এয়ার ফিল্টার");
-    expect(soon.reply).toContain("রেটে"); // still the garage's price
+    expect(soon.reply).not.toContain("রেটে");
     expect(soon.events.at(-1)).toMatchObject({ context: { vehicle: {}, customer: { label: garage.name } } });
 
     const later = await turn(text, idleFor(11), [search()]);

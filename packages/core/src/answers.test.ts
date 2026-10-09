@@ -85,13 +85,13 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
-  it("uses the customer's tier price and says whose rate it is (D119), and leaves out what the host does not record", () => {
-    const garage: PartsContext = { ...axio, tier: "garage", customer: "নিউ ঢাকা গ্যারেজ" };
+  it("says the price level the question named, with no customer's name (D141), and leaves out what the host does not record", () => {
+    const garage: PartsContext = { ...axio, tier: "garage" };
     expect(partsAnswer([row({ rack: null, quality: null })], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা। দাম নিউ ঢাকা গ্যারেজের রেটে।",
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ৩ সেট আছে, ৪,২০০ টাকা। দাম গ্যারেজ রেটে।",
     );
     expect(partsAnswer([pads[0]!, { ...pads[1]!, garageTaka: 1650n }], garage)).toBe(
-      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম নিউ ঢাকা গ্যারেজের রেটে।",
+      "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে: জেনুইন ৩ সেট, ৪,২০০ টাকা; নন-জেনুইন ৬ সেট, ১,৬৫০ টাকা। দুটোই B-3 তাকে। দাম গ্যারেজ রেটে।",
     );
     // No garage price recorded: the retail price is said, so no rate is named.
     expect(partsAnswer([row({ garageTaka: null })], garage)).toBe(

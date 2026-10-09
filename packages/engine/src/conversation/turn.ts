@@ -16,6 +16,7 @@ import {
   parseAmount,
   parseQuantity,
   parseYear,
+  priceLevelIn,
   partPhrase,
   racksInText,
   rackText,
@@ -296,7 +297,10 @@ function partQueryOf(args: Record<string, unknown>): PartQuery {
   return query;
 }
 
-function cardsOf(rows: PartRow[]): ReplyEvent {
+const TIER_PRICE = { retail: "retailTaka", garage: "garageTaka", wholesale: "wholesaleTaka" } as const;
+
+/** Part cards with the one price the answer says: the level the question named, else retail (D141). */
+function cardsOf(rows: PartRow[], tier: PriceTier): ReplyEvent {
   return {
     type: "cards",
     parts: rows.map((row) => ({
@@ -307,17 +311,12 @@ function cardsOf(rows: PartRow[]): ReplyEvent {
       position: row.position,
       unit: row.unit,
       stock: row.stock,
-      price_taka: Object.fromEntries(
-        (
-          [
-            ["retail", row.retailTaka],
-            ["garage", row.garageTaka],
-            ["wholesale", row.wholesaleTaka],
-          ] as const
-        )
-          .filter(([, taka]) => taka !== null)
-          .map(([tier, taka]) => [tier, Number(taka)]),
-      ),
+      price_taka:
+        row[TIER_PRICE[tier]] !== null
+          ? { [tier]: Number(row[TIER_PRICE[tier]]) }
+          : row.retailTaka !== null
+            ? { retail: Number(row.retailTaka) }
+            : {},
       rack: rackText(row),
       fitment_verified: row.fitmentVerified,
       photo_url: null,
@@ -507,7 +506,17 @@ export async function runTurn(
   const cued =
     cueKind && deps.host.writes ? (offered.find((item) => item.template === cueKind) ?? null) : null;
 
-  const tier: PriceTier = state.context.customer?.tier ?? "retail";
+  // Prices are said at retail unless the question itself names a level ("পাইকারি দাম", "garage price"); a
+  // remembered customer never changes them, and a question's answer keeps the level of the request it answers (D141).
+  const tier: PriceTier =
+    priceLevelIn(
+      text,
+      named.map((name) => name.heard),
+    ) ??
+    (frameOpen && state.frame?.request ? priceLevelIn(state.frame.request) : null) ??
+    "retail";
+  /** A sale is billed at the customer's own level by the shop app; its estimate without a dry run uses the same. */
+  const billTier: PriceTier = state.context.customer?.tier ?? "retail";
   /** The customer's Bangla name when the host stores one, for the rate sentence (D119). */
   const customerName = (hostId: string, name: string) =>
     deps.host.catalog.customers.find((customer) => customer.hostId === hostId)?.nameBn ?? name;
@@ -531,9 +540,6 @@ export async function runTurn(
     partType: result.resolved.partType ?? query.part_type ?? "",
     position: result.resolved.position,
     tier,
-    ...(state.context.customer
-      ? { customer: customerName(state.context.customer.hostId, state.context.customer.name) }
-      : {}),
   });
 
   /**
@@ -582,7 +588,7 @@ export async function runTurn(
         if (row.vehicle) facts.allowed.addNumber(row.vehicle.yearFrom).addNumber(row.vehicle.yearTo ?? null);
       }
       if (result.resolved.year) facts.allowed.addNumber(result.resolved.year);
-      emit(cardsOf(result.rows));
+      emit(cardsOf(result.rows, tier));
     } else {
       facts.allowed.addResult([...result.closeVehicle, ...result.mentioned]);
     }
@@ -725,7 +731,7 @@ export async function runTurn(
       name: supplier.name,
       nameBn: supplier.nameBn ?? null,
     })),
-    tier,
+    tier: billTier,
     rememberedCustomer: state.context.customer
       ? { hostId: state.context.customer.hostId, name: state.context.customer.name }
       : null,

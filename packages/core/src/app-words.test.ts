@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appWord, isAppWordValue, priceTierOf } from "./app-words";
+import { appWord, isAppWordValue, priceLevelIn, priceTierOf } from "./app-words";
 
 // A shop app's own words for price levels and a part's quality, position and unit (D121, D122), however it writes
 // them; what the list does not know is asked in setup.
@@ -82,5 +82,31 @@ describe("app words", () => {
     expect(isAppWordValue("position", "rear")).toBe(true);
     expect(isAppWordValue("position", "front left")).toBe(false);
     expect(isAppWordValue("quality", "OEM")).toBe(false);
+  });
+});
+
+describe("the price level a question names (D141)", () => {
+  it.each([
+    ["এক্সিওর অয়েল ফিল্টারের পাইকারি দাম কত?", "wholesale"],
+    ["axio r oil filter er paikari dam koto?", "wholesale"],
+    ["oil filter wholesale price koto", "wholesale"],
+    ["এক্সিওর প্যাডের গ্যারেজের দাম কত?", "garage"],
+    ["axio r pad er garage dam koto?", "garage"],
+  ] as const)("%s names %s", (text, level) => {
+    expect(priceLevelIn(text)).toBe(level);
+  });
+
+  it.each([
+    "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
+    "axio 2014 er samner brake pad ache?",
+    "এক্সিওর প্যাডের খুচরা দাম কত?",
+    "axio r pad er khuchra dam koto?",
+  ])("%s names no level: the normal price", (text) => {
+    expect(priceLevelIn(text)).toBeNull();
+  });
+
+  it("does not take a word of a named customer for a level", () => {
+    expect(priceLevelIn("নিউ ঢাকা গ্যারেজের প্যাড দাও", ["নিউ ঢাকা গ্যারেজের"])).toBeNull();
+    expect(priceLevelIn("new dhaka garage er pad dao", ["new dhaka garage er"])).toBeNull();
   });
 });

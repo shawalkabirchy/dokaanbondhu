@@ -67,6 +67,26 @@ export function priceTierOf(value: string | null | undefined): PriceTier | null 
   return appWord("price_tier", value) as PriceTier | null;
 }
 
+/**
+ * The price level a question itself names ("পাইকারি দাম", "paikari dam", "wholesale price", "গ্যারেজের দাম"), or null
+ * for the normal price (D141). Words inside a name the question says ("নিউ ঢাকা গ্যারেজ") are not a level.
+ */
+export function priceLevelIn(text: string, names: readonly string[] = []): PriceTier | null {
+  let said = ` ${plain(text).replace(/[?।!,;:]/g, " ")} `;
+  for (const name of names) if (name.trim()) said = said.replace(` ${plain(name)} `, " ");
+  const tokens = said.split(" ").filter(Boolean);
+  const byWord = BY_WORD.get("price_tier")!;
+  for (let size = 2; size >= 1; size -= 1) {
+    for (let start = 0; start + size <= tokens.length; start += 1) {
+      const phrase = tokens.slice(start, start + size).join(" ");
+      // "গ্যারেজের", "garage er": the possessive ending is not part of the word.
+      const level = byWord.get(phrase) ?? byWord.get(phrase.replace(/(ের|এর|র)$/, ""));
+      if (level === "garage" || level === "wholesale") return level;
+    }
+  }
+  return null;
+}
+
 export function isPriceTier(value: unknown): value is PriceTier {
   return isAppWordValue("price_tier", value);
 }
