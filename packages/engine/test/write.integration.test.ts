@@ -341,8 +341,12 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
         payment: { method_word: "বাকিতে" },
       },
       answers: ["২০১৪", "নন-জেনুইন"],
-      // The guesses the speech service gave on 9 Oct: "দুই সেক্টর" sounds like the app's Bajaj Discover 125.
-      quantity: ["দুই সেট", "দুই সেক্টর", "দুই সেন্ট", "দুই সেক্ট", "দুই সেক"],
+      // As the server got them on 9 Oct: "দুই সেক্টর", which sounds like the app's Bajaj Discover 125, second among the
+      // speech service's guesses, then first, with "দুই সেট" chosen as the transcript.
+      quantities: [
+        { text: "দুই সেট", nbest: ["দুই সেট", "দুই সেক্টর", "দুই সেন্ট", "দুই সেক্ট", "দুই সেক"] },
+        { text: "দুই সেট", nbest: ["দুই সেক্টর", "দুই সেট", "দুই সেন্ট", "দুই সেক্ট", "ধুই সেক্টর"] },
+      ],
     },
     {
       style: "Banglish",
@@ -353,18 +357,25 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
         payment: { method_word: "bakite" },
       },
       answers: ["2014", "non genuine"],
-      quantity: ["dui set", "dui discover", "dui sector"],
+      quantities: [
+        { text: "dui set", nbest: ["dui set", "dui discover", "dui sector"] },
+        { text: "dui set", nbest: ["dui discover", "dui set", "dui sector"] },
+      ],
     },
   ])(
     "a quantity said by voice stays the answer though another guess sounds like a car (D147; $style)",
-    async ({ text, args, answers, quantity }) => {
+    async ({ text, args, answers, quantities }) => {
       calls.length = 0;
       // The app's own car names are words too, as the server builds them (D122).
       const shopDictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
-      const voice = async (state: TurnState, said: string[], llm: LlmProvider[] = [scripted([])]) => {
+      const voice = async (
+        state: TurnState,
+        said: { text: string; nbest: string[] },
+        llm: LlmProvider[] = [scripted([])],
+      ) => {
         const events: ReplyEvent[] = [];
         const outcome = await runTurn(
-          { text: said[0]!, hypotheses: said },
+          { text: said.text, hypotheses: said.nbest },
           state,
           { ...deps(llm), dictionary: shopDictionary },
           (event) => events.push(event),
@@ -375,19 +386,20 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
           .join(" ");
         return { reply, outcome, state: outcome.state };
       };
-      const first = await voice(
-        fresh(),
-        [text],
-        [scripted([{ calls: [{ name: "record_sale", arguments: args }] }])],
-      );
-      const year = await voice(first.state, [answers[0]!]);
-      const quality = await voice(year.state, [answers[1]!]);
-      expect(quality.reply).toBe("কয় সেট?");
-      const said = await voice(quality.state, quantity);
-      expect(said.reply).toBe(
-        "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
-      );
-      expect(said.outcome.actions).toEqual([expect.objectContaining({ status: "pending" })]);
+      const heard = (said: string) => ({ text: said, nbest: [said] });
+      for (const quantity of quantities) {
+        const first = await voice(fresh(), heard(text), [
+          scripted([{ calls: [{ name: "record_sale", arguments: args }] }]),
+        ]);
+        const year = await voice(first.state, heard(answers[0]!));
+        const quality = await voice(year.state, heard(answers[1]!));
+        expect(quality.reply).toBe("কয় সেট?");
+        const said = await voice(quality.state, quantity);
+        expect(said.reply).toBe(
+          "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
+        );
+        expect(said.outcome.actions).toEqual([expect.objectContaining({ status: "pending" })]);
+      }
       expect(nothingSent()).toBe(true);
     },
   );

@@ -1156,8 +1156,9 @@ export async function runTurn(
     state.frame.asking !== "vehicle" &&
     !splitCorrection(text).correction
   ) {
-    const best = hypotheses[0]
-      ? matchConcept("vehicle_model", hypotheses[0], [], deps.dictionary).candidates.find(
+    // The transcript the turn works with, which the server may have chosen over the service's first guess.
+    const best = text
+      ? matchConcept("vehicle_model", text, [], deps.dictionary).candidates.find(
           (candidate) => !inName(candidate.heard),
         )
       : undefined;
