@@ -1,5 +1,11 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { buildDictionary, formatTaka, type ActionTemplate } from "@dokaanbondhu/core";
+import {
+  buildDictionary,
+  catalogEntries,
+  formatTaka,
+  GLOSSARY,
+  type ActionTemplate,
+} from "@dokaanbondhu/core";
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { runTurn, type TurnDeps, type TurnState } from "../src/conversation/turn";
@@ -322,6 +328,67 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
         `আগের কাজটা ফিরিয়ে নেওয়া হয়েছে। Rahim Motors-এর মোট বাকি এখন ${formatTaka(due)} টাকা।`,
       );
       expect(await balance("customers", "Rahim Motors")).toBe(due);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "রহিম মোটরসকে এক্সিওর সামনের ব্রেক প্যাড বাকিতে দাও",
+      args: {
+        customer: "রহিম মোটরস",
+        items: [{ part: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" } }],
+        payment: { method_word: "বাকিতে" },
+      },
+      answers: ["২০১৪", "নন-জেনুইন"],
+      // The guesses the speech service gave on 9 Oct: "দুই সেক্টর" sounds like the app's Bajaj Discover 125.
+      quantity: ["দুই সেট", "দুই সেক্টর", "দুই সেন্ট", "দুই সেক্ট", "দুই সেক"],
+    },
+    {
+      style: "Banglish",
+      text: "Rahim Motors ke axior samner brake pad bakite dao",
+      args: {
+        customer: "Rahim Motors",
+        items: [{ part: { part_type: "brake pad", vehicle: "axio", position: "samner" } }],
+        payment: { method_word: "bakite" },
+      },
+      answers: ["2014", "non genuine"],
+      quantity: ["dui set", "dui discover", "dui sector"],
+    },
+  ])(
+    "a quantity said by voice stays the answer though another guess sounds like a car (D147; $style)",
+    async ({ text, args, answers, quantity }) => {
+      calls.length = 0;
+      // The app's own car names are words too, as the server builds them (D122).
+      const shopDictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
+      const voice = async (state: TurnState, said: string[], llm: LlmProvider[] = [scripted([])]) => {
+        const events: ReplyEvent[] = [];
+        const outcome = await runTurn(
+          { text: said[0]!, hypotheses: said },
+          state,
+          { ...deps(llm), dictionary: shopDictionary },
+          (event) => events.push(event),
+        );
+        const reply = events
+          .filter((event) => event.type === "text")
+          .map((event) => (event as { text: string }).text)
+          .join(" ");
+        return { reply, outcome, state: outcome.state };
+      };
+      const first = await voice(
+        fresh(),
+        [text],
+        [scripted([{ calls: [{ name: "record_sale", arguments: args }] }])],
+      );
+      const year = await voice(first.state, [answers[0]!]);
+      const quality = await voice(year.state, [answers[1]!]);
+      expect(quality.reply).toBe("কয় সেট?");
+      const said = await voice(quality.state, quantity);
+      expect(said.reply).toBe(
+        "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
+      );
+      expect(said.outcome.actions).toEqual([expect.objectContaining({ status: "pending" })]);
+      expect(nothingSent()).toBe(true);
     },
   );
 

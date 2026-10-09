@@ -1146,7 +1146,9 @@ export async function runTurn(
   }
   // An input that names another car than the waiting request's, while it asks anything but the car, is a new request:
   // "নোয়া সেলফ মোটর আছে?" after "কোন পার্ট লাগবে?" about an Axio. The waiting one is set aside and the input goes to
-  // the LLM without it; "না, প্রিমিও" stays a correction (spec 9.3 rule 3, D127).
+  // the LLM without it; "না, প্রিমিও" stays a correction (spec 9.3 rule 3, D127). The car must be in what was heard
+  // best: one only among the speech service's other guesses ("দুই সেক্টর" for "দুই সেট", like Bajaj Discover) leaves
+  // the answer to the question (D147).
   if (
     !final &&
     frameOpen &&
@@ -1154,7 +1156,12 @@ export async function runTurn(
     state.frame.asking !== "vehicle" &&
     !splitCorrection(text).correction
   ) {
-    const heardCar = heardSlots.get("vehicle_model");
+    const best = hypotheses[0]
+      ? matchConcept("vehicle_model", hypotheses[0], [], deps.dictionary).candidates.find(
+          (candidate) => !inName(candidate.heard),
+        )
+      : undefined;
+    const heardCar = best && best.score >= 0.7 ? best.value : undefined;
     const asked = state.frame.slots.vehicle?.value;
     const frameCar =
       typeof asked === "string" ? carOf(asked) : state.frame.request ? carOf(state.frame.request) : null;
