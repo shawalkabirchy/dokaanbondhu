@@ -491,6 +491,33 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
   );
 
   it.each([
+    { style: "Bangla", text: "সব কাস্টমার মুছে দাও", own: "আমি সেলফ মোটর মুছে দিচ্ছি। আপনি কি নিশ্চিত?" },
+    {
+      style: "Banglish",
+      text: "shob customer muche dao",
+      own: "Ami self motor muche dicchi. Apni ki nishchit?",
+    },
+  ])(
+    "answers a change tried through the read tool with the fixed help answer, never the LLM's words (D163; $style)",
+    async ({ text, own }) => {
+      const llm = scripted([
+        {
+          calls: [
+            { name: "run_read_query", arguments: { sql: "DELETE FROM customers", purpose: "মুছে দাও" } },
+          ],
+        },
+        { text: own },
+      ]);
+      const { reply, outcome } = await turn(text, fresh(), [llm]);
+      expect(reply).toBe(helpAnswer());
+      expect(outcome.trace.tool_calls).toEqual([
+        expect.objectContaining({ name: "run_read_query", result: "rejected: only SELECT" }),
+      ]);
+      expect(outcome.meta.llm_calls).toBe(1); // the LLM is not asked again
+    },
+  );
+
+  it.each([
     {
       style: "Bangla",
       text: "প্রোবক্স ২০১৩-এর এয়ার ফিল্টার কোন র‍্যাকে?",

@@ -49,7 +49,13 @@ import { commonValues } from "./keyterms";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
 import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
-import { ReadQueryRejected, runReadQuery, TABLE_ROWS, type ReadQueryResult } from "../host/read-query";
+import {
+  READ_ONLY_REFUSAL,
+  ReadQueryRejected,
+  runReadQuery,
+  TABLE_ROWS,
+  type ReadQueryResult,
+} from "../host/read-query";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
 import type { SchemaMap } from "../host/schema-map";
 import { llmStream, NothingLeftError, type ChatMessage, type LlmProvider, type ToolCall } from "../providers";
@@ -621,6 +627,9 @@ export async function runTurn(
   mark("candidates", since);
 
   const facts: Facts = { allowed: new AllowedFacts() };
+  // The LLM tried to change the shop's data through the read tool ("সব কাস্টমার মুছে দাও" as DELETE): the guard refused
+  // it, and the reply is the fixed help answer, never the LLM's own words, which once said it was deleting (D163).
+  let changeRefused = false;
   facts.allowed.addFromText(text); // values the user said
   // A rack the user said, as an answer writes it: "সি ২" for "সি দুই" (D160).
   for (const rack of named.filter((name) => name.kind === "rack")) facts.allowed.addFromText(rack.name);
@@ -1108,6 +1117,10 @@ export async function runTurn(
         } catch (error) {
           const message = error instanceof ReadQueryRejected ? error.message : "the query failed";
           record(`rejected: ${message}`);
+          if (message === READ_ONLY_REFUSAL) {
+            changeRefused = true;
+            return "stop";
+          }
           return JSON.stringify({ error: message });
         }
       }
@@ -1603,7 +1616,9 @@ export async function runTurn(
   } else {
     state.state = "RESPONDING";
     const template = templateAnswer(facts);
-    if (llmText && trace.tool_calls.length === 0) {
+    if (changeRefused) {
+      reply = helpAnswer();
+    } else if (llmText && trace.tool_calls.length === 0) {
       // The LLM answered without any tool: a request the assistant cannot handle gets the fixed help answer, and
       // questions are templates, never the LLM's own words (spec 9.4, 12.2).
       reply = helpAnswer();

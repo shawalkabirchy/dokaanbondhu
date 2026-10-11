@@ -72,6 +72,9 @@ export class ReadQueryRejected extends Error {}
 
 type ResultKind = "money" | "quantity" | "count" | "number" | "text" | "date" | "unmapped";
 
+/** The guard's answer to a statement that would change data (INSERT, UPDATE, DELETE, …). */
+export const READ_ONLY_REFUSAL = "only SELECT";
+
 export interface ResultColumn {
   key: string;
   kind: ResultKind;
@@ -236,7 +239,7 @@ export function guardReadQuery(map: SchemaMap, sql: string): { sql: string; colu
   const statements = Array.isArray(ast) ? ast : [ast];
   if (statements.length !== 1) throw new ReadQueryRejected("exactly one statement");
   const select = statements[0] as Record<string, unknown>;
-  if (select.type !== "select") throw new ReadQueryRejected("only SELECT");
+  if (select.type !== "select") throw new ReadQueryRejected(READ_ONLY_REFUSAL);
   if (select.with) throw new ReadQueryRejected("no WITH");
   let into = false;
   walk(select, (node) => {

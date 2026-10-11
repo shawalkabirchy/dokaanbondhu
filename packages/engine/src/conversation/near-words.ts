@@ -1,5 +1,8 @@
 import {
+  APP_WORD_CONCEPTS,
+  appWord,
   banglaOf,
+  EVERYDAY_WORDS,
   isNumberWord,
   knownWords,
   matchConcept,
@@ -51,6 +54,8 @@ const HUNDREDS = /^(এক|দুই|দু|তিন|চার|পাঁচ|ছ
  * Garage written নিউ ঢাকা গ্যারেজ sounds 0.62 alike).
  */
 const SAME_NAME = 0.5;
+/** How alike a word must sound to a word two names share to be that word (রহিম ~ rahim is 0.80, karim 0.60). */
+const SHARED_NAME_SOUND = 0.8;
 /** A unit written glued to its number ("পাঁচসেট"; "পাতসেট" for পাঁচ সেট, D158): a quantity, never a part's name. */
 const GLUED_UNIT = /^(.+?)(সেট|পিস|set|pis|piece)$/u;
 const SMALL_NUMBERS = ["এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়", "দশ"];
@@ -89,6 +94,8 @@ const EVERYDAY = new Set(
     "প্রতি",
     "বাকিতে",
     "নগদে",
+    "ক্যাশে",
+    "বিকাশে",
     "হ্যাঁ",
     "না",
     "জি",
@@ -143,6 +150,9 @@ const EVERYDAY = new Set(
     "proti",
     "bakite",
     "nogode",
+    "cash",
+    "bkash",
+    "bikashe",
     "ha",
     "na",
     "ji",
@@ -161,6 +171,7 @@ const EVERYDAY = new Set(
     "take",
     "dhakay",
     "dhaka",
+    ...EVERYDAY_WORDS, // the wider list of shop talk (D162)
   ].map((word) => normalize(word).tokens.join(" ")),
 );
 
@@ -262,9 +273,27 @@ export function nearHints(input: NearInput): NearHint[] {
   const tokens = normalize(input.text, input.dictionary.variants).tokens;
   if (!tokens.length) return [];
   const known = knownWords(input.dictionary);
+  // A word two of the shop's names share, said in either script, is no misheard word: "rahim" of Rahim Motors and
+  // Rahim Auto Garage is left to the matcher's question, never guessed as Karim Auto or Rafiq Uddin by sound (D162).
+  const owners = new Map<string, Set<string>>();
+  for (const person of [...input.customers, ...input.suppliers]) {
+    for (const name of [person.name, person.nameBn]) {
+      for (const word of name ? normalize(name).tokens : [])
+        owners.set(word, (owners.get(word) ?? new Set()).add(person.name));
+    }
+  }
+  const shared = [...owners].filter(([, people]) => people.size > 1).map(([word]) => word);
+  const sharedName = (token: string) =>
+    shared.some((word) => soundSimilarity(token, word) >= SHARED_NAME_SOUND);
   const placed = placedSpans(input, tokens);
   const everyday = [...EVERYDAY];
   // A number word with an ending ("হাজারের") is a number too, never a name (it sounds like Harrier, D157).
+  // A word of the app's own lists (পাইকারি, খুচরা, জেনুইন, সেট …) is that word, never a name: "পাইকারি দাম" had become
+  // "ব্যাটারি দাম" and lost its price level (D162).
+  const appWordOf = (token: string) =>
+    [token, ...stripEnding(token)].some((form) =>
+      APP_WORD_CONCEPTS.some((concept) => appWord(concept, form)),
+    );
   const numeric = (token: string) =>
     [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form)) ||
     gluedQuantity(token);
@@ -272,6 +301,8 @@ export function nearHints(input: NearInput): NearHint[] {
     !EVERYDAY.has(token) &&
     !numeric(token) &&
     !known.has(token) &&
+    !sharedName(token) &&
+    !appWordOf(token) &&
     token.length > 1 &&
     !everyday.some((word) => soundSimilarity(token, word) >= EVERYDAY_SOUND);
   const spellings = vocabulary(input);

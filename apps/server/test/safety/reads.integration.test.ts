@@ -82,10 +82,11 @@ describe.skipIf(!allLocal)("safety of the read path", () => {
     const query = (sql: string) => ({
       calls: [{ name: "run_read_query", arguments: { sql, purpose: "x" } }],
     });
+    // A change ends the turn with the fixed help answer (D163), so it comes last.
     llm.script.push(
-      query("UPDATE parts SET retail_price = 100"),
       query("SELECT name_en FROM parts; DELETE FROM parts"),
       query("SELECT key_hash FROM api_keys"),
+      query("UPDATE parts SET retail_price = 100"),
     );
     const result = await turn("সব পার্টের দাম এক টাকা করে দাও");
     const trace = traceOf(result.events);

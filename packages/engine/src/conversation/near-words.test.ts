@@ -54,6 +54,10 @@ describe("near-word hints", () => {
     "এক্সিও দুই হাজার চৌদ্দ সামনের ব্রেক প্যাড আছে", // everything already understood
     "আজকে ঢাকায় বৃষ্টি হবে", // not about the shop
     "axio 2014 er samner brake pad ache",
+    "এক্সিও ২০১৪ সামনের ব্রেক প্যাডের পাইকারি দাম কত?", // the app's own word, never ব্যাটারি (D162)
+    "axio 2014 front brake pad er paikari dam koto?",
+    "রহিম মোটরস থেকে বিকাশে দুই হাজার টাকা জমা নাও",
+    "rahim motors theke bikashe dui hajar taka joma nao",
   ])("offers nothing for %s", (text) => {
     expect(hintsOf(text)).toEqual([]);
   });
@@ -82,11 +86,14 @@ describe("near-word hints", () => {
     { style: "Bangla", text: "রহিম থেকে দশ হাজার টাকা জমা নাও" },
     { style: "Banglish", text: "rahim theke dosh hajar taka joma nao" },
   ])("never guesses between two names that share their first word (D158; $style)", ({ text }) => {
-    const both = [...customers, { hostId: "c3", name: "Rahim Auto Garage", nameBn: null }];
-    const options = nearHints({ text, dictionary, customers: both, suppliers }).flatMap(
-      (hint) => hint.options,
-    );
-    expect(options.filter((option) => option.value.startsWith("Rahim"))).toEqual([]);
+    const both = [
+      ...customers,
+      { hostId: "c3", name: "Rahim Auto Garage", nameBn: null },
+      { hostId: "c4", name: "Karim Auto", nameBn: null },
+      { hostId: "c5", name: "Rafiq Uddin", nameBn: null },
+    ];
+    // Nor another name that sounds a little like it (D162): the matcher asks which Rahim.
+    expect(nearHints({ text, dictionary, customers: both, suppliers })).toEqual([]);
     // One person's first word is still offered (D157).
     expect(hintsOf(text).flatMap((hint) => hint.options)[0]).toMatchObject({ value: "Rahim Motors" });
   });
