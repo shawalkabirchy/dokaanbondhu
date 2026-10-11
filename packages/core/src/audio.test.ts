@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pcmDurationMs, pcmRms, pcmToWav, SAMPLE_RATE, trimSilence } from "./audio";
+import { normalizeLevel, pcmDurationMs, pcmRms, pcmToWav, SAMPLE_RATE, trimSilence } from "./audio";
 
 // Silence trim and the WAV header (spec 8.4, D45), on synthetic clips: quiet noise with a louder tone as the "speech".
 
@@ -44,7 +44,7 @@ describe("silence trim (D45)", () => {
   });
 
   it("finds no speech in quiet noise, and none in an empty clip", () => {
-    expect(trimSilence(clip([[1500, 0.01]])).speech).toBe(false); // RMS 0.007, under the 0.015 floor
+    expect(trimSilence(clip([[1500, 0.01]])).speech).toBe(false); // a steady RMS 0.007: never 2.5 × its own floor
     expect(trimSilence(new Uint8Array(0))).toMatchObject({ speech: false, pcm: new Uint8Array(0) });
   });
 
@@ -59,6 +59,63 @@ describe("silence trim (D45)", () => {
     );
     expect(noisy.speech).toBe(true);
     expect(pcmDurationMs(noisy.pcm)).toBeLessThan(1200);
+  });
+
+  it("keeps quiet speech from a quiet microphone, which the old 0.015 floor cut away (D150)", () => {
+    // speech at RMS 0.014 over a room at 0.0014, like the emulator's laptop microphone
+    const quiet = trimSilence(
+      clip([
+        [1000, 0.002],
+        [1200, 0.02],
+        [1000, 0.002],
+      ]),
+    );
+    expect(quiet.speech).toBe(true);
+    expect(pcmDurationMs(quiet.pcm)).toBeGreaterThanOrEqual(1200);
+    expect(pcmDurationMs(quiet.pcm)).toBeLessThan(1800);
+  });
+});
+
+describe("level (D150)", () => {
+  it("raises quiet speech to a steady level, by at most 12 times and without clipping", () => {
+    const quiet = trimSilence(
+      clip([
+        [500, 0.002],
+        [1200, 0.02],
+        [500, 0.002],
+      ]),
+    ).pcm;
+    const raised = normalizeLevel(quiet);
+    expect(raised.gain).toBeGreaterThan(5);
+    expect(raised.gain).toBeLessThanOrEqual(12);
+    expect(raised.pcm.byteLength).toBe(quiet.byteLength);
+    expect(pcmRms(raised.pcm)).toBeGreaterThan(5 * pcmRms(quiet));
+    const view = new DataView(raised.pcm.buffer);
+    let peak = 0;
+    for (let i = 0; i < raised.pcm.byteLength; i += 2)
+      peak = Math.max(peak, Math.abs(view.getInt16(i, true)));
+    expect(peak).toBeLessThanOrEqual(32767);
+
+    // a whisper in a silent room: the gain stops at 12
+    const faint = clip([
+      [500, 0.0005],
+      [1000, 0.006],
+      [500, 0.0005],
+    ]);
+    expect(normalizeLevel(faint).gain).toBe(12);
+  });
+
+  it("leaves speech that is already loud as it is, and never raises a peak past full scale", () => {
+    const loud = clip([[1000, 0.3]]);
+    expect(normalizeLevel(loud)).toEqual({ pcm: loud, gain: 1 });
+    // quiet on average but with one near-full-scale click: the click caps the gain
+    const clicked = clip([
+      [990, 0.02],
+      [10, 0.9],
+    ]);
+    const raised = normalizeLevel(clicked);
+    expect(raised.gain).toBeLessThanOrEqual((0.98 * 32767) / Math.round(0.9 * 32767) + 0.01);
+    expect(normalizeLevel(new Uint8Array(0)).gain).toBe(1);
   });
 });
 

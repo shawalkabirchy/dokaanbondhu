@@ -29,22 +29,37 @@ export interface Trimmed {
 
 const FRAME_MS = 30;
 const KEEP_MS = 250;
+/** No frame quieter than this is speech, however quiet the room (D150; it was 0.015, above a quiet phone's speech). */
+const SPEECH_FLOOR = 0.003;
 
-/**
- * Cuts leading and trailing silence (D45): 30 ms frames; the noise floor is the 20th percentile of the frames' RMS;
- * a speech frame has an RMS of at least max(0.015, 2.5 × floor); everything before the first and after the last speech
- * frame is cut, keeping 250 ms on each side. Starting values, tuned on the open half of the test set.
- */
-export function trimSilence(pcm: Uint8Array): Trimmed {
+/** The RMS of each 30 ms frame. */
+function frameRms(pcm: Uint8Array): number[] {
   const frameBytes = (SAMPLE_RATE * FRAME_MS * 2) / 1000;
   const frames: number[] = [];
   for (let start = 0; start + 1 < pcm.byteLength; start += frameBytes) {
     frames.push(pcmRms(pcm, start, Math.min(start + frameBytes, pcm.byteLength)));
   }
-  if (!frames.length) return { pcm: new Uint8Array(0), speech: false, noiseFloor: 0 };
+  return frames;
+}
+
+/** The noise floor (the 20th percentile of the frames' RMS) and the speech threshold it sets. */
+function speechThreshold(frames: readonly number[]): { noiseFloor: number; threshold: number } {
   const sorted = [...frames].sort((a, b) => a - b);
   const noiseFloor = sorted[Math.floor(0.2 * (sorted.length - 1))]!;
-  const threshold = Math.max(0.015, 2.5 * noiseFloor);
+  return { noiseFloor, threshold: Math.max(SPEECH_FLOOR, 2.5 * noiseFloor) };
+}
+
+/**
+ * Cuts leading and trailing silence (D45, D150): 30 ms frames; the noise floor is the 20th percentile of the frames'
+ * RMS; a speech frame has an RMS of at least max(0.003, 2.5 × floor), so the clip's own level decides and a quiet
+ * microphone's speech is kept; everything before the first and after the last speech frame is cut, keeping 250 ms on
+ * each side. Starting values, tuned on the kept clips (D149).
+ */
+export function trimSilence(pcm: Uint8Array): Trimmed {
+  const frameBytes = (SAMPLE_RATE * FRAME_MS * 2) / 1000;
+  const frames = frameRms(pcm);
+  if (!frames.length) return { pcm: new Uint8Array(0), speech: false, noiseFloor: 0 };
+  const { noiseFloor, threshold } = speechThreshold(frames);
   const first = frames.findIndex((rms) => rms >= threshold);
   if (first < 0) return { pcm: new Uint8Array(0), speech: false, noiseFloor };
   let last = first;
@@ -55,6 +70,41 @@ export function trimSilence(pcm: Uint8Array): Trimmed {
   const start = Math.max(0, first * frameBytes - keep);
   const end = Math.min(pcm.byteLength, (last + 1) * frameBytes + keep);
   return { pcm: pcm.slice(start, end - ((end - start) % 2)), speech: true, noiseFloor };
+}
+
+/** The level quiet speech is raised to: the speech frames' 95th-percentile RMS (D150). */
+const TARGET_RMS = 0.1;
+const MAX_GAIN = 12;
+
+export interface Leveled {
+  pcm: Uint8Array;
+  /** The gain applied; 1 when the clip was left as it was. */
+  gain: number;
+}
+
+/**
+ * Raises quiet speech to a steady level before speech-to-text (D150): the speech frames' 95th-percentile RMS becomes
+ * 0.1, by at most 12×, and never so far that a sample clips. A clip already about that loud is left as it is.
+ */
+export function normalizeLevel(pcm: Uint8Array): Leveled {
+  const frames = frameRms(pcm);
+  if (!frames.length) return { pcm, gain: 1 };
+  const { threshold } = speechThreshold(frames);
+  const speech = frames.filter((rms) => rms >= threshold).sort((a, b) => a - b);
+  const loud = speech[Math.floor(0.95 * (speech.length - 1))];
+  if (!loud) return { pcm, gain: 1 };
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  let peak = 0;
+  for (let i = 0; i + 1 < pcm.byteLength; i += 2) peak = Math.max(peak, Math.abs(view.getInt16(i, true)));
+  const gain = Math.min(MAX_GAIN, TARGET_RMS / loud, peak ? (0.98 * 32767) / peak : MAX_GAIN);
+  if (gain <= 1.05) return { pcm, gain: 1 };
+  const out = new Uint8Array(pcm.byteLength - (pcm.byteLength % 2));
+  const raised = new DataView(out.buffer);
+  for (let i = 0; i + 1 < pcm.byteLength; i += 2) {
+    const sample = Math.round(view.getInt16(i, true) * gain);
+    raised.setInt16(i, Math.max(-32768, Math.min(32767, sample)), true);
+  }
+  return { pcm: out, gain: Math.round(gain * 100) / 100 };
 }
 
 /** A WAV file of the PCM: the 44-byte header (PCM, mono, 16 kHz, 16-bit) and the samples (spec 8.4). */

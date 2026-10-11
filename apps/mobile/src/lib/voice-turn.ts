@@ -1,16 +1,18 @@
-import { RmsMeter } from "./pcm";
+import { PeakMeter, RmsMeter } from "./pcm";
 
 // One push-to-talk turn (spec 15.3), without the phone's APIs, so it is tested with fakes: chunks are uploaded while
 // the button is held (2 in flight, 3 tries each), exactly as recorded, once the press has lasted 0.3 s, so a tap sends
-// nothing at all; a clip with an RMS under 0.01 plays the bundled "abar bolben" clip instead of reaching the server;
-// on release the turn is finished, and chunks the server reports missing are sent again, once. The conversation may
-// still be opening when recording starts, so uploads wait for its ID instead of delaying the recorder. When the phone
+// nothing at all; a silent clip (its loudest 300 ms under an RMS of 0.004, D150) plays the bundled "abar bolben" clip
+// instead of reaching the server; on release the turn is finished, and chunks the server reports missing are sent
+// again, once. The conversation may still be opening when recording starts, so uploads wait for its ID instead of
+// delaying the recorder. When the phone
 // is busy the recorder can hand over several seconds at once, more than the server takes in one chunk (64 KB): such a
 // chunk is cut into pieces of at most one second, in order, so nothing is lost (D112).
 
 export const MIN_PRESS_MS = 300;
 export const MAX_RECORDING_MS = 30_000;
-export const QUIET_RMS = 0.01;
+/** A clip whose loudest 300 ms stay under this RMS is silence (D150; it was the whole clip's average under 0.01). */
+export const QUIET_PEAK = 0.004;
 const IN_FLIGHT = 2;
 const TRIES = 3;
 /** One second of 16 kHz 16-bit mono: the largest piece uploaded (an even number, so no sample is split). */
@@ -42,6 +44,7 @@ export class VoiceTurn {
   private readonly startedAt: number;
   private endedAt: number | null = null;
   private readonly rms = new RmsMeter();
+  private readonly loudest = new PeakMeter();
   private readonly chunks = new Map<number, Uint8Array>();
   private seq = 0;
   private readonly waiting: number[] = [];
@@ -63,6 +66,7 @@ export class VoiceTurn {
     this.bytes += bytes.byteLength;
     for (const wake of this.arrived.splice(0)) wake();
     this.rms.add(bytes);
+    this.loudest.add(bytes);
     for (let start = 0; start < bytes.byteLength; start += MAX_PIECE_BYTES) {
       const seq = this.seq++;
       this.chunks.set(seq, bytes.subarray(start, start + MAX_PIECE_BYTES));
@@ -129,12 +133,12 @@ export class VoiceTurn {
 
   /**
    * Called when the button is released (or at 30 s), after the recorder has flushed its last chunk: "short" for a tap,
-   * "quiet" for a clip too quiet to send (the "abar bolben" clip plays), else "send".
+   * "quiet" for a silent clip (the "abar bolben" clip plays), else "send".
    */
   verdict(): "short" | "quiet" | "send" {
     this.endedAt ??= this.deps.now();
     if (this.endedAt - this.startedAt < MIN_PRESS_MS || this.seq === 0) return "short";
-    if (this.rms.value < QUIET_RMS) {
+    if (this.loudest.value < QUIET_PEAK) {
       this.deps.playAskAgain();
       return "quiet";
     }

@@ -1,4 +1,4 @@
-import { base64ToBytes, RmsMeter } from "./pcm";
+import { base64ToBytes, PeakMeter, RmsMeter } from "./pcm";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -18,5 +18,22 @@ describe("recorded PCM", () => {
     const silence = new RmsMeter();
     silence.add(new Uint8Array(3200));
     expect(silence.value).toBe(0);
+  });
+
+  it("finds the loudest 300 ms, however long the button was held through silence (D150)", () => {
+    /** 100 ms of a steady level (samples alternating ±level). */
+    const block = (level: number) =>
+      new Uint8Array(
+        new Int16Array(Array.from({ length: 1600 }, (_, i) => Math.round((i % 2 ? -1 : 1) * level * 32767)))
+          .buffer,
+      );
+    const meter = new PeakMeter();
+    for (let i = 0; i < 20; i++) meter.add(block(0.001)); // two seconds of near silence
+    for (let i = 0; i < 3; i++) meter.add(block(0.02)); // one quiet word
+    for (let i = 0; i < 10; i++) meter.add(block(0.001));
+    expect(meter.value).toBeCloseTo(0.02, 3);
+    const short = new PeakMeter();
+    short.add(block(0.05)); // under 300 ms: the RMS of all of it
+    expect(short.value).toBeCloseTo(0.05, 3);
   });
 });

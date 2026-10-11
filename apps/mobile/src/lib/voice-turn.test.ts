@@ -48,10 +48,20 @@ describe("push-to-talk turn", () => {
     const { turn, deps, advance } = setup();
     for (let i = 0; i < 3; i++) {
       advance(500);
-      turn.add(chunk(0.005)); // RMS about 0.0035, under 0.01
+      turn.add(chunk(0.005)); // RMS about 0.0035: its loudest 300 ms stay under 0.004
     }
     expect(turn.verdict()).toBe("quiet");
     expect(deps.playAskAgain).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a quiet sentence said in a long press: the loudest moment counts, not the average (D150)", async () => {
+    const { turn, deps, advance } = setup();
+    for (const amplitude of [0.002, 0.002, 0.02, 0.002, 0.002, 0.002]) {
+      advance(500);
+      turn.add(chunk(amplitude)); // on average about 0.006, under the old 0.01 that dropped it
+    }
+    expect(turn.verdict()).toBe("send");
+    expect(deps.playAskAgain).not.toHaveBeenCalled();
   });
 
   it("uploads the recorded bytes unchanged, in order, then finishes with the count, duration and RMS", async () => {

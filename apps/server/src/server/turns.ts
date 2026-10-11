@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN, pcmDurationMs, pcmToWav, trimSilence } from "@dokaanbondhu/core";
+import { ASK_AGAIN, normalizeLevel, pcmDurationMs, pcmToWav, trimSilence } from "@dokaanbondhu/core";
 import {
   buildKeyterms,
   CONFIRM_TTL_MS,
@@ -491,9 +491,9 @@ const LOW_CONFIDENCE_BELOW = 0.5;
 const MIN_CLIP_MS = 300;
 
 /**
- * Runs one voice turn (spec 8.4, 9.1): trim the silence (D45), transcribe with the keyterms, then answer as a chat turn
- * with the N-best hypotheses, spoken. No speech, an empty or very quiet transcript, or a speech-to-text failure ends
- * the turn with "আবার বলবেন?" and no LLM call.
+ * Runs one voice turn (spec 8.4, 9.1): trim the silence (D45), raise quiet speech to a steady level (D150), transcribe
+ * with the keyterms, then answer as a chat turn with the N-best hypotheses, spoken. No speech, an empty transcript or a
+ * speech-to-text failure ends the turn with "আবার বলবেন?" and no LLM call.
  */
 export async function voiceTurn(
   request: TurnRequest,
@@ -558,10 +558,11 @@ export async function voiceTurn(
       shopHostValue.dictionary,
       conversation.state.context,
     );
+    const level = normalizeLevel(trimmed.pcm);
     const asrStarted = Date.now();
     let result: AsrResult;
     try {
-      result = await speech.stt.transcribe(pcmToWav(trimmed.pcm), {
+      result = await speech.stt.transcribe(pcmToWav(level.pcm), {
         keyterms,
         nbest: NBEST,
         lowConfidenceBelow: LOW_CONFIDENCE_BELOW,
@@ -592,16 +593,15 @@ export async function voiceTurn(
       // The other hypotheses are kept only while the shop's evaluation consent is on (D41).
       ...(keep ? { nbest: result.nbest.map((hypothesis) => hypothesis.text) } : {}),
       keyterms: keyterms.length,
+      gain: level.gain,
     };
     emit({
       type: "transcript",
       text: result.text,
       unclear: result.lowConfidenceWords.map((word) => word.word),
     });
-    if (!result.text.trim() || result.note === "audio very quiet") {
-      const reason = result.text.trim() ? "audio very quiet" : "empty transcript";
-      return await again({ asr, reason }, timings, result.text || undefined);
-    }
+    // Quiet speech was raised before transcribing (D150), so only an empty transcript is asked again.
+    if (!result.text.trim()) return await again({ asr, reason: "empty transcript" }, timings);
     await answer(
       request,
       { text: result.text, hypotheses: result.nbest.map((hypothesis) => hypothesis.text) },

@@ -306,6 +306,30 @@ describe.skipIf(!allLocal)("voice turns", () => {
     expect(voice.clip).toBeUndefined();
   });
 
+  it("answers a quietly spoken question: trimmed by the clip's own level and raised before transcribing (D150)", async () => {
+    llm.script.push(padsCall);
+    speech.asr.push({ text: padsQuestion });
+    // speech at RMS 0.014 in a quiet room, as the emulator's laptop microphone records it; the old 0.015 floor found
+    // no speech in it at all
+    const quiet = clip([
+      [1000, 0.002],
+      [1200, 0.02],
+      [1000, 0.002],
+    ]);
+    const { conversationId, reply } = await say(quiet);
+    expect(reply).toContain("এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড দুই রকম আছে");
+    expect(speech.asrRequests[0]!.wavBytes).toBeLessThan(quiet.byteLength); // the silence was still cut
+    const [user] = await admin.withAdmin((tx) =>
+      tx
+        .select()
+        .from(messages)
+        .where(eq(messages.conversationId, conversationId))
+        .orderBy(messages.createdAt),
+    );
+    const gain = (user!.meta as { voice: { asr: { gain: number } } }).voice.asr.gain;
+    expect(gain).toBeGreaterThan(5);
+  });
+
   it("keeps a consenting shop's clip and hypotheses for measuring, but not a replay's (D41, D149)", async () => {
     const { setClipStoreForTests } = await import("../src/server/recordings");
     const kept: { path: string; wav: Uint8Array }[] = [];
