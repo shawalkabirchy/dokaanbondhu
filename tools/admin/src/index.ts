@@ -2,7 +2,13 @@ import { randomInt, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
-import { applyVerification, HostPools, runSpeechCheck, syncConnection } from "@dokaanbondhu/engine/host";
+import {
+  applyVerification,
+  baseUrlProblem,
+  HostPools,
+  runSpeechCheck,
+  syncConnection,
+} from "@dokaanbondhu/engine/host";
 import {
   llmChain,
   llmStream,
@@ -408,6 +414,31 @@ const commands: Record<string, Command> = {
     } finally {
       await pools.closeAll();
     }
+  },
+
+  /**
+   * set-api-url --shop <id> --url <u>: moves the shop's API connection to another address of the same app (D161), such
+   * as GearGrid hosted for a demo. Its switched-on actions, key and status stay: they belong to the app, not to the
+   * address (the key's encryption is bound to the row, not the address). Test the connection in setup afterwards.
+   */
+  "set-api-url": async (platform, args) => {
+    const { values } = parseArgs({ args, options: { shop: { type: "string" }, url: { type: "string" } } });
+    const shopId = uuid.parse(values.shop);
+    const url = z.string().min(1).parse(values.url).replace(/\/+$/, "");
+    const problem = baseUrlProblem(url);
+    if (problem) throw new Error(`--url: ${problem}`);
+    const rows = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: connections.id, baseUrl: connections.baseUrl })
+        .from(connections)
+        .where(and(eq(connections.shopId, shopId), eq(connections.kind, "api"))),
+    );
+    if (rows.length !== 1) throw new Error(`shop ${shopId} has ${rows.length} API connections; expected one`);
+    const [row] = rows;
+    await platform.withAdmin((tx) =>
+      tx.update(connections).set({ baseUrl: url }).where(eq(connections.id, row!.id)),
+    );
+    out(`API connection ${row!.id}: ${row!.baseUrl} -> ${url}. Test it in setup.`);
   },
 
   /**
