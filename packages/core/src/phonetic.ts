@@ -1,4 +1,3 @@
-import { distance } from "fastest-levenshtein";
 import table from "../data/bn-latin.json";
 import { asciiDigits, isBangla } from "./text";
 
@@ -52,10 +51,51 @@ export function phoneticKey(text: string): string {
   return (latin[0] + rest).replace(/(.)\1+/g, "$1");
 }
 
-/** 1 - lev(a, b) / max(|a|, |b|). */
-export function keySimilarity(a: string, b: string): number {
+/**
+ * Sounds speech-to-text mixes up (D152, from the owner's voice tests): a voiced and an unvoiced stop (ব/প, ড/ট, গ/ক,
+ * জ/চ) and ফ and প anywhere; at a word's end, ন for ড (প্যান for প্যাড) and an ন heard or lost (প্যান্ট for প্যাড).
+ * Each costs half a letter, but only where the caller allows it: for a word that is not already a known word (so
+ * ফিল্টার is never bent into Fielder) and only on keys of four letters or more (so পাওয়ার is never পুরানো).
+ */
+const NEAR_SOUNDS = new Set(["bp", "pb", "dt", "td", "gk", "kg", "cj", "jc", "fp", "pf"]);
+const NASAL_GAP = 0.5;
+/** Whether a letter is among the last two of its key, where the ন of প্যান্ট sits. */
+const atEnd = (key: string, index: number) => index >= key.length - 2;
+const NEAR_MIN_KEY = 4;
+
+/** Edit distance between two keys; with `near`, the near sounds cost half. */
+export function soundDistance(a: string, b: string, near = false): number {
+  if (a === b) return 0;
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const x = a[i - 1]!;
+      const y = b[j - 1]!;
+      const nasal = (letter: string, key: string, index: number) =>
+        near && letter === "n" && atEnd(key, index) ? NASAL_GAP : 1;
+      const nearSwap =
+        NEAR_SOUNDS.has(x + y) || ((x + y === "nd" || x + y === "dn") && atEnd(a, i - 1) && atEnd(b, j - 1));
+      const swap = x === y ? 0 : near && nearSwap ? 0.5 : 1;
+      current[j] = Math.min(
+        previous[j - 1]! + swap,
+        previous[j]! + nasal(x, a, i - 1),
+        current[j - 1]! + nasal(y, b, j - 1),
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
+}
+
+/**
+ * 1 - distance(a, b) / max(|a|, |b|). With `near` (a misheard word, D152), a voiced and an unvoiced stop count half
+ * on keys of four letters or more.
+ */
+export function keySimilarity(a: string, b: string, near = false): number {
   if (!a || !b) return 0;
-  return 1 - distance(a, b) / Math.max(a.length, b.length);
+  const allowNear = near && Math.min(a.length, b.length) >= NEAR_MIN_KEY;
+  return 1 - soundDistance(a, b, allowNear) / Math.max(a.length, b.length);
 }
 
 /** Weights of the N-best hypotheses by rank 0..4. */

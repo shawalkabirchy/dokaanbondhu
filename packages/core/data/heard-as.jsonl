@@ -1,0 +1,96 @@
+{"heard":"এক জিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"একজিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এক জি ও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এসিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এক সি ও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এসি ও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এক্সেও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"এক্স ইউ","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"টেক্সিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"ট্যাক্সিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"একটিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"llm"}
+{"heard":"এগ্রিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"llm"}
+{"heard":"এসডিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"llm"}
+{"heard":"ইজিও","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"llm"}
+{"heard":"এক জো","meant":"এক্সিও","concept":"vehicle_model","value":"Toyota Axio","style":"bangla","layer":"matcher"}
+{"heard":"নোহা","meant":"নোয়া","concept":"vehicle_model","value":"Toyota Noah","style":"bangla","layer":"matcher"}
+{"heard":"নহা","meant":"নোয়া","concept":"vehicle_model","value":"Toyota Noah","style":"bangla","layer":"matcher"}
+{"heard":"দোহা","meant":"নোয়া","concept":"vehicle_model","value":"Toyota Noah","style":"bangla","layer":"llm"}
+{"heard":"নায়ার","meant":"নোয়া","concept":"vehicle_model","value":"Toyota Noah","style":"bangla","layer":"llm"}
+{"heard":"ব্রেকপ্যান","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক প্যান্ড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক ব্যান্ড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক ব্যাট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেড প্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেটপ্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রিগ ব্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রিগব্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক পেড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রিগ পেড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক পেট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেকপেট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেকব্যান","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"llm"}
+{"heard":"ব্রেক ব্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক পের","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"llm"}
+{"heard":"ব্রেক বেড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেকপ্যাট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক প্যান্ট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেকপ্যান্ট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ড্রেক প্যাড","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ব্রেক প্যার","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"llm"}
+{"heard":"ব্রেক প্যাট","meant":"ব্রেক প্যাড","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"সেল্ফ","meant":"সেলফ","concept":"part_type","value":"Starter Motor","style":"bangla","layer":"matcher"}
+{"heard":"শেলফ","meant":"সেলফ","concept":"part_type","value":"Starter Motor","style":"bangla","layer":"matcher"}
+{"heard":"সেল্প","meant":"সেলফ","concept":"part_type","value":"Starter Motor","style":"bangla","layer":"llm"}
+{"heard":"সেল মোটর","meant":"সেলফ","concept":"part_type","value":"Starter Motor","style":"bangla","layer":"matcher"}
+{"heard":"রহিম মোটরগে","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"llm"}
+{"heard":"রহিম মোটকে","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"llm"}
+{"heard":"রহিম মোটরসাইকে","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"matcher"}
+{"heard":"রহিম মোটর","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"matcher"}
+{"heard":"রঘিম মোটরস","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"matcher"}
+{"heard":"রহিম মোটর্স","meant":"রহিম মোটরস","concept":"customer","value":"Rahim Motors","style":"bangla","layer":"matcher"}
+{"heard":"নিউ ঢাকা ক্যারেজ","meant":"নিউ ঢাকা গ্যারেজ","concept":"customer","value":"New Dhaka Garage","style":"bangla","layer":"llm"}
+{"heard":"নাওয়াবপুর অটোপাস","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নাওয়াবপুর অটোপার্স","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নওয়াপুর অটোপাস","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"llm"}
+{"heard":"নাওয়াপপুর অটোপার্টস","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নবাবপুর অটোপার্স","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নাবাবপুর অটোপাস","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নওয়াবপুর অটোপার্স","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"নাওয়াবপুর অটো পার্স","meant":"নবাবপুর অটো পার্টস","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"bangla","layer":"matcher"}
+{"heard":"বাঁকিতে","meant":"বাকিতে","concept":"payment","value":"credit","style":"bangla","layer":"matcher"}
+{"heard":"বাতিতে","meant":"বাকিতে","concept":"payment","value":"credit","style":"bangla","layer":"matcher"}
+{"heard":"বাঁচিতে","meant":"বাকিতে","concept":"payment","value":"credit","style":"bangla","layer":"matcher"}
+{"heard":"জেনুয়ার","meant":"জেনুইন","concept":"quality","value":"genuine","style":"bangla","layer":"matcher"}
+{"heard":"জ্যানুইন","meant":"জেনুইন","concept":"quality","value":"genuine","style":"bangla","layer":"matcher"}
+{"heard":"জেনোইন","meant":"জেনুইন","concept":"quality","value":"genuine","style":"bangla","layer":"matcher"}
+{"heard":"জেনেউনি","meant":"জেনুইন","concept":"quality","value":"genuine","style":"bangla","layer":"matcher"}
+{"heard":"নন জ্যানুইন","meant":"নন-জেনুইন","concept":"quality","value":"aftermarket","style":"bangla","layer":"matcher"}
+{"heard":"নন জেনোইন","meant":"নন-জেনুইন","concept":"quality","value":"aftermarket","style":"bangla","layer":"matcher"}
+{"heard":"নন জেনুই","meant":"নন-জেনুইন","concept":"quality","value":"aftermarket","style":"bangla","layer":"matcher"}
+{"heard":"এক হাজত দুইশ","meant":"এক হাজার দুইশ","concept":"number","value":"1200","style":"bangla","layer":"matcher"}
+{"heard":"এক হাজন দুইশ","meant":"এক হাজার দুইশ","concept":"number","value":"1200","style":"bangla","layer":"matcher"}
+{"heard":"দুই হাজার চোদ্দ","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
+{"heard":"দুই হাজার চৌদ্ধ","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
+{"heard":"exio","meant":"axio","concept":"vehicle_model","value":"Toyota Axio","style":"banglish","layer":"matcher"}
+{"heard":"aksio","meant":"axio","concept":"vehicle_model","value":"Toyota Axio","style":"banglish","layer":"matcher"}
+{"heard":"axiyo","meant":"axio","concept":"vehicle_model","value":"Toyota Axio","style":"banglish","layer":"matcher"}
+{"heard":"akshio","meant":"axio","concept":"vehicle_model","value":"Toyota Axio","style":"banglish","layer":"matcher"}
+{"heard":"noha","meant":"noah","concept":"vehicle_model","value":"Toyota Noah","style":"banglish","layer":"matcher"}
+{"heard":"nowa","meant":"noah","concept":"vehicle_model","value":"Toyota Noah","style":"banglish","layer":"matcher"}
+{"heard":"brek pad","meant":"brake pad","concept":"part_type","value":"Brake Pad","style":"banglish","layer":"matcher"}
+{"heard":"break pad","meant":"brake pad","concept":"part_type","value":"Brake Pad","style":"banglish","layer":"matcher"}
+{"heard":"brake pat","meant":"brake pad","concept":"part_type","value":"Brake Pad","style":"banglish","layer":"matcher"}
+{"heard":"brekpad","meant":"brake pad","concept":"part_type","value":"Brake Pad","style":"banglish","layer":"matcher"}
+{"heard":"rohim motors","meant":"rahim motors","concept":"customer","value":"Rahim Motors","style":"banglish","layer":"matcher"}
+{"heard":"rahim motor","meant":"rahim motors","concept":"customer","value":"Rahim Motors","style":"banglish","layer":"matcher"}
+{"heard":"rahim motorse","meant":"rahim motors","concept":"customer","value":"Rahim Motors","style":"banglish","layer":"matcher"}
+{"heard":"nobabpur auto parts","meant":"nawabpur auto parts","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"banglish","layer":"matcher"}
+{"heard":"nawabpur autoparts","meant":"nawabpur auto parts","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"banglish","layer":"matcher"}
+{"heard":"nababpur auto pats","meant":"nawabpur auto parts","concept":"supplier","value":"Nawabpur Auto Parts Ltd.","style":"banglish","layer":"matcher"}
+{"heard":"baki te","meant":"bakite","concept":"payment","value":"credit","style":"banglish","layer":"matcher"}
+{"heard":"baakite","meant":"bakite","concept":"payment","value":"credit","style":"banglish","layer":"matcher"}
+{"heard":"bakit e","meant":"bakite","concept":"payment","value":"credit","style":"banglish","layer":"matcher"}
+{"heard":"jenuine","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}
+{"heard":"genuin","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}
+{"heard":"jenuin","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}

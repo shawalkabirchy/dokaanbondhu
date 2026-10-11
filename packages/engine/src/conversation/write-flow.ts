@@ -15,6 +15,7 @@ import {
   resolveCustomer,
   resultText,
   saidNumbers,
+  saysCredit,
   separatingSlot,
   slotChips,
   type ActionFields,
@@ -72,23 +73,6 @@ const PART_KEYS = [
   "brand",
   "part_number",
 ] as const;
-/** Words for on credit, said with a sale or a purchase (spec 9.6: বাকিতে is no payment). */
-const CREDIT = new Set(
-  [
-    "বাকিতে",
-    "বাকি",
-    "বাকিত",
-    "উধার",
-    "উধারে",
-    "bakite",
-    "baki",
-    "bakit",
-    "udhar",
-    "udhare",
-    "due",
-    "credit",
-  ].map((word) => normalize(word).tokens.join(" ")),
-);
 
 export interface WriteTurn {
   capabilities: WriteCapability[];
@@ -214,7 +198,7 @@ export function paymentOf(
 ): { credit: true } | { method: string } | null {
   const tokens = normalize(said).tokens;
   const text = ` ${tokens.join(" ")} `;
-  if (tokens.some((token) => CREDIT.has(token))) return { credit: true };
+  if (saysCredit(said)) return { credit: true };
   const param = methodParam(capability);
   if (!param) return null;
   const words = Object.entries(param.spokenMap ?? {})

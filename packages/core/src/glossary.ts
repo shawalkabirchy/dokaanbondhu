@@ -91,8 +91,22 @@ function* ngrams(
   }
 }
 
+const KNOWN = new WeakMap<Dictionary, ReadonlySet<string>>();
+
+/** Every word of every term of the dictionary, whatever its concept: ফিল্টার, ব্রেক, এক্সিও. */
+function knownWords(dictionary: Dictionary): ReadonlySet<string> {
+  let known = KNOWN.get(dictionary);
+  if (!known) {
+    known = new Set(dictionary.terms.flatMap((term) => term.text.split(" ")));
+    KNOWN.set(dictionary, known);
+  }
+  return known;
+}
+
 /** How close a word of another hypothesis must sound to the said value to count as the same spoken place. */
 const SAME_PLACE = 0.5;
+/** A match of several words this good takes its words from shorter matches (D152). */
+const TAKES_ITS_WORDS = 0.7;
 
 /**
  * Scores the targets of one concept for a slot value as said (the tool argument, from the best hypothesis) and the
@@ -109,6 +123,7 @@ export function matchConcept(
   dictionary: Dictionary,
 ): ConceptMatch {
   const terms = dictionary.terms.filter((term) => term.concept === concept);
+  const known = knownWords(dictionary);
   const best = new Map<string, Candidate>();
   const saidKey = phoneticKey(normalize(said, dictionary.variants).tokens.join(" "));
   const sources: { text: string; weight: number; nearSaid: boolean }[] = [
@@ -119,8 +134,8 @@ export function matchConcept(
   ];
   for (const source of sources) {
     const normalized = normalize(source.text, dictionary.variants);
-    // Words an exact match of more words has taken: "জেনুইন" in "নন জেনুইন" is not also genuine (spec 10.2, longest
-    // first; D136).
+    // Words a match of more words has taken: "জেনুইন" in "নন জেনুইন" is not also genuine (spec 10.2, longest first;
+    // D136), nor "জ্যানুইন" in the misheard "নন জ্যানুইন", nor "ব্রেক" in "ব্রেক ব্যাট" another brake part (D152).
     const taken: [number, number][] = [];
     for (const gram of ngrams(normalized)) {
       const end = gram.start + gram.size;
@@ -129,7 +144,10 @@ export function matchConcept(
       if (source.nearSaid && keySimilarity(key, saidKey) < SAME_PLACE) continue;
       const words = gram.text.split(" ");
       const numeric = words.every(isNumberWord);
+      // Near sounds count half only for a word no term knows: a misheard one (D152).
+      const misheard = words.some((word) => !known.has(word));
       const weight = source.weight;
+      let gramBest = 0;
       for (const term of terms) {
         const exact = gram.text === term.text;
         if (exact) taken.push([gram.start, end]);
@@ -140,14 +158,16 @@ export function matchConcept(
         const similarity =
           exact || numeric || tooShort || key.length < 2 || term.key.length < 2
             ? 0
-            : keySimilarity(key, term.key);
+            : keySimilarity(key, term.key, misheard);
         const score = weight * matchScore(exact, similarity);
+        gramBest = Math.max(gramBest, score);
         if (score <= 0) continue;
         const current = best.get(term.value);
         if (!current || score > current.score) {
           best.set(term.value, { value: term.value, score, exact, heard: gram.heard });
         }
       }
+      if (gram.size > 1 && gramBest >= TAKES_ITS_WORDS) taken.push([gram.start, end]);
     }
   }
   const candidates = [...best.values()].sort((a, b) => b.score - a.score);

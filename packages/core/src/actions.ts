@@ -1,7 +1,7 @@
 import numbers from "../data/bn-numbers.json";
 import { banglaOf, carLabel, possessive } from "./answers";
 import { money } from "./format";
-import { wordNumber } from "./numbers";
+import { MISHEARD_THOUSAND, wordNumber } from "./numbers";
 import { parseQuantity } from "./quantity";
 import { asciiDigits, normalize } from "./text";
 
@@ -54,7 +54,10 @@ export function parseAmount(text: string): number | null {
   let current: number | null = null;
   for (const token of tokens.slice(start)) {
     const value = valueOf(token);
-    const multiplier = MULTIPLIERS.get(nfc(token));
+    // হাজত for হাজার counts only right after a number (D152).
+    const multiplier: number | undefined =
+      MULTIPLIERS.get(nfc(token)) ??
+      (current !== null && MISHEARD_THOUSAND.has(nfc(token)) ? 1_000 : undefined);
     if (value !== null && multiplier === undefined) {
       if (current !== null) total += current;
       current = value;
@@ -323,13 +326,47 @@ const WRITE_CUES: Record<"sale" | "payment" | "stock_in", string[]> = {
   ],
   stock_in: ["কিনলাম", "কিনেছি", "স্টকে তোলো", "স্টক ইন", "kinlam", "kinechi", "stock e tolo", "stock in"],
 };
+/**
+ * Words for on credit, said with a sale or a purchase (spec 9.6: বাকিতে is no payment), with how speech-to-text wrote
+ * বাকিতে in the owner's tests (D152): only here, inside a sale or purchase, is বাতিতে ("in the lamp") taken for it.
+ */
+const CREDIT_WORDS = new Set(
+  [
+    "বাকিতে",
+    "বাকি",
+    "বাকিত",
+    "উধার",
+    "উধারে",
+    "বাঁকিতে",
+    "বাতিতে",
+    "বাঁচিতে",
+    "bakite",
+    "baki",
+    "bakit",
+    "baakite",
+    "udhar",
+    "udhare",
+    "due",
+    "credit",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
+
+/** Whether a sale or purchase is said on credit. */
+export function saysCredit(text: string): boolean {
+  return normalize(text).tokens.some((token) => CREDIT_WORDS.has(token));
+}
+
 const PAYMENT_WORDS = [
   "বাকিতে",
+  "বাঁকিতে",
+  "বাতিতে",
+  "বাঁচিতে",
   "নগদে",
   "ক্যাশে",
   "বিকাশে",
   "bakite",
   "nogode",
+  "baakite",
   "cash e",
   "bikashe",
   "bkash e",

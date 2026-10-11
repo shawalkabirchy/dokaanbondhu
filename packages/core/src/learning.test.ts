@@ -54,9 +54,9 @@ describe("the listening check's spellings (D102 A)", () => {
   it("suggests only what the matcher would miss, and drops the carrier word however it was written", () => {
     const axio = { concept: "vehicle_model" as const, value: "Toyota Axio" };
     expect(checkedSpellings("এক্সিও", ["এক্সেও আছে"], dictionary, axio).keep).toEqual([]); // understood anyway
-    // "বক্স" alone sounds like Voxy's "ভক্সি", so the split Probox is ambiguous: worth suggesting.
+    // "বক্স" alone sounds like Voxy's "ভক্সি", but the two words together take it (D152): understood, not suggested.
     const probox = { concept: "vehicle_model" as const, value: "Toyota Probox" };
-    expect(checkedSpellings("প্রোবক্স", ["প্রো বক্স আছে"], dictionary, probox).keep).toEqual(["প্রো বক্স"]);
+    expect(checkedSpellings("প্রোবক্স", ["প্রো বক্স আছে"], dictionary, probox).keep).toEqual([]);
     const alternator = { concept: "part_type" as const, value: "Alternator" };
     expect(
       checkedSpellings("ডায়নামো", ["ডায়ালাম আছে", "ডায়ালমও আছি"], dictionary, alternator).keep,

@@ -23,7 +23,9 @@ export function wordNumber(token: string): number | null {
 
 /** Words that go with numbers: thousand, hundred, lakh, and the year words (model, sal). */
 const NUMBER_CONTEXT = new Set(
-  ["হাজার", "hajar", "hazar", "শো", "শ", "sho", "লাখ", "lakh", ...YEAR_WORDS].map(nfc),
+  ["হাজার", "hajar", "hazar", "হাজত", "হাজন", "হাজনা", "শো", "শ", "sho", "লাখ", "lakh", ...YEAR_WORDS].map(
+    nfc,
+  ),
 );
 
 /**
@@ -44,7 +46,12 @@ function isYear(value: number, now: Date): boolean {
   return value >= 1980 && value <= now.getFullYear() + 1;
 }
 
-const THOUSAND = new Set(["হাজার", "hajar", "hazar"].map(nfc));
+/**
+ * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
+ * হাজত (custody) is never a number by itself.
+ */
+export const MISHEARD_THOUSAND = new Set(["হাজত", "হাজন", "হাজনা"].map(nfc));
+const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...MISHEARD_THOUSAND].map(nfc));
 const HUNDRED = new Set(["শো", "শ", "sho", "so"].map(nfc));
 const NINETEEN_HUNDRED = new Set(["উনিশশো", "unishsho", "unisho"].map(nfc));
 
