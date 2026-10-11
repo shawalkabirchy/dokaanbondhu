@@ -44,6 +44,7 @@ import {
   type PriceLevel,
   type PriceTier,
 } from "@dokaanbondhu/core";
+import { cleanTranscript, nearHints } from "./near-words";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
 import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
@@ -184,6 +185,8 @@ export interface TurnTrace {
   answer: string;
   grounding_failures: number;
   llm_calls: number;
+  /** Words of the transcript the LLM chose among the shop's near names, before anything else (D153). */
+  cleanup?: { heard: string; meant: string }[];
   /** LLM providers given up on, with the reason ("<id>: http 429"), so a run can stop at a daily limit. */
   fallbacks: string[];
 }
@@ -424,9 +427,8 @@ export async function runTurn(
     fallbacks: [],
   };
   const state: TurnState = { ...current, history: [...current.history] };
-  const text = input.text?.trim() ?? "";
-  const hypotheses = input.hypotheses?.length ? input.hypotheses : text ? [text] : [];
-  const others = hypotheses.slice(1);
+  const said = input.text?.trim() ?? "";
+  const others = (input.hypotheses ?? []).slice(1);
 
   // Session context expires after 30 minutes without a turn, the customer after 10 (spec 9.8, D125).
   const idle = state.context.updatedAt ? now.getTime() - Date.parse(state.context.updatedAt) : 0;
@@ -442,7 +444,59 @@ export async function runTurn(
   emit({ type: "status", state: "UNDERSTANDING", label_key: "status.searching" });
   state.state = "UNDERSTANDING";
 
+  // A word the matcher cannot place is chosen among the shop's nearest names by the LLM, from the whole sentence
+  // (D149 C, D153): এসডিও is এক্সিও, নওয়াপুর অটোপাস is Nawabpur Auto Parts Ltd. Not for a yes or no to a waiting action.
   let since = Date.now();
+  const askedSlot = frameOpen ? state.frame?.asking : undefined;
+  const nameQuestion =
+    askedSlot && ["vehicle", "part_type", "brand", "customer", "supplier"].includes(askedSlot)
+      ? question({ slot: askedSlot as QuestionSlot })
+      : undefined;
+  const hints =
+    said && !input.choice && !state.action && deps.llm.length
+      ? nearHints({
+          text: said,
+          dictionary: deps.dictionary,
+          customers: deps.host.catalog.customers,
+          suppliers: deps.host.catalog.suppliers.map((supplier) => ({
+            hostId: supplier.hostId,
+            name: supplier.name,
+            nameBn: supplier.nameBn ?? null,
+          })),
+        })
+      : [];
+  const cleaned = hints.length
+    ? await cleanTranscript(deps.llm, said, others, hints, deps.dictionary, nameQuestion)
+    : { text: said, replaced: [] };
+  // The clean-up call is not one of the tool loop's calls (spec 9.5): it shows as timings.cleanup and trace.cleanup.
+  if (hints.length) {
+    trace.cleanup = cleaned.replaced.map(({ heard, option }) => ({ heard, meant: option.label }));
+    mark("cleanup", since);
+  }
+  const text = cleaned.text;
+  const hypotheses = cleaned.replaced.length
+    ? [text, ...others]
+    : input.hypotheses?.length
+      ? input.hypotheses
+      : text
+        ? [text]
+        : [];
+  /** The words the LLM chose (D153): a frame slot holding one is shown in bold on the confirmation sheet. */
+  const guessed = new Set(
+    cleaned.replaced.flatMap(({ option }) =>
+      [option.label, option.value].map((word) => normalize(word).tokens.join(" ")),
+    ),
+  );
+  const markGuessed = (frame: RequestFrame): RequestFrame => {
+    for (const name of ["customer", "supplier", "vehicle", "part_type"]) {
+      const slot = frame.slots[name];
+      if (slot && typeof slot.value === "string" && guessed.has(normalize(slot.value).tokens.join(" ")))
+        slot.confidence = Math.min(slot.confidence ?? 1, 0.75);
+    }
+    return frame;
+  };
+
+  since = Date.now();
   hypotheses.forEach((hypothesis) => normalize(hypothesis, deps.dictionary.variants));
   mark("normalize", since);
   since = Date.now();
@@ -858,7 +912,7 @@ export async function runTurn(
               },
             ],
           };
-    const frame = writeFrame(capability, args, writeTurn(text));
+    const frame = markGuessed(writeFrame(capability, args, writeTurn(text)));
     tookStep(frame, await advanceWrite(frame, writeTurn(text)));
     return "stop" as const;
   };
@@ -1082,7 +1136,7 @@ export async function runTurn(
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
         if (capability && deps.host.writes) {
-          const frame = writeFrame(capability, withHeardPart(args), writeTurn(text));
+          const frame = markGuessed(writeFrame(capability, withHeardPart(args), writeTurn(text)));
           record("write");
           tookStep(frame, await advanceWrite(frame, writeTurn(text)));
           return "stop";
@@ -1323,9 +1377,10 @@ export async function runTurn(
       }),
       {
         role: "user",
+        // Voice: the speech-to-text's other guesses too, so the LLM can read a misheard word (D153).
         content: `${request}${candidates.length ? `\n(candidates: ${candidates.join("; ")})` : ""}${
-          cued ? `\n(this asks to record it: call ${cued.name})` : ""
-        }`,
+          others.length ? `\n(also heard as: ${others.slice(0, 3).join(" | ")})` : ""
+        }${cued ? `\n(this asks to record it: call ${cued.name})` : ""}`,
       },
     ];
     const tools = [...readTools(deps.host.map), ...offered.map(writeTool)];

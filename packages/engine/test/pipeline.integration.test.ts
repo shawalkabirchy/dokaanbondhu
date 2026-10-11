@@ -119,6 +119,70 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
   it.each([
     {
       style: "Bangla",
+      text: "এসডিও ২০১৪ সামনের ব্রেক প্যাড আছে?",
+      heard: "এসডিও",
+      meant: "এক্সিও",
+      args: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      text: "esdio 2014 samner brake pad ache?",
+      heard: "esdio",
+      meant: "axio",
+      args: { part_type: "brake pad", vehicle: "axio", year: "2014", position: "samner" },
+    },
+  ])(
+    "reads a misheard car as the shop's car the LLM chose from the whole sentence (D153; $style)",
+    async ({ text, heard, meant, args }) => {
+      const llm = scripted(
+        [{ calls: [{ name: "find_parts", arguments: args }] }],
+        [JSON.stringify({ replaced: [{ heard, meant }] })],
+      );
+      const { reply, outcome } = await turn(text, fresh(), [llm]);
+      expect(llm.cleanupRequests).toHaveLength(1);
+      expect(llm.cleanupRequests[0]).toContain(`"${heard}"`);
+      expect(llm.cleanupRequests[0]).toContain("এক্সিও (");
+      expect(outcome.trace.cleanup).toEqual([{ heard, meant: "এক্সিও" }]);
+      expect(reply).toBe(a1Answer);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "এসডিও ২০১৪ সামনের ব্রেক প্যাড আছে?" },
+    { style: "Banglish", text: "esdio 2014 samner brake pad ache?" },
+  ])("takes no car the shop does not have, whatever the LLM chooses (D153; $style)", async ({ text }) => {
+    const heard = text.split(" ")[0]!;
+    const llm = scripted(
+      [{ calls: [{ name: "ask_user", arguments: { slot: "vehicle", question: "কোন গাড়ির?" } }] }],
+      [JSON.stringify({ replaced: [{ heard, meant: "Toyota Corolla 2030" }] })],
+    );
+    const { reply, outcome } = await turn(text, fresh(), [llm]);
+    expect(outcome.trace.cleanup).toEqual([]);
+    expect(reply).not.toContain("করোলা");
+  });
+
+  it.each([
+    { style: "Bangla", text: "এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে?" },
+    { style: "Banglish", text: "axio 2014 er samner brake pad ache?" },
+  ])("asks the LLM nothing more when every word is understood (D153; $style)", async ({ text }) => {
+    const llm = scripted([
+      {
+        calls: [
+          {
+            name: "find_parts",
+            arguments: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
+          },
+        ],
+      },
+    ]);
+    const { outcome } = await turn(text, fresh(), [llm]);
+    expect(llm.cleanupRequests).toEqual([]);
+    expect(outcome.trace.cleanup).toBeUndefined();
+  });
+
+  it.each([
+    {
+      style: "Bangla",
       text: "এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড আছে?",
       args: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪", position: "সামনের" },
     },

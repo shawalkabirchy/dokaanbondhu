@@ -355,10 +355,11 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
       const match = resolveCustomer(String(slot.value), [], list, turn.dictionary);
       const [best, second] = match.candidates;
       if (best && (match.decision === "understood" || match.decision === "understood_bold")) {
+        // A name the LLM chose among near names keeps its lower confidence, so it is bold (D153).
         frame.slots[party] = understood(best.customer.name, {
           display: best.customer.name,
           hostId: best.customer.hostId,
-          confidence: best.score,
+          confidence: Math.min(best.score, slot.confidence ?? 1),
         });
       } else if (match.decision === "ambiguous" && best && second) {
         const offers = [best, second].map((candidate, index) => ({
@@ -626,6 +627,8 @@ async function prepareWrite(
   };
   const text = confirmationText(template, fields);
   const highlight = (name: string) => (frame.slots[name]?.confidence ?? 1) < 0.85;
+  /** The part is bold when its car or part type was a near word the LLM chose (D153). */
+  const partGuessed = highlight("vehicle") || highlight("part_type");
   const sheet: ActionPreview["fields"] = [
     ...(fields.customer
       ? [{ label: "কাস্টমার", value: fields.customer, highlight: highlight("customer") }]
@@ -644,7 +647,7 @@ async function prepareWrite(
             ]
               .filter(Boolean)
               .join(", "),
-            highlight: false,
+            highlight: partGuessed,
           },
           { label: "পরিমাণ", value: quantityText(quantity, unit), highlight: false },
         ]

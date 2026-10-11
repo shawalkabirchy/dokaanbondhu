@@ -40,6 +40,26 @@ function simplifyLatin(text: string): string {
     .replace(/y/g, "i");
 }
 
+/**
+ * How a text sounds in Latin letters, vowels kept (D153): এসডিও → esdio, এক্সিও → eksio, "Nawabpur" → naoabpur. The LLM
+ * compares sounds better in Latin letters than in Bangla spellings.
+ */
+export function soundOf(text: string): string {
+  return asciiDigits(text)
+    .split(/\s+/)
+    .map((word) => (isBangla(word) ? fromBangla(word) : simplifyLatin(word)))
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** 1 - distance / longer length between two sounds, spaces left out (D153). */
+export function soundSimilarity(a: string, b: string): number {
+  const x = soundOf(a).replace(/ /g, "");
+  const y = soundOf(b).replace(/ /g, "");
+  if (!x || !y) return 0;
+  return 1 - soundDistance(x, y) / Math.max(x.length, y.length);
+}
+
 /** The key keeps the first letter, drops the other vowels and collapses repeated letters: self, সেলফ -> slf. */
 export function phoneticKey(text: string): string {
   const latin = asciiDigits(text)

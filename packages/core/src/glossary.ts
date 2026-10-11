@@ -94,7 +94,7 @@ function* ngrams(
 const KNOWN = new WeakMap<Dictionary, ReadonlySet<string>>();
 
 /** Every word of every term of the dictionary, whatever its concept: ফিল্টার, ব্রেক, এক্সিও. */
-function knownWords(dictionary: Dictionary): ReadonlySet<string> {
+export function knownWords(dictionary: Dictionary): ReadonlySet<string> {
   let known = KNOWN.get(dictionary);
   if (!known) {
     known = new Set(dictionary.terms.flatMap((term) => term.text.split(" ")));

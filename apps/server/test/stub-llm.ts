@@ -3,7 +3,8 @@ import type { AddressInfo } from "node:net";
 
 // An OpenAI-compatible stub LLM on a local port for the server's integration tests: each request is answered with
 // the next scripted step as a streamed chat completion; with no step left it answers 500, which the fallback chain
-// treats as a failed provider. The requests are kept, so a test can check what the server sent.
+// treats as a failed provider. The requests are kept, so a test can check what the server sent. The near-word clean-up
+// call (D153) is answered "no change" apart from the script and kept in its own list.
 
 export interface Step {
   text?: string;
@@ -19,6 +20,9 @@ export interface ReceivedRequest {
 export interface StubLlm {
   script: Step[];
   received: ReceivedRequest[];
+  /** The clean-up calls' messages; their answers come from `cleanups`, "no change" when it is empty. */
+  cleanupRequests: ReceivedRequest[];
+  cleanups: string[];
   baseUrl: string;
   close(): Promise<void>;
 }
@@ -26,12 +30,18 @@ export interface StubLlm {
 export async function startStubLlm(): Promise<StubLlm> {
   const script: Step[] = [];
   const received: ReceivedRequest[] = [];
+  const cleanupRequests: ReceivedRequest[] = [];
+  const cleanups: string[] = [];
   const server: Server = createServer((request, response) => {
     let body = "";
     request.on("data", (chunk: Buffer) => (body += chunk.toString()));
     request.on("end", () => {
-      received.push(JSON.parse(body) as ReceivedRequest);
-      const step = script.shift();
+      const parsed = JSON.parse(body) as ReceivedRequest;
+      const system = (parsed.messages[0] as { content?: unknown } | undefined)?.content;
+      const cleanup = typeof system === "string" && system.startsWith("You correct speech-to-text mistakes");
+      if (cleanup) cleanupRequests.push(parsed);
+      else received.push(parsed);
+      const step = cleanup ? { text: cleanups.shift() ?? '{"replaced":[]}' } : script.shift();
       if (!step) {
         response.writeHead(500, { "content-type": "application/json" });
         response.end(JSON.stringify({ error: { message: "no scripted step" } }));
@@ -68,6 +78,8 @@ export async function startStubLlm(): Promise<StubLlm> {
   const port = (server.address() as AddressInfo).port;
   return {
     script,
+    cleanupRequests,
+    cleanups,
     received,
     baseUrl: `http://127.0.0.1:${port}/v1`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),

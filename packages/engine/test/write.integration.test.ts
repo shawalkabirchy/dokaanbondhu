@@ -529,6 +529,65 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     {
       style: "Bangla",
       text: "নওয়াপুর অটোপাস থেকে এক্সিও ২০১৪ সামনের নন-জেনুইন ব্রেক প্যাড ৫ সেট কিনলাম, প্রতি সেট ১২০০ টাকা, বাকিতে",
+      heard: "নওয়াপুর অটোপাস",
+      meant: "নবাবপুর অটো পার্টস",
+    },
+    {
+      style: "Banglish",
+      text: "Nowapur Autopas theke axio 2014 samner non genuine brake pad 5 set kinlam, proti set 1200 taka, bakite",
+      heard: "nowapur autopas",
+      meant: "Nawabpur Auto Parts",
+    },
+  ])(
+    "a misheard supplier the LLM chose among the shop's names is read back in bold (D153; $style)",
+    async ({ text, heard, meant }) => {
+      calls.length = 0;
+      const supplier = "Nawabpur Auto Parts Ltd.";
+      const llm = scripted(
+        [
+          {
+            calls: [
+              {
+                name: "stock_in",
+                arguments: {
+                  supplier,
+                  items: [
+                    {
+                      part: {
+                        part_type: "ব্রেক প্যাড",
+                        vehicle: "এক্সিও",
+                        year: "২০১৪",
+                        position: "সামনের",
+                        quality: "নন-জেনুইন",
+                      },
+                      quantity: "৫ সেট",
+                      unit_cost: "১২০০",
+                    },
+                  ],
+                  payment: { method_word: "বাকিতে" },
+                },
+              },
+            ],
+          },
+        ],
+        [JSON.stringify({ replaced: [{ heard, meant }] })],
+      );
+      const first = await say(fresh(), text, [llm]);
+      expect(first.outcome.trace.cleanup).toEqual([{ heard, meant: supplier }]);
+      expect(first.reply).toBe(
+        `${supplier} থেকে ব্রেক প্যাড, ৫ সেট, প্রতি সেট ১,২০০ টাকা, মোট ৬,০০০ টাকা। ঠিক আছে?`,
+      );
+      expect(first.events.find((event) => event.type === "confirm")).toMatchObject({
+        fields: expect.arrayContaining([{ label: "সাপ্লায়ার", value: supplier, highlight: true }]),
+      });
+      expect(nothingSent()).toBe(true);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নওয়াপুর অটোপাস থেকে এক্সিও ২০১৪ সামনের নন-জেনুইন ব্রেক প্যাড ৫ সেট কিনলাম, প্রতি সেট ১২০০ টাকা, বাকিতে",
       // The model left out the part type, year and quality, and kept the supplier as the speech service heard it.
       args: {
         supplier: "নওয়াপুর অটোপাস",
