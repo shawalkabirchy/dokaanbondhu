@@ -855,6 +855,29 @@ export async function runTurn(
   /** A write step in this turn: a question (asked already), the confirmation, an answer, or the parts answer. */
   const tookStep = (frame: RequestFrame, step: WriteStep) => {
     state.frame = frame;
+    // The customer of a write is remembered as soon as it is understood, like its car, with their price level (D119,
+    // D125, D157): the memory line shows both while the write still asks the year or the quantity.
+    const named = frame.slots.customer;
+    const clear = (said: string) => {
+      const match = resolveCustomer(said, [], deps.host.catalog.customers, deps.dictionary);
+      const best = match.candidates[0];
+      return match.decision === "understood" && best
+        ? deps.host.catalog.customers.find((item) => item.hostId === best.customer.hostId)
+        : undefined;
+    };
+    // Resolved already, or said clearly (the write may ask the car's year before it resolves the customer).
+    const known = named?.hostId
+      ? deps.host.catalog.customers.find((item) => item.hostId === named.hostId)
+      : typeof named?.value === "string"
+        ? clear(named.value)
+        : undefined;
+    if (known) {
+      state.context.customer = {
+        hostId: known.hostId,
+        name: known.name,
+        tier: customerTier(known.attrs, deps.host.appWords),
+      };
+    }
     if (step.kind === "asked") return;
     if (step.kind === "confirm") {
       frame.status = "confirming";
@@ -868,16 +891,16 @@ export async function runTurn(
         preview: step.action.preview,
         idempotencyKey: step.action.idempotencyKey,
       });
-      // The customer of a write is remembered, with their price level (D119, D125).
+      // The sheet's customer, when the write took a remembered one rather than a named one (D119, D125).
       const customer = step.action.preview.customer;
-      const known = customer
+      const sheetCustomer = customer
         ? deps.host.catalog.customers.find((item) => item.hostId === customer.hostId)
-        : null;
-      if (customer && known) {
+        : undefined;
+      if (customer && sheetCustomer) {
         state.context.customer = {
           hostId: customer.hostId,
-          name: known.name,
-          tier: customerTier(known.attrs, deps.host.appWords),
+          name: sheetCustomer.name,
+          tier: customerTier(sheetCustomer.attrs, deps.host.appWords),
         };
       }
       final = { kind: "confirm", text: step.text };

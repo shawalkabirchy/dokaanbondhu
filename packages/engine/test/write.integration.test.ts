@@ -290,6 +290,8 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
         scripted([{ calls: [{ name: "record_sale", arguments: args }] }]),
       ]);
       expect(first.reply).toBe(`${party}, এক্সিওর সামনের ব্রেক প্যাড — কোন বছরের এক্সিও?`);
+      // The customer is remembered from the first question on, like the car (D157).
+      expect(first.state.context.customer?.name).toBe("Rahim Motors");
       const year = await say(first.state, answers[0]!);
       expect(year.reply).toBe("জেনুইন না নন-জেনুইন?");
       expect(year.events.find((event) => event.type === "choices")).toMatchObject({ slot: "quality" });
@@ -523,6 +525,55 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       });
       expect(undone).toMatchObject({ status: "undone" });
       expect(await balance("suppliers", supplier)).toBe(payable);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নবাবপুর অটো পার্টস থেকে এক্সিও ২০১৪ সামনের নন জেনুইন ব্রেক প্যাড পাঁচ সেন্ট কিনলাম",
+      quantity: "পাঁচ",
+    },
+    {
+      style: "Banglish",
+      text: "Nawabpur Auto Parts theke axio 2014 samner non genuine brake pad 5 cent kinlam",
+      quantity: "5",
+    },
+  ])(
+    "never takes a quantity for the unit cost: সেট heard as সেন্ট asks the price (D157; $style)",
+    async ({ text, quantity }) => {
+      calls.length = 0;
+      // The model reads "পাঁচ সেন্ট" as five sets at five taka.
+      const llm = scripted([
+        {
+          calls: [
+            {
+              name: "stock_in",
+              arguments: {
+                supplier: "Nawabpur Auto Parts Ltd.",
+                items: [
+                  {
+                    part: {
+                      part_type: "ব্রেক প্যাড",
+                      vehicle: "এক্সিও",
+                      year: "২০১৪",
+                      position: "সামনের",
+                      quality: "নন-জেনুইন",
+                    },
+                    quantity,
+                    unit_cost: quantity,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ]);
+      const first = await say(fresh(), text, [llm]);
+      expect(first.reply).toBe(
+        "Nawabpur Auto Parts Ltd., এক্সিওর সামনের ব্রেক প্যাড — প্রতি সেট কেনা দাম কত?",
+      );
+      expect(nothingSent()).toBe(true);
     },
   );
 

@@ -39,6 +39,17 @@ describe("near-word hints", () => {
   });
 
   it.each([
+    { style: "Bangla", text: "নাওয়াবপুর থেকে এক্সিওর অয়েল ফিল্টার দশটা কিনলাম", heard: "নাওয়াবপুর" },
+    { style: "Banglish", text: "nawabpur theke axio r oil filter dosh ta kinlam", heard: "nawabpur" },
+  ])("offers a supplier said by the first word of its name (D157; $style)", ({ text, heard }) => {
+    const [hint, ...rest] = hintsOf(text);
+    expect(rest).toEqual([]);
+    expect(hint?.heard).toBe(heard);
+    expect(hint?.options[0]).toMatchObject({ kind: "supplier", value: "Nawabpur Auto Parts Ltd." });
+  });
+
+  it.each([
+    "প্রোভোক্স দুই হাজারের এয়ার ফিল্টার কোনটা কে", // হাজারের, a number with its ending, sounds like Harrier (D157)
     "এক হাজন দুইশ টাকা", // a price as heard: never a name
     "এক্সিও দুই হাজার চৌদ্দ সামনের ব্রেক প্যাড আছে", // everything already understood
     "আজকে ঢাকায় বৃষ্টি হবে", // not about the shop

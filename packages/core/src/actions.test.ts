@@ -6,6 +6,7 @@ import {
   parseAmount,
   paymentText,
   refusalText,
+  saidMoney,
   saidNumbers,
   writeCueOf,
   resultText,
@@ -193,6 +194,20 @@ describe("what asks for a write (D140)", () => {
     ["aj koto joma holo", false],
   ] as const)("%s asks no write", (text, partyNamed) => {
     expect(writeCueOf(text, { partyNamed })).toBeNull();
+  });
+});
+
+describe("money said (D157)", () => {
+  it.each([
+    { style: "Bangla", text: "পাঁচ সেট কিনলাম, প্রতি সেট ১২০০ টাকা, বাকিতে", money: [1200] },
+    { style: "Banglish", text: "5 set kinlam, proti set 1200 taka, bakite", money: [1200] },
+    { style: "Bangla", text: "রহিম থেকে দশ হাজার টাকা জমা নাও", money: [10_000] },
+    { style: "Banglish", text: "rahim theke 10 hajar taka joma nao", money: [10_000] },
+    // সেট heard as সেন্ট on 11 Oct: a quantity is never money
+    { style: "Bangla", text: "এক্সিও সামনের নন জেনুইন ব্রেক প্যাড পাঁচ সেন্ট কিনলাম", money: [] },
+    { style: "Banglish", text: "axio samner non genuine brake pad 5 cent kinlam", money: [] },
+  ])("takes only an amount said as money ($style: $text)", ({ text, money }) => {
+    expect([...saidMoney(text)]).toEqual(money);
   });
 });
 

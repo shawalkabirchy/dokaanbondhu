@@ -8,6 +8,16 @@ const now = new Date("2026-09-28T12:00:00+06:00");
 const tokens = (text: string) => normalize(text).tokens;
 
 describe("years (spec 10.5)", () => {
+  it.each([
+    ["দুই হাজার ফর্টিন", 2014], // "two thousand fourteen" as speech-to-text wrote it on 11 Oct
+    ["দুই হাজার ফোর টিন", 2014],
+    ["টু থাউজেন্ড ফোর্টিন", 2014],
+    ["two thousand fourteen", 2014],
+    ["two thousand ten", 2010],
+  ] as const)("reads a year said in English, in either script: %s (D157)", (said, year) => {
+    expect(parseYear(tokens(said), { now })).toBe(year);
+  });
+
   it("reads four digits from 1980 to next year", () => {
     expect(parseYear(tokens("এক্সিও ২০১৪-এর প্যাড"), { now })).toBe(2014);
     expect(parseYear(tokens("axio 2028 pad"), { now })).toBeNull();

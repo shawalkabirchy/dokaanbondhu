@@ -417,6 +417,36 @@ export function writeCueOf(
   return null;
 }
 
+/** Words that make the number before them money, and words that make the number after them a price (D157). */
+const MONEY_AFTER = new Set(["টাকা", "taka", "tk", "৳"].map((word) => normalize(word).tokens.join(" ")));
+const PRICE_BEFORE = new Set(
+  ["প্রতি", "proti", "per", "দাম", "dam"].map((word) => normalize(word).tokens.join(" ")),
+);
+
+/**
+ * The amounts a text says as money (D157): the number before টাকা or taka, or the price after প্রতি, per or দাম. A
+ * quantity is never one, so "পাঁচ সেন্ট কিনলাম" (সেট heard as সেন্ট) gives no unit cost of 5 taka.
+ */
+export function saidMoney(text: string): Set<number> {
+  const tokens = normalize(asciiDigits(text).replace(/(\d)[,،](?=\d{2,3}(\D|$))/g, "$1")).tokens;
+  const money = new Set<number>();
+  tokens.forEach((token, index) => {
+    if (MONEY_AFTER.has(token)) {
+      // Only the unbroken run of number words right before টাকা: "পাঁচ সেট … ১২০০ টাকা" is 1,200, never 5.
+      let start = index;
+      while (start > 0 && (valueOf(tokens[start - 1]!) !== null || MULTIPLIERS.has(nfc(tokens[start - 1]!))))
+        start--;
+      const amount = start < index ? parseAmount(tokens.slice(start, index).join(" ")) : null;
+      if (amount !== null) money.add(amount);
+    }
+    if (PRICE_BEFORE.has(token)) {
+      const amount = parseAmount(tokens.slice(index + 1, index + 8).join(" "));
+      if (amount !== null) money.add(amount);
+    }
+  });
+  return money;
+}
+
 /** Every number a text says, in any form ("২০১৪", "দুই", "dui set", "১০ হাজার", "দুইটা"): what the user said, so a
  * number the model adds is not taken (D140). */
 export function saidNumbers(text: string): Set<number> {

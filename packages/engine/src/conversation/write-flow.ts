@@ -14,6 +14,7 @@ import {
   quantity as quantityText,
   resolveCustomer,
   resultText,
+  saidMoney,
   saidNumbers,
   saysCredit,
   separatingSlot,
@@ -161,10 +162,17 @@ export function writeFrame(
   };
   // A number is kept only when the user said it: the model never fills in a quantity, price or amount (D140).
   const said = saidNumbers(turn.request);
-  const putSaid = (name: string, value: unknown, read: (text: string) => number | null) => {
+  // A unit cost must be said as money, never a quantity the model reads as one (D157).
+  const money = saidMoney(turn.request);
+  const putSaid = (
+    name: string,
+    value: unknown,
+    read: (text: string) => number | null,
+    from: ReadonlySet<number> = said,
+  ) => {
     const text = str(value);
     const number = text ? read(text) : null;
-    if (text && number !== null && said.has(number)) frame.slots[name] = understood(text);
+    if (text && number !== null && from.has(number)) frame.slots[name] = understood(text);
   };
   const quantityOf = (text: string) => parseQuantity(normalize(text).tokens)?.value ?? null;
   for (const party of ["customer", "supplier"] as const) {
@@ -177,7 +185,7 @@ export function writeFrame(
   const part = (item.part ?? args.part ?? {}) as Record<string, unknown>;
   for (const key of PART_KEYS) put(key, part[key]);
   putSaid("quantity", item.quantity, quantityOf);
-  putSaid("unit_cost", item.unit_cost, parseAmount);
+  putSaid("unit_cost", item.unit_cost, parseAmount, money);
   const payment = (args.payment ?? {}) as Record<string, unknown>;
   put("payment", payment.method_word);
   putSaid("paid_amount", payment.amount, parseAmount);

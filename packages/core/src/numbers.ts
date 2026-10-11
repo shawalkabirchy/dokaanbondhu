@@ -6,11 +6,17 @@ import { asciiDigits } from "./text";
 
 const nfc = (text: string) => text.normalize("NFC").toLowerCase();
 
-/** Number words: Bangla 0-100, Banglish forms, English one to twenty. */
+/**
+ * Number words: Bangla 0-100, Banglish forms, English one to twenty, and English as speech-to-text writes it in Bangla
+ * letters ("দুই হাজার ফর্টিন" for "two thousand fourteen", D157).
+ */
 export const NUMBER_WORDS: ReadonlyMap<string, number> = new Map(
-  [...Object.entries(numbers.bn), ...Object.entries(numbers.latin), ...Object.entries(numbers.english)].map(
-    ([word, value]) => [nfc(word), value],
-  ),
+  [
+    ...Object.entries(numbers.bn),
+    ...Object.entries(numbers.latin),
+    ...Object.entries(numbers.english),
+    ...Object.entries(numbers.english_bn),
+  ].map(([word, value]) => [nfc(word), value]),
 );
 const YEAR_WORDS = new Set([...numbers.year_words.bn, ...numbers.year_words.latin].map(nfc));
 
@@ -23,9 +29,24 @@ export function wordNumber(token: string): number | null {
 
 /** Words that go with numbers: thousand, hundred, lakh, and the year words (model, sal). */
 const NUMBER_CONTEXT = new Set(
-  ["হাজার", "hajar", "hazar", "হাজত", "হাজন", "হাজনা", "শো", "শ", "sho", "লাখ", "lakh", ...YEAR_WORDS].map(
-    nfc,
-  ),
+  [
+    "হাজার",
+    "hajar",
+    "hazar",
+    "হাজত",
+    "হাজন",
+    "হাজনা",
+    "thousand",
+    "থাউজেন্ড",
+    "থাউসেন্ড",
+    "থাউজ্যান্ড",
+    "শো",
+    "শ",
+    "sho",
+    "লাখ",
+    "lakh",
+    ...YEAR_WORDS,
+  ].map(nfc),
 );
 
 /**
@@ -51,7 +72,11 @@ function isYear(value: number, now: Date): boolean {
  * হাজত (custody) is never a number by itself.
  */
 export const MISHEARD_THOUSAND = new Set(["হাজত", "হাজন", "হাজনা"].map(nfc));
-const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...MISHEARD_THOUSAND].map(nfc));
+/** Thousand said in English, in either script (D157). */
+const ENGLISH_THOUSAND = ["thousand", "থাউজেন্ড", "থাউসেন্ড", "থাউজ্যান্ড"];
+const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...ENGLISH_THOUSAND, ...MISHEARD_THOUSAND].map(nfc));
+/** A teen said in two words, as speech-to-text splits it: "ফোর টিন" (D157). */
+const TEEN = new Set(["টিন", "teen"].map(nfc));
 const HUNDRED = new Set(["শো", "শ", "sho", "so"].map(nfc));
 const NINETEEN_HUNDRED = new Set(["উনিশশো", "unishsho", "unisho"].map(nfc));
 
@@ -63,6 +88,8 @@ function spokenYear(tokens: readonly string[], index: number): number | null {
   const at = (offset: number) => nfc(tokens[index + offset] ?? "");
   const rest = (offset: number) => {
     const value = wordNumber(tokens[index + offset] ?? "");
+    // "ফোর টিন": a digit and teen, split by speech-to-text
+    if (value !== null && value >= 3 && value <= 9 && TEEN.has(at(offset + 1))) return 10 + value;
     return value !== null && value < 100 ? value : 0;
   };
   const first = wordNumber(tokens[index] ?? "");

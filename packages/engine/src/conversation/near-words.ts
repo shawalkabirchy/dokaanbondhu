@@ -7,6 +7,7 @@ import {
   normalize,
   soundOf,
   soundSimilarity,
+  stripEnding,
   type CatalogCustomer,
   type Dictionary,
 } from "@dokaanbondhu/core";
@@ -191,6 +192,10 @@ function vocabulary(input: NearInput): Spelling[] {
     for (const person of people) {
       for (const text of [person.name, person.nameBn].filter((name): name is string => Boolean(name))) {
         spellings.push({ kind, value: person.name, label: person.name, text });
+        // People say a long name by its first word ("নবাবপুর থেকে কিনলাম" for Nawabpur Auto Parts Ltd., D157).
+        const words = text.split(/\s+/);
+        if (words.length > 1 && words[0]!.length >= 4)
+          spellings.push({ kind, value: person.name, label: person.name, text: words[0]! });
       }
     }
   }
@@ -231,7 +236,9 @@ export function nearHints(input: NearInput): NearHint[] {
   const known = knownWords(input.dictionary);
   const placed = placedSpans(input, tokens);
   const everyday = [...EVERYDAY];
-  const numeric = (token: string) => isNumberWord(token) || HUNDREDS.test(token);
+  // A number word with an ending ("হাজারের") is a number too, never a name (it sounds like Harrier, D157).
+  const numeric = (token: string) =>
+    [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form));
   const unclear = (token: string) =>
     !EVERYDAY.has(token) &&
     !numeric(token) &&
@@ -269,6 +276,16 @@ export function nearHints(input: NearInput): NearHint[] {
   // The best hints that do not overlap, the closer first; a longer run wins a near tie, so a two-word name is taken
   // whole ("নওয়াপুর অটোপাস", not "নওয়াপুর" alone).
   const rank = (hint: NearHint) => hint.options[0]!.similarity + 0.05 * (hint.size - 1);
+  // A word inside a longer run that points to the same name gives way to the run, so "নওয়াপুর অটোপাস" is replaced
+  // whole, though "নওয়াপুর" alone sounds more like the name's first word (D157).
+  const sameName = (short: NearHint, long: NearHint) =>
+    long.size > short.size &&
+    long.start <= short.start &&
+    long.start + long.size >= short.start + short.size &&
+    long.options.some((option) => option.value === short.options[0]!.value);
+  const kept = hints.filter((hint) => !hints.some((other) => sameName(hint, other)));
+  hints.length = 0;
+  hints.push(...kept);
   hints.sort((a, b) => rank(b) - rank(a));
   const chosen: NearHint[] = [];
   for (const hint of hints) {
