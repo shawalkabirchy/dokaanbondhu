@@ -1,0 +1,6 @@
+ALTER TABLE "alias_suggestions" DROP CONSTRAINT "alias_suggestions_target_concept_check";--> statement-breakpoint
+ALTER TABLE "aliases" DROP CONSTRAINT "aliases_target_concept_check";--> statement-breakpoint
+ALTER TABLE "speech_checks" DROP CONSTRAINT "speech_checks_target_concept_check";--> statement-breakpoint
+ALTER TABLE "alias_suggestions" ADD CONSTRAINT "alias_suggestions_target_concept_check" CHECK ("alias_suggestions"."target_concept" in ('part_type', 'vehicle_model', 'quality', 'position', 'unit', 'brand', 'customer', 'supplier'));--> statement-breakpoint
+ALTER TABLE "aliases" ADD CONSTRAINT "aliases_target_concept_check" CHECK ("aliases"."target_concept" in ('part_type', 'vehicle_model', 'quality', 'position', 'unit', 'brand', 'customer', 'supplier'));--> statement-breakpoint
+ALTER TABLE "speech_checks" ADD CONSTRAINT "speech_checks_target_concept_check" CHECK ("speech_checks"."target_concept" in ('part_type', 'vehicle_model', 'quality', 'position', 'unit', 'brand', 'customer', 'supplier'));

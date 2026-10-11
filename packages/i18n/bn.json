@@ -278,7 +278,9 @@
     "word_concept": {
       "vehicle_model": "গাড়ি",
       "part_type": "পার্ট",
-      "brand": "ব্র্যান্ড"
+      "brand": "ব্র্যান্ড",
+      "customer": "কাস্টমার",
+      "supplier": "সাপ্লায়ার"
     }
   }
 }

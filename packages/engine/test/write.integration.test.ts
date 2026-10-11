@@ -4,6 +4,7 @@ import {
   catalogEntries,
   formatTaka,
   GLOSSARY,
+  normalize,
   type ActionTemplate,
 } from "@dokaanbondhu/core";
 import { randomUUID } from "node:crypto";
@@ -620,6 +621,14 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       expect(picked.reply).toBe(
         "Nawabpur Auto Parts Ltd. থেকে ব্রেক প্যাড, ৫ সেট, প্রতি সেট ১,২০০ টাকা, মোট ৬,০০০ টাকা। ঠিক আছে?",
       );
+      // How the name was heard may be learned (D155).
+      expect(picked.outcome.learned).toEqual([
+        {
+          heard: normalize(args.supplier).tokens.join(" "),
+          concept: "supplier",
+          value: "Nawabpur Auto Parts Ltd.",
+        },
+      ]);
       expect(picked.outcome.actions).toEqual([expect.objectContaining({ status: "pending" })]);
       expect(nothingSent()).toBe(true);
     },

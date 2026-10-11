@@ -78,6 +78,13 @@
       "when": 1791568826475,
       "tag": "0010_paikari_price",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791718613004,
+      "tag": "0011_name_aliases",
+      "breakpoints": true
     }
   ]
 }

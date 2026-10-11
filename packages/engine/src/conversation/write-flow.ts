@@ -373,7 +373,9 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         delete frame.slots[party];
         return askSlot(party, question({ slot: party, names: offers.map((offer) => offer.label) }), offers);
       } else {
-        // Not clear enough to take: the closest names as buttons, so a misheard name is one tap away (D148).
+        // Not clear enough to take: the closest names as buttons, so a misheard name is one tap away (D148). The name
+        // as heard is kept, so the answer can teach how speech-to-text writes it (D155).
+        frame.slots[`said_${party}`] = { value: String(slot.value), status: "unclear", source: "user" };
         delete frame.slots[party];
         const near = match.candidates.filter((candidate) => candidate.score >= NEAR_NAME).slice(0, 3);
         if (!near.length) return ask(party);

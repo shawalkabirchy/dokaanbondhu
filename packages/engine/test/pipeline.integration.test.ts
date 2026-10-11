@@ -143,6 +143,7 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       expect(llm.cleanupRequests[0]).toContain(`"${heard}"`);
       expect(llm.cleanupRequests[0]).toContain("এক্সিও (");
       expect(outcome.trace.cleanup).toEqual([{ heard, meant: "এক্সিও" }]);
+      expect(outcome.learned).toEqual([{ heard, concept: "vehicle_model", value: "Toyota Axio" }]); // D155
       expect(reply).toBe(a1Answer);
     },
   );

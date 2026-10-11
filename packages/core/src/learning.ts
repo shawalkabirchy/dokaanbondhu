@@ -53,6 +53,8 @@ export function checkedSpellings(
   hypotheses: readonly string[],
   dictionary: Dictionary,
   target?: { concept: AliasConcept; value: string },
+  /** For a name (D155): whether the name matcher already understands these words as it. */
+  understands?: (words: string) => boolean,
 ): { heard: string[]; keep: string[] } {
   const spokenKey = phoneticKey(normalize(spoken, dictionary.variants).tokens.join(" "));
   const heard: string[] = [];
@@ -65,7 +67,9 @@ export function checkedSpellings(
     heard.push(text);
     const words = learnableWords(text, dictionary);
     if (!words || keep.includes(words) || keySimilarity(phoneticKey(words), spokenKey) < 0.5) continue;
-    if (target) {
+    if (understands) {
+      if (understands(words)) continue;
+    } else if (target) {
       const match = matchConcept(target.concept, words, [], dictionary);
       if (match.decision === "understood" && match.candidates[0]?.value === target.value) continue;
     }

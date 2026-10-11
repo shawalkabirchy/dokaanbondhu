@@ -302,11 +302,17 @@ export function resolveCustomer(
         saidKeys.length > 0 && saidKeys.length < name.length && saidKeys.every((key, i) => key === name[i]),
     );
   });
+  // A name as speech-to-text wrote it, learned from corrections and added by the owner (D155).
+  const learned = new Map<string, string[]>();
+  for (const term of dictionary.terms) {
+    if (term.concept !== "customer" && term.concept !== "supplier") continue;
+    learned.set(term.value, [...(learned.get(term.value) ?? []), term.text]);
+  }
   const candidates: CustomerCandidate[] = customers
     .map((customer) => {
       let score = beginning.includes(customer) ? BEGINS_NAME : 0;
-      for (const name of [customer.name, customer.nameBn].filter((value): value is string =>
-        Boolean(value),
+      for (const name of [customer.name, customer.nameBn, ...(learned.get(customer.name) ?? [])].filter(
+        (value): value is string => Boolean(value),
       )) {
         const nameText = nameTokens(name, dictionary).join(" ");
         const nameKey = phoneticKey(nameText);

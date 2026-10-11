@@ -278,7 +278,9 @@
     "word_concept": {
       "vehicle_model": "Car",
       "part_type": "Part",
-      "brand": "Brand"
+      "brand": "Brand",
+      "customer": "Customer",
+      "supplier": "Supplier"
     }
   }
 }

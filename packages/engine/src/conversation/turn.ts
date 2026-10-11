@@ -209,7 +209,11 @@ export interface TurnOutcome {
    * Words learned from an answered question (D102 B): a car or part name that needed a question, as the request had
    * it, and what the answer resolved it to. The server records them as suggestions for the owner.
    */
-  learned: { heard: string; concept: "vehicle_model" | "part_type"; value: string }[];
+  learned: {
+    heard: string;
+    concept: "vehicle_model" | "part_type" | "customer" | "supplier";
+    value: string;
+  }[];
   /** Changes to action_logs the server saves with the turn: a new pending action, or a decided one (spec 9.9). */
   actions: ActionRecord[];
 }
@@ -534,6 +538,10 @@ export async function runTurn(
   ].flatMap(({ kind, name, nameBn }) => [
     { kind, name, stored: name },
     ...(nameBn ? [{ kind, name: nameBn, stored: name }] : []),
+    // How speech-to-text writes the name, learned from corrections and added by the owner (D155).
+    ...deps.dictionary.terms
+      .filter((term) => term.concept === kind && term.value === name)
+      .map((term) => ({ kind, name: term.text, stored: name })),
   ]);
   const storedName = new Map(shopNames.map((entry) => [`${entry.kind}|${entry.name}`, entry.stored]));
   // Best first, so the better of a name's two spellings is kept.
@@ -568,6 +576,12 @@ export async function runTurn(
   if (state.context.vehicle?.year) facts.allowed.addNumber(state.context.vehicle.year);
   let questionsAsked = 0;
   const learned: TurnOutcome["learned"] = [];
+  // Each name the LLM chose for a misheard word is a word that may be learned (D155): suggested to the owner once seen
+  // twice, used only after the owner adds it.
+  for (const { heard, option } of cleaned.replaced) {
+    const words = learnableWords(heard, deps.dictionary);
+    if (words) learned.push({ heard: words, concept: option.kind, value: option.value });
+  }
   let final:
     | { kind: "answer"; text: string }
     | { kind: "question"; text: string; slot: string; offers: Offer[] }
@@ -1283,6 +1297,21 @@ export async function runTurn(
       now,
     });
     const correction = filled ? null : correctedSlot(text, deps.dictionary, now);
+    // A name asked again because it was heard unclearly, now answered: how it was heard may be learned (D155).
+    if ((filled === "customer" || filled === "supplier") && frame.capabilityId) {
+      const said = frame.slots[`said_${filled}`]?.value;
+      const answer = frame.slots[filled];
+      const people = filled === "customer" ? deps.host.catalog.customers : deps.host.catalog.suppliers;
+      const person = people.find(
+        (candidate) =>
+          candidate.hostId === answer?.hostId ||
+          candidate.hostId === answer?.value ||
+          candidate.name === answer?.value,
+      );
+      const words = typeof said === "string" ? learnableWords(said, deps.dictionary) : null;
+      if (person && words) learned.push({ heard: words, concept: filled, value: person.name });
+      delete frame.slots[`said_${filled}`];
+    }
     if ((filled || correction) && frame.capabilityId && deps.host.writes) {
       // A write's answer, or "না, X" for a part detail: the write goes on from where it was (spec 9.3 rule 3).
       if (correction) {

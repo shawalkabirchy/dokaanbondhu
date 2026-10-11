@@ -7,6 +7,7 @@ import {
   isBangla,
   learnableWords,
   partsOfType,
+  resolveCustomer,
   vehicleValue,
   type Dictionary,
 } from "@dokaanbondhu/core";
@@ -25,19 +26,21 @@ import {
 import { loadCatalog, type Catalog } from "./catalog";
 
 // The listening check (D102 A, D105): after a catalog sync, both of our voices say each car model and part type of the
-// shop, our own speech-to-text writes it down, and the spellings the matcher would miss, written the same way for both
+// shop, and each supplier and its 50 busiest customers (D155), our own speech-to-text writes it down, and the spellings the matcher would miss, written the same way for both
 // voices, are suggested to the owner (origin listening), who adds them as aliases or dismisses them: the first live
 // run showed that added unseen, everyday words ("মোবাইল", "অল্প") would become names. Each name is checked once
 // (speech_checks); at most 500 names per shop, a batch per run.
 
 export const MAX_CHECKS_PER_SHOP = 500;
+/** The customers checked: the ones who buy most (D155). */
+const CUSTOMERS_CHECKED = 50;
 const PER_RUN = 60;
 const VOICES = ["aditi", "arjun"] as const;
 /** Said after the name, so the name is heard as in a question, not alone; dropped from what was heard. */
 const CARRIER = "আছে?";
 
 export interface NameToCheck {
-  concept: "vehicle_model" | "part_type";
+  concept: "vehicle_model" | "part_type" | "customer" | "supplier";
   value: string;
   /** The shop's usual Bangla word for it; null for a name the dictionary has no Bangla word for (a new host's car). */
   spoken: string | null;
@@ -62,6 +65,14 @@ export function namesToCheck(catalog: Catalog, dictionary: Dictionary): NameToCh
     if (partsOfType(value, catalog.parts, dictionary).length)
       names.push({ concept: "part_type", value, spoken: firstBangla("part_type", value) });
   }
+  // Names too (D155): every supplier, and the customers who buy most; their Bangla name, else the LLM's spelling.
+  for (const supplier of catalog.suppliers)
+    names.push({ concept: "supplier", value: supplier.name, spoken: supplier.nameBn ?? null });
+  const busiest = [...catalog.customers]
+    .sort((a, b) => (Number(b.attrs.sales_30d) || 0) - (Number(a.attrs.sales_30d) || 0))
+    .slice(0, CUSTOMERS_CHECKED);
+  for (const customer of busiest)
+    names.push({ concept: "customer", value: customer.name, spoken: customer.nameBn ?? null });
   return names;
 }
 
@@ -140,6 +151,18 @@ export async function runSpeechCheck(
     () => new Map<string, string>(),
   );
 
+  // A name is checked against the names, not the dictionary: understood already means nothing to suggest (D155).
+  const people = (concept: NameToCheck["concept"]) =>
+    concept === "customer"
+      ? catalog.customers
+      : catalog.suppliers.map((supplier) => ({ ...supplier, nameBn: supplier.nameBn ?? null }));
+  const understandsName = (name: NameToCheck) =>
+    name.concept === "customer" || name.concept === "supplier"
+      ? (words: string) => {
+          const match = resolveCustomer(words, [], people(name.concept), dictionary);
+          return match.decision === "understood" && match.candidates[0]?.customer.name === name.value;
+        }
+      : undefined;
   const suggestedThisRun = new Set<string>();
   for (const name of batch) {
     const spoken = name.spoken ?? spellings.get(name.value);
@@ -161,7 +184,7 @@ export async function runSpeechCheck(
           // The worker refused this one clip ("audio too short"): this voice heard nothing. Anything else stops the run.
           if (!(error instanceof SpeechError && error.status !== null && error.status < 500)) throw error;
         }
-        perVoice.push(checkedSpellings(spoken, hypotheses, dictionary, target));
+        perVoice.push(checkedSpellings(spoken, hypotheses, dictionary, target, understandsName(name)));
       }
     } catch (error) {
       return { ...result, stopped: error instanceof Error ? error.message : String(error) };

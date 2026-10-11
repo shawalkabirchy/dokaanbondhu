@@ -240,7 +240,16 @@ export const paikariPriceChoiceSchema = z
 export const wordSuggestionSchema = z.object({
   id: z.uuid(),
   heard: z.string(),
-  concept: z.enum(["part_type", "vehicle_model", "quality", "position", "unit", "brand"]),
+  concept: z.enum([
+    "part_type",
+    "vehicle_model",
+    "quality",
+    "position",
+    "unit",
+    "brand",
+    "customer",
+    "supplier",
+  ]),
   value: z.string(),
   origin: z.enum(["answers", "listening"]),
   seen: z.number().int(),

@@ -30,7 +30,17 @@ export const CAPABILITY_SOURCES = ["openapi", "scanner", "demo"] as const;
 export const REQUIRED_ROLES = ["staff", "owner"] as const;
 export const PARAM_LOCATIONS = ["body", "query", "path"] as const;
 export const CATALOG_CONCEPTS = ["part", "vehicle", "customer", "supplier"] as const;
-export const ALIAS_TARGETS = ["part_type", "vehicle_model", "quality", "position", "unit", "brand"] as const;
+/** customer and supplier: a name as speech-to-text writes it, learned from corrections (D155). */
+export const ALIAS_TARGETS = [
+  "part_type",
+  "vehicle_model",
+  "quality",
+  "position",
+  "unit",
+  "brand",
+  "customer",
+  "supplier",
+] as const;
 /** asr_check: the listening check's spellings; learned: words learned from answered questions, added by the owner (D102). */
 export const ALIAS_SOURCES = ["global", "owner", "host", "asr_check", "learned"] as const;
 export const SUGGESTION_STATUSES = ["open", "added", "dismissed"] as const;

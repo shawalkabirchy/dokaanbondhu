@@ -41,6 +41,28 @@ describe("names the listening check says", () => {
     expect(names.find((name) => name.value === "Radiator")).toBeUndefined(); // not stocked
   });
 
+  it("checks every supplier and the customers who buy most, with their Bangla name when the app has one (D155)", () => {
+    const customers = Array.from({ length: 60 }, (_, index) => ({
+      hostId: `c${index}`,
+      name: `Garage ${index}`,
+      nameBn: index === 59 ? "গ্যারেজ ৫৯" : null,
+      attrs: { sales_30d: index },
+    }));
+    const catalog: Catalog = {
+      syncedAt: null,
+      parts: [],
+      vehicles: [],
+      customers,
+      suppliers: [{ hostId: "s1", name: "Nawabpur Auto Parts Ltd.", nameBn: null }],
+    };
+    const names = namesToCheck(catalog, dictionary);
+    expect(names).toContainEqual({ concept: "supplier", value: "Nawabpur Auto Parts Ltd.", spoken: null });
+    const checked = names.filter((name) => name.concept === "customer");
+    expect(checked).toHaveLength(50);
+    expect(checked[0]).toEqual({ concept: "customer", value: "Garage 59", spoken: "গ্যারেজ ৫৯" }); // buys most
+    expect(checked.some((name) => name.value === "Garage 0")).toBe(false);
+  });
+
   it("asks the LLM for Bangla words of new names, and keeps only Bangla answers for names it asked about", async () => {
     const llm: LlmProvider = {
       id: "stub",

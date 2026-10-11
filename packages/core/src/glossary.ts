@@ -12,7 +12,17 @@ import { normalize, type Normalized } from "./text";
 
 // Alias dictionary (spec 10.2): the global glossary plus the shop's aliases (owner-added and imported from the host).
 
-export const ALIAS_CONCEPTS = ["part_type", "vehicle_model", "quality", "position", "unit", "brand"] as const;
+/** customer and supplier: a name as speech-to-text writes it, learned from corrections (D155); never in the global glossary. */
+export const ALIAS_CONCEPTS = [
+  "part_type",
+  "vehicle_model",
+  "quality",
+  "position",
+  "unit",
+  "brand",
+  "customer",
+  "supplier",
+] as const;
 export type AliasConcept = (typeof ALIAS_CONCEPTS)[number];
 
 export interface GlossaryEntry {

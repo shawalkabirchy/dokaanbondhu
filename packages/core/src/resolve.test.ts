@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDictionary } from "./glossary";
+import { buildDictionary, GLOSSARY } from "./glossary";
 import {
   isModel,
   matchVehicles,
@@ -206,6 +206,27 @@ describe("customer resolver (spec 10.7)", () => {
     expect(match.decision).toBe(decision);
     expect(match.candidates[0]?.customer.hostId).toBe("s1");
   });
+
+  it.each([
+    { style: "Bangla", spelling: { bn: ["নওয়াপুর অটোপাস"], latin: [] }, heard: "নওয়াপুর অটোপাস" },
+    { style: "Banglish", spelling: { bn: [], latin: ["nowapur autopas"] }, heard: "nowapur autopas" },
+  ])(
+    "understands a name as speech-to-text writes it once the owner adds it (D155; $style)",
+    ({ spelling, heard }) => {
+      const suppliers: CatalogCustomer[] = [
+        { hostId: "s1", name: "Nawabpur Auto Parts Ltd.", nameBn: null },
+        { hostId: "s2", name: "Japan Auto Parts Importer", nameBn: null },
+      ];
+      expect(resolveCustomer(heard, [], suppliers, dictionary).decision).toBe("unclear");
+      const learned = buildDictionary([
+        ...GLOSSARY,
+        { target_concept: "supplier", target_value: "Nawabpur Auto Parts Ltd.", ...spelling },
+      ]);
+      const match = resolveCustomer(heard, [], suppliers, learned);
+      expect(match.decision).toBe("understood");
+      expect(match.candidates[0]?.customer.hostId).toBe("s1");
+    },
+  );
 
   it("leaves an unknown name unclear", () => {
     expect(resolveCustomer("Jamal Traders", [], customers, dictionary).decision).toBe("unclear");
