@@ -29,6 +29,7 @@ import { serverEnv } from "../env";
 import { appError } from "./errors";
 import { shopHost } from "./host";
 import type { Caller } from "./route";
+import { clipPath, clipStore } from "./recordings";
 import { loadShop, settingsOf, shopLlm, shopSpeech } from "./shop";
 import { Speaker } from "./speak";
 import { logger, platform } from "./singletons";
@@ -279,8 +280,27 @@ type DoneEvent = Extract<ReplyEvent, { type: "done" }>;
 
 /** The shop's voice for spoken replies (spec 7.2 settings). */
 async function shopVoice(shopId: string): Promise<string> {
+  return (await shopListening(shopId)).voice;
+}
+
+/** The shop's voice, and whether its clips and speech hypotheses may be kept (evaluation_consent, D41). */
+async function shopListening(shopId: string): Promise<{ voice: string; keep: boolean }> {
   const shop = await platform().withShop(shopId, (tx) => loadShop(tx, shopId));
-  return settingsOf(shop).voice;
+  const settings = settingsOf(shop);
+  return { voice: settings.voice, keep: settings.evaluation_consent };
+}
+
+/** Keeps a consenting shop's clip for measuring (D149); a failed upload is logged and never fails the turn. */
+async function keepClip(request: TurnRequest, clip: VoiceClip): Promise<string | null> {
+  const { caller, conversation } = request;
+  const path = clipPath(caller.shopId, conversation.id, clip.turnId, new Date());
+  try {
+    await clipStore().save(path, pcmToWav(clip.pcm));
+    return path;
+  } catch (error) {
+    logger().warn({ err: error, request_id: request.requestId }, "voice clip not kept");
+    return null;
+  }
 }
 
 /**
@@ -457,6 +477,8 @@ export async function chatTurn(request: TurnRequest, emit: (event: ReplyEvent) =
 }
 
 export interface VoiceClip {
+  /** The app's turn ID, which names a kept clip. */
+  turnId: string;
   /** The joined chunks: 16-bit little-endian mono PCM at 16 kHz. */
   pcm: Uint8Array;
   durationMs: number;
@@ -483,10 +505,12 @@ export async function voiceTurn(
   try {
     // Turning the voice into words: "বুঝছি…"; "শুনছি…" is only the button while it is held (D115).
     emit({ type: "status", state: "UNDERSTANDING", label_key: "status.understanding" });
-    const [speech, voice] = await Promise.all([
+    const [speech, { voice, keep }] = await Promise.all([
       shopSpeech(caller.shopId, request.evalMode),
-      shopVoice(caller.shopId),
+      shopListening(caller.shopId),
     ]);
+    // A consenting shop's clip is kept as received (D41, D149); a replay of a kept clip is not kept again.
+    const keeping = keep && !request.evalMode ? keepClip(request, clip) : Promise.resolve(null);
     const speaker = new Speaker(
       speech.tts,
       voice,
@@ -496,8 +520,24 @@ export async function voiceTurn(
       speech.speaks,
     );
     const upload = { duration_ms: clip.durationMs, rms: clip.rms, bytes: clip.pcm.byteLength };
-    const again = (voiceMeta: Record<string, unknown>, timings: Record<string, number>, heard?: string) =>
-      askAgain(request, emit, speaker, startedAt, { upload, ...voiceMeta }, timings, heard ?? null);
+    const kept = async () => {
+      const path = await keeping;
+      return path ? { clip: path } : {};
+    };
+    const again = async (
+      voiceMeta: Record<string, unknown>,
+      timings: Record<string, number>,
+      heard?: string,
+    ) =>
+      askAgain(
+        request,
+        emit,
+        speaker,
+        startedAt,
+        { upload, ...voiceMeta, ...(await kept()) },
+        timings,
+        heard ?? null,
+      );
 
     const trimmed = trimSilence(clip.pcm);
     if (!trimmed.speech) return await again({ reason: "no speech" }, {});
@@ -549,7 +589,8 @@ export async function voiceTurn(
       duration_seconds: result.durationSeconds,
       processing_ms: result.processingMs,
       note: result.note,
-      nbest: result.nbest.map((hypothesis) => hypothesis.text),
+      // The other hypotheses are kept only while the shop's evaluation consent is on (D41).
+      ...(keep ? { nbest: result.nbest.map((hypothesis) => hypothesis.text) } : {}),
       keyterms: keyterms.length,
     };
     emit({
@@ -564,7 +605,7 @@ export async function voiceTurn(
     await answer(
       request,
       { text: result.text, hypotheses: result.nbest.map((hypothesis) => hypothesis.text) },
-      { userText: result.text, userMeta: { voice: { upload, asr } }, timings },
+      { userText: result.text, userMeta: { voice: { upload, asr, ...(await kept()) } }, timings },
       emit,
       speaker,
     );

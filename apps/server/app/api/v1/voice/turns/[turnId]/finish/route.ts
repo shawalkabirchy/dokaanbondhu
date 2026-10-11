@@ -31,7 +31,7 @@ export const POST = route<{ turnId: string }>(
     return ndjsonResponse((emit) =>
       voiceTurn(
         { caller, conversation, evalMode, requestId, speak: true },
-        { pcm, durationMs: body.duration_ms, rms: body.rms },
+        { turnId: turnId.data, pcm, durationMs: body.duration_ms, rms: body.rms },
         emit,
       ),
     );

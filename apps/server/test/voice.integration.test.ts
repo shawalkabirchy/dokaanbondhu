@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { readReplyStream, type ReplyEvent } from "@dokaanbondhu/contracts";
 import { ASK_AGAIN, spokenText, trimSilence } from "@dokaanbondhu/core";
 import { encryptSecret } from "@dokaanbondhu/engine/crypto";
-import { aiProviders, createPlatform, messages, type Platform } from "@dokaanbondhu/platform-db";
-import { eq } from "drizzle-orm";
+import { aiProviders, createPlatform, messages, shops, type Platform } from "@dokaanbondhu/platform-db";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   allLocal,
@@ -238,6 +238,8 @@ describe.skipIf(!allLocal)("voice turns", () => {
     eleven.transcripts.length = 0;
     eleven.scribeRequests.length = 0;
     eleven.voiceRequests.length = 0;
+    // A fresh minute of turns for each test: together they ask more than the 20 a minute one user may (spec 8.7).
+    (globalThis as { __dokaanRateLimiter?: unknown }).__dokaanRateLimiter = undefined;
   });
 
   afterAll(async () => {
@@ -298,7 +300,61 @@ describe.skipIf(!allLocal)("voice turns", () => {
         .orderBy(messages.createdAt),
     );
     expect(saved[0]).toMatchObject({ role: "user", text: padsQuestion });
-    expect((saved[0]!.meta as { voice: { asr: { nbest: string[] } } }).voice.asr.nbest).toHaveLength(2);
+    // Without the shop's evaluation consent neither the other hypotheses nor the clip are kept (D41).
+    const voice = (saved[0]!.meta as { voice: { asr: Record<string, unknown>; clip?: string } }).voice;
+    expect(voice.asr.nbest).toBeUndefined();
+    expect(voice.clip).toBeUndefined();
+  });
+
+  it("keeps a consenting shop's clip and hypotheses for measuring, but not a replay's (D41, D149)", async () => {
+    const { setClipStoreForTests } = await import("../src/server/recordings");
+    const kept: { path: string; wav: Uint8Array }[] = [];
+    setClipStoreForTests({ save: async (path, wav) => void kept.push({ path, wav }) });
+    const consent = (on: boolean) =>
+      admin.withAdmin((tx) =>
+        tx
+          .update(shops)
+          .set({
+            settings: sql`${shops.settings} || jsonb_build_object('evaluation_consent', ${on}::boolean)`,
+          })
+          .where(eq(shops.id, shop.shopId)),
+      );
+    await consent(true);
+    try {
+      llm.script.push(padsCall);
+      speech.asr.push({
+        text: padsQuestion,
+        nbest: [padsQuestion, "এক্সিও ২০১৪-এর সামনের ব্রেক প্যার আছে?"],
+      });
+      const pcm = spoken();
+      const { conversationId } = await say(pcm);
+      expect(kept).toHaveLength(1);
+      const [folder, live, date, inConversation, file] = kept[0]!.path.split("/");
+      expect([folder, live, inConversation]).toEqual([shop.shopId, "live", conversationId]);
+      expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(file).toMatch(/^[0-9a-f-]{36}\.wav$/);
+      expect(Buffer.from(kept[0]!.wav.slice(0, 4)).toString()).toBe("RIFF");
+      expect(kept[0]!.wav.byteLength).toBe(44 + pcm.byteLength); // the clip as received, not trimmed
+      const [user] = await admin.withAdmin((tx) =>
+        tx
+          .select()
+          .from(messages)
+          .where(eq(messages.conversationId, conversationId))
+          .orderBy(messages.createdAt),
+      );
+      const voice = (user!.meta as { voice: { asr: { nbest: string[] }; clip: string } }).voice;
+      expect(voice.asr.nbest).toHaveLength(2);
+      expect(voice.clip).toBe(kept[0]!.path);
+
+      // A replay of a kept clip (an evaluation request) is not kept again.
+      llm.script.push(padsCall);
+      speech.asr.push({ text: padsQuestion, nbest: [padsQuestion] });
+      await say(pcm, { "x-eval-key": EVAL_KEY });
+      expect(kept).toHaveLength(1);
+    } finally {
+      await consent(false);
+      setClipStoreForTests(undefined);
+    }
   });
 
   it("asks again without the LLM for a clip with no speech, an empty transcript or a failed speech-to-text", async () => {

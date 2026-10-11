@@ -5,6 +5,14 @@ import { parseArgs } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { toPcm16k } from "./audio";
+import {
+  keptConversations,
+  loadClipLabels,
+  scoreClip,
+  summarize,
+  type ClipResult,
+  type ClipStorage,
+} from "./clips";
 import { loadItems, type Item } from "./items";
 import { runItems, type LoadClip, type RunState } from "./run";
 import { buildReport, renderMarkdown, scoreItem } from "./score";
@@ -15,6 +23,7 @@ import { Session, type EvalEnv } from "./session";
 // npm run eval -- run --resume [--run <id>]
 // npm run eval -- score [--run <id>]
 // npm run eval -- say --file <audio file> [--as owner|staff]   one spoken question from a file, printed (a check)
+// npm run eval -- clips [--since yyyy-mm-dd]   the test shop's kept voice clips replayed and scored (D149)
 // The held-out split is for the final run only (build step 9); the default is the open split. Voice recordings are
 // read from the private recordings bucket with the project's secret key and converted with ffmpeg (spec 18.4).
 
@@ -73,6 +82,7 @@ async function main() {
       run: { type: "string" },
       file: { type: "string" },
       as: { type: "string", default: "owner" },
+      since: { type: "string" },
     },
   });
   const all = loadItems(join(root, "items.jsonl"));
@@ -83,8 +93,8 @@ async function main() {
     print(`report: ${writeReport(all, state)}`);
     return;
   }
-  if (command !== "run" && command !== "say")
-    throw new Error(`unknown command ${command}; use run, score or say`);
+  if (command !== "run" && command !== "say" && command !== "clips")
+    throw new Error(`unknown command ${command}; use run, score, say or clips`);
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
@@ -103,6 +113,56 @@ async function main() {
     owner: new Session(evalEnv, { email: env.EVAL_OWNER_EMAIL, password: env.EVAL_OWNER_PASSWORD }, "owner"),
     staff: new Session(evalEnv, { email: env.EVAL_STAFF_EMAIL, password: env.EVAL_STAFF_PASSWORD }, "staff"),
   };
+
+  if (command === "clips") {
+    if (!env.EVAL_SHOP_ID) throw new Error("clips needs EVAL_SHOP_ID, the test shop");
+    const bucket = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    }).storage.from("recordings");
+    const storage: ClipStorage = {
+      async list(path) {
+        const { data, error } = await bucket.list(path, { limit: 1000 });
+        if (error) throw new Error(`listing ${path}: ${error.message}`);
+        // A folder has no ID in Supabase Storage's listing.
+        return data.map((entry) => ({
+          name: entry.name,
+          createdAt: entry.created_at ?? null,
+          folder: !entry.id,
+        }));
+      },
+      async download(path) {
+        const { data, error } = await bucket.download(path);
+        if (error || !data) throw new Error(`downloading ${path}: ${error?.message ?? "no data"}`);
+        return new Uint8Array(await data.arrayBuffer());
+      },
+    };
+    const labels = loadClipLabels(join(root, "clip-labels.jsonl"));
+    const session = sessions.owner;
+    const results: ClipResult[] = [];
+    for (const group of await keptConversations(storage, env.EVAL_SHOP_ID, values.since ?? null)) {
+      print(`conversation ${group.conversation}: ${group.clips.length} clips`);
+      const conversation = await session.newConversation("voice");
+      for (const clip of group.clips) {
+        const turn = await session.voice(conversation, await toPcm16k(await storage.download(clip)), {
+          realTime: false,
+        });
+        const result = scoreClip(clip, turn, labels.get(clip));
+        results.push(result);
+        const mark = result.passed === undefined ? "·" : result.passed ? "✓" : "×";
+        const missing = result.missing?.length ? `  [missing: ${result.missing.join(", ")}]` : "";
+        print(`  ${mark} ${turn.transcript ?? "(nothing heard)"} → ${turn.reply}${missing}`);
+      }
+    }
+    const runId = `clips-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    mkdirSync(join(runsDir, runId), { recursive: true });
+    const summary = summarize(results);
+    writeFileSync(join(runsDir, runId, "clips.json"), JSON.stringify({ summary, results }, null, 2));
+    print(
+      `${summary.clips} clips: ${summary.askedAgain} asked again; ${summary.passed} of ${summary.labelled} labelled ` +
+        `clips right. Saved in tools/eval/runs/${runId}`,
+    );
+    return;
+  }
 
   if (command === "say") {
     if (!values.file) throw new Error("say needs --file <audio file>");
