@@ -162,6 +162,59 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
   });
 
   it.each([
+    {
+      style: "Bangla",
+      text: "এসডিও ২০১৪ সামনের ব্রেক প্যাড আছে?",
+      args: { part_type: "ব্রেক প্যাড", year: "২০১৪", position: "সামনের" },
+    },
+    {
+      style: "Banglish",
+      text: "esdio 2014 samner brake pad ache?",
+      args: { part_type: "brake pad", year: "2014", position: "samner" },
+    },
+  ])(
+    "asks for the car with the shop's near car as a button, and the tap answers (D154; $style)",
+    async ({ text, args }) => {
+      // The LLM leaves the misheard car alone; the question then offers what it sounds like.
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(first.reply).toBe("কোন গাড়ির?");
+      const choices = first.events.find((event) => event.type === "choices") as Extract<
+        ReplyEvent,
+        { type: "choices" }
+      >;
+      expect(choices.slot).toBe("vehicle");
+      const axio = choices.options.find((option) => option.label === "এক্সিও")!;
+      expect(axio).toBeDefined();
+      const tapped = await turn(undefined, first.outcome.state, [scripted([])], {
+        slot: "vehicle",
+        optionId: axio.id,
+      });
+      expect(tapped.reply).toBe(a1Answer);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "ব্রেক প্যাড আছে?", args: { part_type: "ব্রেক প্যাড" } },
+    { style: "Banglish", text: "brake pad ache?", args: { part_type: "brake pad" } },
+  ])(
+    "offers the shop's most common cars when nothing said is near one (D154; $style)",
+    async ({ text, args }) => {
+      const first = await turn(text, fresh(), [
+        scripted([{ calls: [{ name: "find_parts", arguments: args }] }]),
+      ]);
+      expect(first.reply).toBe("কোন গাড়ির?");
+      const choices = first.events.find((event) => event.type === "choices") as Extract<
+        ReplyEvent,
+        { type: "choices" }
+      >;
+      expect(choices).toMatchObject({ slot: "vehicle" });
+      expect(choices.options).toHaveLength(3);
+    },
+  );
+
+  it.each([
     { style: "Bangla", text: "এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে?" },
     { style: "Banglish", text: "axio 2014 er samner brake pad ache?" },
   ])("asks the LLM nothing more when every word is understood (D153; $style)", async ({ text }) => {

@@ -45,6 +45,7 @@ import {
   type PriceTier,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
+import { commonValues } from "./keyterms";
 import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
 import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
@@ -495,6 +496,29 @@ export async function runTurn(
     }
     return frame;
   };
+  /**
+   * Buttons for a car or part question (D154): the shop's values near a word that was not understood, else its most
+   * common ones, so a misheard answer is one tap away.
+   */
+  const nearOffers = (slot: string): Offer[] => {
+    const concept =
+      slot === "vehicle" || slot === "vehicle_model"
+        ? "vehicle_model"
+        : slot === "part_type"
+          ? "part_type"
+          : null;
+    if (!concept) return [];
+    const near = new Map<string, string>();
+    for (const hint of hints)
+      for (const option of hint.options)
+        if (option.kind === concept && !near.has(option.value)) near.set(option.value, option.label);
+    const values = near.size
+      ? [...near]
+      : commonValues(deps.host.catalog, deps.dictionary, concept).map(
+          (value) => [value, banglaOf(concept, value)] as const,
+        );
+    return values.slice(0, 3).map(([value, label], index) => ({ id: `opt-${index + 1}`, label, value }));
+  };
 
   since = Date.now();
   hypotheses.forEach((hypothesis) => normalize(hypothesis, deps.dictionary.variants));
@@ -663,11 +687,12 @@ export async function runTurn(
     }
     if (result.kind === "ask") {
       const vehicle = result.resolved.vehicle ?? undefined;
-      const offers: Offer[] = result.options.map((option, index) => ({
+      const listed: Offer[] = result.options.map((option, index) => ({
         id: `opt-${index + 1}`,
         label: result.slot === "year" ? option.replace("-", "–") : option,
         value: result.slot === "year" ? option.split("-")[0]! : option,
       }));
+      const offers = listed.length ? listed : nearOffers(result.slot);
       const slot = result.slot === "part_number" ? "part_number" : result.slot;
       const text =
         result.slot === "part_number"
@@ -795,6 +820,7 @@ export async function runTurn(
     now,
     newId: deps.newId,
     request: said,
+    offersFor: nearOffers,
     // The car a write names is remembered like a search's (D125).
     find: async (query) => {
       const result = await lookup(query);
@@ -1099,11 +1125,9 @@ export async function runTurn(
             ? state.frame
             : newFrame(deps.newId(), "ask_user", now, text);
         const options = Array.isArray(args.options) ? args.options.map(String).slice(0, 6) : [];
-        const offers = options.map((option, index) => ({
-          id: `opt-${index + 1}`,
-          label: option,
-          value: option,
-        }));
+        const offers = options.length
+          ? options.map((option, index) => ({ id: `opt-${index + 1}`, label: option, value: option }))
+          : nearOffers(slot);
         const known: QuestionSlot[] = [
           "year",
           "quality",

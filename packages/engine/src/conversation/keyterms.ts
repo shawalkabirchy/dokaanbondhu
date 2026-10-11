@@ -65,3 +65,40 @@ export function buildKeyterms(catalog: Catalog, dictionary: Dictionary, context:
   for (const garage of garages) add(garage.nameBn ?? undefined);
   return out;
 }
+
+/**
+ * The shop's most common car models (by vehicles in its catalog) or part types (by 30-day sales, then by parts), as
+ * catalog values: the buttons of a car or part question when nothing said is near one (D154).
+ */
+export function commonValues(
+  catalog: Catalog,
+  dictionary: Dictionary,
+  concept: "vehicle_model" | "part_type",
+  count = 3,
+): string[] {
+  if (concept === "vehicle_model") {
+    const inCatalog = new Map<string, number>();
+    for (const vehicle of catalog.vehicles) {
+      const name = `${vehicle.make} ${vehicle.model}`.trim();
+      inCatalog.set(name, (inCatalog.get(name) ?? 0) + 1);
+    }
+    return [...inCatalog]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, count)
+      .map(([model]) => model);
+  }
+  return [...banglaWords(dictionary, "part_type").keys()]
+    .map((type) => {
+      const needle = type.toLowerCase();
+      const parts = catalog.parts.filter((part) => part.name.toLowerCase().includes(needle));
+      return {
+        type,
+        parts: parts.length,
+        sold: parts.reduce((sum, part) => sum + (Number(part.attrs.sold_30d) || 0), 0),
+      };
+    })
+    .filter((entry) => entry.parts > 0)
+    .sort((a, b) => b.sold - a.sold || b.parts - a.parts)
+    .slice(0, count)
+    .map((entry) => entry.type);
+}

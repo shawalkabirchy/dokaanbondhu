@@ -87,6 +87,8 @@ export interface WriteTurn {
   newId: () => string;
   /** The request as first said, for its payment word when the tool call left it out. */
   request: string;
+  /** Buttons for a car or part question: the shop's values near what was said, else its common ones (D154). */
+  offersFor?: (slot: string) => Offer[];
   find: (query: PartQuery) => Promise<FindPartsResult>;
   complete: (query: PartQuery) => { query: PartQuery; remembered: Set<string> };
   emit: (event: ReplyEvent) => void;
@@ -280,11 +282,12 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     }
     const result = await turn.find(full.query);
     if (result.kind === "ask") {
-      const offers: Offer[] = result.options.map((option, index) => ({
+      const listed: Offer[] = result.options.map((option, index) => ({
         id: `opt-${index + 1}`,
         label: result.slot === "year" ? option.replace("-", "–") : option,
         value: result.slot === "year" ? option.split("-")[0]! : option,
       }));
+      const offers = listed.length ? listed : (turn.offersFor?.(result.slot) ?? []);
       if (result.slot === "part_number")
         return askSlot(
           "part_number",
