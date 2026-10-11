@@ -1,3 +1,7 @@
+import { decisionOf } from "./actions";
+import { isNumberWord } from "./numbers";
+import { normalize } from "./text";
+
 // Voice clips on the server (spec 8.4, D45): 16-bit little-endian mono PCM at 16 kHz. RMS is measured on samples scaled
 // to -1…1 (a sample divided by 32768), as on the phone and in the speech worker.
 
@@ -107,6 +111,19 @@ const WORDS_PER_SECOND = 6;
 export function tooManyWords(text: string, speechMs: number): boolean {
   const words = text.split(/\s+/).filter(Boolean).length;
   return words > 2 + (speechMs / 1000) * WORDS_PER_SECOND;
+}
+
+/** Speech shorter than this can only be a short answer: yes, no or a number (D158). */
+const SHORT_SPEECH_MS = 300;
+
+/**
+ * Whether a transcript came from too little speech to be what it says (D158): from under 0.3 s of speech only yes, no
+ * or a number can be said. A 0.2 s blip came back as "ভিডার" and was taken for Fielder.
+ */
+export function tooLittleSpeech(text: string, speechMs: number): boolean {
+  if (speechMs >= SHORT_SPEECH_MS) return false;
+  const tokens = normalize(text).tokens;
+  return !(decisionOf(text) || (tokens.length && tokens.every(isNumberWord)));
 }
 
 /** The level quiet speech is raised to: the speech frames' 95th-percentile RMS (D150). */

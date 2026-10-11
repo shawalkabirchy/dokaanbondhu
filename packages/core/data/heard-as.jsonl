@@ -94,3 +94,8 @@
 {"heard":"jenuine","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}
 {"heard":"genuin","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}
 {"heard":"jenuin","meant":"genuine","concept":"quality","value":"genuine","style":"banglish","layer":"matcher"}
+{"heard":"ইয়ার ফিল্ডার","meant":"এয়ার ফিল্টার","concept":"part_type","value":"Air Filter","style":"bangla","layer":"matcher"}
+{"heard":"ইয়াল ফিল্ডার","meant":"এয়ার ফিল্টার","concept":"part_type","value":"Air Filter","style":"bangla","layer":"llm"}
+{"heard":"দুই হাজার ফর্টিন","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
+{"heard":"দুই হাজার ফোর টিন","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
+{"heard":"dui hajar forteen","meant":"dui hajar choddo","concept":"number","value":"2014","style":"banglish","layer":"matcher"}

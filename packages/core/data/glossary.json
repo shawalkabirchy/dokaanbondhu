@@ -98,13 +98,13 @@
   {
     "target_concept": "part_type",
     "target_value": "Oil Filter",
-    "bn": ["মবিল ফিল্টার", "অয়েল ফিল্টার", "তেলের ফিল্টার"],
+    "bn": ["মবিল ফিল্টার", "অয়েল ফিল্টার", "তেলের ফিল্টার", "মবিল ফিল্ডার", "অয়েল ফিল্ডার"],
     "latin": ["mobil filter", "oil filter"]
   },
   {
     "target_concept": "part_type",
     "target_value": "Air Filter",
-    "bn": ["এয়ার ফিল্টার", "হাওয়া ফিল্টার", "বাতাসের ফিল্টার"],
+    "bn": ["এয়ার ফিল্টার", "হাওয়া ফিল্টার", "বাতাসের ফিল্টার", "এয়ার ফিল্ডার", "ইয়ার ফিল্ডার"],
     "latin": ["air filter", "hawa filter", "air cleaner"]
   },
   {
@@ -116,7 +116,7 @@
   {
     "target_concept": "part_type",
     "target_value": "Fuel Filter",
-    "bn": ["ফুয়েল ফিল্টার", "তেল ফিল্টার"],
+    "bn": ["ফুয়েল ফিল্টার", "তেল ফিল্টার", "ফুয়েল ফিল্ডার"],
     "latin": ["fuel filter", "diesel filter"]
   },
   {

@@ -57,6 +57,39 @@ describe("near-word hints", () => {
   ])("offers nothing for %s", (text) => {
     expect(hintsOf(text)).toEqual([]);
   });
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নাওয়াবপুর অটোপার্টস থেকে এক্সিও দুই হাজার চৌদ্দ সামনের নন জেনুইন ব্রেকপ্যাড পাতসেট কিনলাম",
+      glued: "পাতসেট",
+    },
+    {
+      style: "Banglish",
+      text: "nawabpur autoparts theke axio 2014 samner non genuine brakepad patset kinlam",
+      glued: "patset",
+    },
+  ])(
+    "takes a unit glued to its misheard number for a quantity, never a part (D158; $style)",
+    ({ text, glued }) => {
+      const hints = hintsOf(text);
+      expect(hints.some((hint) => hint.heard.split(" ").includes(glued))).toBe(false);
+      expect(hints.flatMap((hint) => hint.options).some((option) => option.kind === "part_type")).toBe(false);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "রহিম থেকে দশ হাজার টাকা জমা নাও" },
+    { style: "Banglish", text: "rahim theke dosh hajar taka joma nao" },
+  ])("never guesses between two names that share their first word (D158; $style)", ({ text }) => {
+    const both = [...customers, { hostId: "c3", name: "Rahim Auto Garage", nameBn: null }];
+    const options = nearHints({ text, dictionary, customers: both, suppliers }).flatMap(
+      (hint) => hint.options,
+    );
+    expect(options.filter((option) => option.value.startsWith("Rahim"))).toEqual([]);
+    // One person's first word is still offered (D157).
+    expect(hintsOf(text).flatMap((hint) => hint.options)[0]).toMatchObject({ value: "Rahim Motors" });
+  });
 });
 
 describe("the LLM's choice", () => {

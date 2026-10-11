@@ -5,6 +5,7 @@ import {
   pcmRms,
   pcmToWav,
   SAMPLE_RATE,
+  tooLittleSpeech,
   tooManyWords,
   trimSilence,
 } from "./audio";
@@ -123,6 +124,18 @@ describe("a click and silence (D156)", () => {
     expect(tooManyWords(said, speechMs)).toBe(false);
     expect(tooManyWords(madeUp, 2000)).toBe(false); // the same words in two seconds of speech are possible
   });
+
+  it.each([
+    { style: "Bangla", blip: "ভিডার", yes: "হ্যাঁ", no: "না", number: "দুই" },
+    { style: "Banglish", blip: "vidar", yes: "ha", no: "na", number: "2" },
+  ])(
+    "from under 0.3 s of speech takes only yes, no or a number (D158, $style)",
+    ({ blip, yes, no, number }) => {
+      expect(tooLittleSpeech(blip, 180)).toBe(true);
+      for (const short of [yes, no, number]) expect(tooLittleSpeech(short, 180)).toBe(false);
+      expect(tooLittleSpeech(blip, 390)).toBe(false); // the owner's shortest real answer, হ্যাঁ, had 0.39 s
+    },
+  );
 });
 
 describe("level (D150)", () => {

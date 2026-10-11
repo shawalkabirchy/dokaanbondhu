@@ -555,14 +555,40 @@ export async function runTurn(
   // The part type, car, quality and position the request names by itself; they also complete a find_parts call
   // that leaves one out (D118).
   const heardSlots = new Map<string, string>();
+  // Values that tied with a heard slot before the other guesses chose it: the LLM may not choose them instead (D158).
+  const tiedSlots = new Map<string, string[]>();
+  // The words a part's name of several words was heard in: they are not also a car ("ইয়াল ফিল্ডার" is an air filter,
+  // not a Fielder, D158).
+  const partWords: string[] = [];
+  const inPart = (heard: string) => partWords.some((words) => ` ${words} `.includes(` ${heard} `));
   const candidates = (["part_type", "vehicle_model", "quality", "position"] as const)
     .map((concept) => {
-      const best = hypotheses[0]
-        ? matchConcept(concept, hypotheses[0], others, deps.dictionary).candidates.find(
-            (candidate) => !inName(candidate.heard),
-          )
-        : undefined;
+      if (!hypotheses[0]) return null;
+      const near = (text: string, extra: readonly string[]) =>
+        matchConcept(concept, text, extra, deps.dictionary).candidates.filter(
+          (candidate) => !inName(candidate.heard) && !(concept !== "part_type" && inPart(candidate.heard)),
+        );
+      const found = near(hypotheses[0], others);
+      let best = found[0];
       if (!best || best.score < 0.7) return null;
+      if (concept === "part_type" && best.heard.includes(" ")) partWords.push(best.heard);
+      // A tie the best guess cannot break goes to the value the other guesses say exactly; else none is taken
+      // (three filters sound alike in "ইয়াল ফিল্ডার"; the others heard "ইয়ার ফিল্ডার", D158).
+      const tied = found
+        .filter((candidate) => best!.score - candidate.score < 0.05)
+        .map(({ value }) => value);
+      if (tied.length > 1) {
+        const said = others.flatMap((other) =>
+          near(other, [])
+            .filter(({ exact }) => exact)
+            .slice(0, 1),
+        );
+        const votes = tied.map((value) => said.filter((candidate) => candidate.value === value).length);
+        const most = Math.max(...votes);
+        if (!most || votes.filter((count) => count === most).length > 1) return null;
+        best = { ...best, value: tied[votes.indexOf(most)]! };
+        tiedSlots.set(concept, tied);
+      }
       heardSlots.set(concept, best.value);
       return `${concept} ${best.value} (${best.score.toFixed(2)})`;
     })
@@ -775,6 +801,12 @@ export async function runTurn(
     ] as const) {
       const heard = heardSlots.get(concept);
       if (!out[slot] && heard) out[slot] = heard;
+      // "ইয়াল ফিল্ডার" ties the air, oil and fuel filters; the other guesses heard "ইয়ার ফিল্ডার", so the LLM's
+      // "মবিল ফিল্টার" gives way to the air filter (D158).
+      const given = out[slot]
+        ? matchConcept(concept, out[slot], [], deps.dictionary).candidates[0]?.value
+        : null;
+      if (heard && given && given !== heard && tiedSlots.get(concept)?.includes(given)) out[slot] = heard;
     }
     // The remembered car (D125, D126): it completes a search that names no car; the same car said without a year
     // keeps its year. A year the user did not say is used only for that car (D127): one the LLM gives another car
@@ -1310,6 +1342,7 @@ export async function runTurn(
     const filled = answerFrame(frame, {
       ...(input.text ? { text: input.text } : {}),
       ...(input.choice ? { choice: input.choice } : {}),
+      others,
       dictionary: deps.dictionary,
       customers: deps.host.catalog.customers,
       suppliers: deps.host.catalog.suppliers.map((supplier) => ({

@@ -5,6 +5,7 @@ import {
   normalizeLevel,
   pcmDurationMs,
   pcmToWav,
+  tooLittleSpeech,
   tooManyWords,
   trimSilence,
 } from "@dokaanbondhu/core";
@@ -606,6 +607,10 @@ export async function voiceTurn(
     // asked again, and the made-up words are not shown.
     if (result.text.trim() && tooManyWords(result.text, trimmed.speechMs)) {
       return await again({ asr, reason: "more words than speech" }, timings, result.text);
+    }
+    // A word from a blip: under 0.3 s of speech is only yes, no or a number (D158).
+    if (result.text.trim() && tooLittleSpeech(result.text, trimmed.speechMs)) {
+      return await again({ asr, reason: "too little speech" }, timings, result.text);
     }
     emit({
       type: "transcript",

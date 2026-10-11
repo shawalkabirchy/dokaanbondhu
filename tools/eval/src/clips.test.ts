@@ -1,6 +1,6 @@
 import { ASK_AGAIN } from "@dokaanbondhu/core";
 import { describe, expect, it } from "vitest";
-import { keptConversations, scoreClip, summarize, type ClipStorage } from "./clips";
+import { clipLabelSchema, keptConversations, scoreClip, summarize, type ClipStorage } from "./clips";
 
 // The replay of the test shop's kept clips (D149): each conversation's clips in the order they were said, scored
 // against what the owner meant.
@@ -61,7 +61,7 @@ describe("kept clips", () => {
   ])(
     "passes a clip whose answer holds every expected word, never one asked again ($style)",
     ({ meant, reply }) => {
-      const label = { clip: "c1", meant, expect: ["Rahim Motors", "এক্সিও"] };
+      const label = clipLabelSchema.parse({ clip: "c1", meant, expect: ["Rahim Motors", "এক্সিও"] });
       expect(scoreClip("c1", { transcript: meant, reply }, label)).toMatchObject({
         passed: true,
         missing: [],
@@ -78,6 +78,34 @@ describe("kept clips", () => {
         labelled: 1,
         passed: 0,
       });
+    },
+  );
+
+  it.each([
+    { style: "Bangla", meant: "প্রোবক্স দুই হাজার তেরোর এয়ার ফিল্টার কোন তাকে" },
+    { style: "Banglish", meant: "probox 2013 er air filter kon take" },
+  ])(
+    "fails an answer with an avoided word; passes a clip without speech only when asked again ($style)",
+    ({ meant }) => {
+      const label = clipLabelSchema.parse({
+        clip: "c1",
+        meant,
+        expect: ["এয়ার ফিল্টার"],
+        avoid: ["হ্যারিয়ার"],
+      });
+      const wrong = scoreClip("c1", { reply: "হ্যারিয়ার ২০১৩-এর এয়ার ফিল্টার A-4 তাকে।" }, label);
+      expect(wrong).toMatchObject({ passed: false, missing: [], unwanted: ["হ্যারিয়ার"] });
+      expect(scoreClip("c1", { reply: "প্রোবক্স ২০১৩-এর এয়ার ফিল্টার A-2 তাকে।" }, label).passed).toBe(true);
+
+      const silent = { ...label, no_speech: true };
+      const asked = scoreClip("c2", { reply: ASK_AGAIN }, silent);
+      expect(asked).toMatchObject({ passed: true, noSpeech: true });
+      expect(
+        scoreClip("c2", { transcript: "রাতে বিশ্ববিদ্যালয়ের", reply: "আমি পার্ট খুঁজতে পারি" }, silent)
+          .passed,
+      ).toBe(false);
+      // Asking again for a clip without speech is right, so it is not counted as asked again.
+      expect(summarize([asked, wrong])).toEqual({ clips: 2, askedAgain: 0, labelled: 2, passed: 1 });
     },
   );
 });

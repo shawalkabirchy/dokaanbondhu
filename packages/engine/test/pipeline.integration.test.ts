@@ -75,10 +75,11 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     state: TurnState,
     llm: LlmProvider[],
     choice?: { slot: string; optionId: string },
+    hypotheses?: string[],
   ) {
     const events: ReplyEvent[] = [];
     const outcome = await runTurn(
-      { ...(text ? { text } : {}), ...(choice ? { choice } : {}) },
+      { ...(text ? { text } : {}), ...(choice ? { choice } : {}), ...(hypotheses ? { hypotheses } : {}) },
       state,
       deps(llm),
       (event) => events.push(event),
@@ -145,6 +146,36 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       expect(outcome.trace.cleanup).toEqual([{ heard, meant: "এক্সিও" }]);
       expect(outcome.learned).toEqual([{ heard, concept: "vehicle_model", value: "Toyota Axio" }]); // D155
       expect(reply).toBe(a1Answer);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "প্রোবক্স দুই হাজার তেরো ইয়াল ফিল্ডার কোন থাকে",
+      other: "প্রোবক্স দুই হাজার তের ইয়ার ফিল্ডার কোন থাকে",
+      args: { part_type: "মবিল ফিল্টার", vehicle: "প্রোবক্স", year: "২০১৩" },
+    },
+    {
+      style: "Banglish",
+      text: "probox 2013 iyal filder kon take",
+      other: "probox 2013 air filter kon take",
+      args: { part_type: "oil filter", vehicle: "probox", year: "2013" },
+    },
+  ])(
+    "keeps the part the other guesses heard over the LLM's guess among sound-alikes (D158; $style)",
+    async ({ text, other, args }) => {
+      // "ইয়াল ফিল্ডার" sounds as much like the air, oil and fuel filters; the other guess says the air filter, and
+      // "ফিল্ডার" is not also the car Fielder.
+      const llm = scripted([{ calls: [{ name: "find_parts", arguments: args }] }]);
+      const { reply, outcome } = await turn(text, fresh(), [llm], undefined, [text, other]);
+      expect(outcome.trace.lookups[0]?.resolved).toMatchObject({
+        part_type: "Air Filter",
+        vehicle: "Toyota Probox",
+      });
+      expect(reply).toContain("প্রোবক্স ২০১৩");
+      expect(reply).toContain("এয়ার ফিল্টার");
+      expect(reply).not.toContain("মবিল");
     },
   );
 

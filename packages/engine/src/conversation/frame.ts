@@ -122,7 +122,26 @@ export interface FrameAnswerInput {
   customers: CatalogCustomer[];
   /** For a supplier question; customers otherwise. */
   suppliers?: CatalogCustomer[];
+  /** A voice answer's other speech-to-text guesses, best first (D158). */
+  others?: readonly string[];
   now: Date;
+}
+
+/**
+ * A year as answered (D158). A round year with more words after it ("দুই হাজার কোটি", 2000) was cut short: the first of
+ * the other guesses that reads a whole year ("দুই হাজার ফোর টিন", 2014) is taken instead, else the round year.
+ */
+function answeredYear(tokens: readonly string[], others: readonly string[], now: Date): number | null {
+  const read = (words: readonly string[]) => parseYear(words, { now, bare: words.length <= 3 });
+  const year = read(tokens);
+  if (year === null || year % 100 !== 0 || tokens.length <= 2) return year;
+  for (const other of others) {
+    const words = normalize(other).tokens;
+    const whole = read(words);
+    if (whole !== null && whole % 100 !== 0 && Math.floor(whole / 100) === Math.floor(year / 100))
+      return whole;
+  }
+  return year;
 }
 
 /** Write slots whose answer is kept as said and read by the write flow (an amount, a payment word, a field). */
@@ -162,7 +181,7 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   let display: string | undefined;
   let confidence: number | undefined;
   if (slot === "year") {
-    const year = parseYear(tokens, { now: input.now, bare: tokens.length <= 3 });
+    const year = answeredYear(tokens, input.others ?? [], input.now);
     if (year !== null) value = String(year);
   } else if (slot === "quantity") {
     const quantity = parseQuantity(tokens);

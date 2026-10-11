@@ -51,6 +51,11 @@ const HUNDREDS = /^(এক|দুই|দু|তিন|চার|পাঁচ|ছ
  * Garage written নিউ ঢাকা গ্যারেজ sounds 0.62 alike).
  */
 const SAME_NAME = 0.5;
+/** A unit written glued to its number ("পাঁচসেট"; "পাতসেট" for পাঁচ সেট, D158): a quantity, never a part's name. */
+const GLUED_UNIT = /^(.+?)(সেট|পিস|set|pis|piece)$/u;
+const SMALL_NUMBERS = ["এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়", "দশ"];
+/** How alike the start of such a word must sound to a number to be that number misheard (পাত ~ পাঁচ is 0.67). */
+const NUMBER_SOUND = 0.6;
 const OPTIONS = 3;
 const HINTS = 5;
 
@@ -189,13 +194,29 @@ function vocabulary(input: NearInput): Spelling[] {
     ["customer", input.customers],
     ["supplier", input.suppliers],
   ] as const) {
+    const firstWords = (person: CatalogCustomer) =>
+      [person.name, person.nameBn]
+        .filter((name): name is string => Boolean(name))
+        .map((text) => text.split(/\s+/))
+        .filter((words) => words.length > 1 && words[0]!.length >= 4)
+        .map((words) => words[0]!);
+    // How many of these people each first word could be, by sound in either script.
+    const sharing = new Map<string, Set<string>>();
     for (const person of people) {
-      for (const text of [person.name, person.nameBn].filter((name): name is string => Boolean(name))) {
+      for (const word of firstWords(person)) {
+        const sound = soundOf(word);
+        sharing.set(sound, (sharing.get(sound) ?? new Set()).add(person.name));
+      }
+    }
+    for (const person of people) {
+      for (const text of [person.name, person.nameBn].filter((name): name is string => Boolean(name)))
         spellings.push({ kind, value: person.name, label: person.name, text });
-        // People say a long name by its first word ("নবাবপুর থেকে কিনলাম" for Nawabpur Auto Parts Ltd., D157).
-        const words = text.split(/\s+/);
-        if (words.length > 1 && words[0]!.length >= 4)
-          spellings.push({ kind, value: person.name, label: person.name, text: words[0]! });
+      // People say a long name by its first word ("নবাবপুর থেকে কিনলাম" for Nawabpur Auto Parts Ltd., D157), but a
+      // first word two people share is no one's: "রহিম" stays a question between Rahim Motors and Rahim Auto Garage
+      // (D158).
+      for (const word of firstWords(person)) {
+        if (sharing.get(soundOf(word))!.size === 1)
+          spellings.push({ kind, value: person.name, label: person.name, text: word });
       }
     }
   }
@@ -226,6 +247,13 @@ function placedSpans(input: NearInput, tokens: readonly string[]): [number, numb
   return spans;
 }
 
+/** A number and its unit written as one word, the number perhaps misheard: পাঁচসেট, পাতসেট (D158). */
+function gluedQuantity(token: string): boolean {
+  const number = GLUED_UNIT.exec(token)?.[1];
+  if (!number) return false;
+  return isNumberWord(number) || SMALL_NUMBERS.some((word) => soundSimilarity(number, word) >= NUMBER_SOUND);
+}
+
 /**
  * The words of a sentence the matcher cannot place, each with the shop's nearest names by sound (D153): a run of one
  * to three words with at least one word that is neither everyday, a number nor a known word.
@@ -238,7 +266,8 @@ export function nearHints(input: NearInput): NearHint[] {
   const everyday = [...EVERYDAY];
   // A number word with an ending ("হাজারের") is a number too, never a name (it sounds like Harrier, D157).
   const numeric = (token: string) =>
-    [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form));
+    [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form)) ||
+    gluedQuantity(token);
   const unclear = (token: string) =>
     !EVERYDAY.has(token) &&
     !numeric(token) &&

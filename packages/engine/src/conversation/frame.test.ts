@@ -42,6 +42,28 @@ describe("request frame (spec 9.3)", () => {
   );
 
   it.each([
+    {
+      style: "Bangla",
+      cut: "দুই হাজার কোটি",
+      others: ["দুই হাজার ফোর টিন", "দুই হাজার কিছু টি", "দুই হাজার ফর্টিন"],
+      round: "দুই হাজার সাল",
+    },
+    { style: "Banglish", cut: "dui hajar koti", others: ["dui hajar choddo"], round: "dui hajar sal" },
+  ])(
+    "takes a whole year from the other guesses when the best one is cut short (D158, $style)",
+    ({ cut, others, round }) => {
+      const frame = newFrame("f1", "find_parts", now);
+      asking(frame, "year");
+      expect(answerFrame(frame, { text: cut, others, dictionary, customers, now })).toBe("year");
+      expect(frame.slots.year?.value).toBe("2014");
+      // A round year said so stays, whatever the other guesses.
+      asking(frame, "year");
+      expect(answerFrame(frame, { text: round, others: [], dictionary, customers, now })).toBe("year");
+      expect(frame.slots.year?.value).toBe("2000");
+    },
+  );
+
+  it.each([
     { style: "Bangla", name: "রহিম মোটরস" },
     { style: "Banglish", name: "rahim motors" },
   ])("takes a customer only among the names offered ($style)", ({ name }) => {

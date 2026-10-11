@@ -143,14 +143,20 @@ async function main() {
       print(`conversation ${group.conversation}: ${group.clips.length} clips`);
       const conversation = await session.newConversation("voice");
       for (const clip of group.clips) {
+        const label = labels.get(clip);
+        if (label?.confirms) {
+          print(`  – not sent: "${label.meant}" confirms a write, which a replay never saves again`);
+          continue;
+        }
         const turn = await session.voice(conversation, await toPcm16k(await storage.download(clip)), {
           realTime: false,
         });
-        const result = scoreClip(clip, turn, labels.get(clip));
+        const result = scoreClip(clip, turn, label);
         results.push(result);
         const mark = result.passed === undefined ? "·" : result.passed ? "✓" : "×";
         const missing = result.missing?.length ? `  [missing: ${result.missing.join(", ")}]` : "";
-        print(`  ${mark} ${turn.transcript ?? "(nothing heard)"} → ${turn.reply}${missing}`);
+        const unwanted = result.unwanted?.length ? `  [wrong: ${result.unwanted.join(", ")}]` : "";
+        print(`  ${mark} ${turn.transcript ?? "(nothing heard)"} → ${turn.reply}${missing}${unwanted}`);
       }
     }
     const runId = `clips-${new Date().toISOString().replace(/[:.]/g, "-")}`;

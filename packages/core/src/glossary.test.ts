@@ -34,6 +34,26 @@ describe("matching (spec 10.2, 10.3)", () => {
     },
   );
 
+  it.each([
+    { style: "Bangla", said: "প্রিমিয়াম দুই হাজার পনেরো এর অয়েল ফিল্টার আছে" },
+    { style: "Banglish", said: "premium dui hajar ponero er oil filter ache" },
+  ])("takes a part said exactly inside a longer near match (D158, $style)", ({ said }) => {
+    // "অয়েল ফিল্টার আছে" sounds a little like the oil filter and "এর অয়েল ফিল্টার" like the air filter; the exact
+    // words between them decide.
+    const match = matchConcept("part_type", said, [], dictionary);
+    expect(match.candidates[0]).toMatchObject({ value: "Oil Filter", exact: true });
+    expect(match.decision).not.toBe("unclear");
+  });
+
+  it.each([
+    { style: "Bangla", said: "প্রোবক্স দুই হাজার তেরো ইয়ার ফিল্ডার কোন তাকে", part: "Air Filter" },
+    { style: "Banglish", said: "probox 2013 er air filder kon take", part: "Air Filter" },
+  ])("never joins a year to a part's name by sound (D158, $style)", ({ said, part }) => {
+    const match = matchConcept("part_type", said, [], dictionary);
+    expect(match.candidates[0]?.value).toBe(part);
+    expect(match.candidates.some((candidate) => /(তেরো|2013)/.test(candidate.heard))).toBe(false);
+  });
+
   it.each(["জেনুইন", "genuine"])("still takes %s alone as genuine", (said) => {
     const match = matchConcept("quality", said, [], dictionary);
     expect(match.candidates[0]).toMatchObject({ value: "genuine", exact: true });
