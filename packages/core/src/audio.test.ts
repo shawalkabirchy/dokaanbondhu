@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLevel, pcmDurationMs, pcmRms, pcmToWav, SAMPLE_RATE, trimSilence } from "./audio";
+import {
+  normalizeLevel,
+  pcmDurationMs,
+  pcmRms,
+  pcmToWav,
+  SAMPLE_RATE,
+  tooManyWords,
+  trimSilence,
+} from "./audio";
 
 // Silence trim and the WAV header (spec 8.4, D45), on synthetic clips: quiet noise with a louder tone as the "speech".
 
@@ -73,6 +81,47 @@ describe("silence trim (D45)", () => {
     expect(quiet.speech).toBe(true);
     expect(pcmDurationMs(quiet.pcm)).toBeGreaterThanOrEqual(1200);
     expect(pcmDurationMs(quiet.pcm)).toBeLessThan(1800);
+  });
+});
+
+describe("a click and silence (D156)", () => {
+  // As the emulator recorded "air filter ache" on 11 Oct: the microphone's switch-on click, silence, a faint blip.
+  const clicked = () =>
+    clip([
+      [100, 0.9],
+      [1100, 0],
+      [300, 0.015],
+      [1500, 0],
+    ]);
+
+  it("never takes the switch-on click for speech, and counts only the speech frames", () => {
+    const trimmed = trimSilence(clicked());
+    expect(trimmed.speech).toBe(true);
+    expect(trimmed.speechMs).toBeGreaterThanOrEqual(270);
+    expect(trimmed.speechMs).toBeLessThanOrEqual(330);
+    expect(pcmDurationMs(trimmed.pcm)).toBeLessThan(900); // the click is cut away with the silence
+    expect(
+      trimSilence(
+        clip([
+          [100, 0.9],
+          [2000, 0],
+        ]),
+      ).speech,
+    ).toBe(false); // the click alone is no speech
+  });
+
+  it.each([
+    { style: "Bangla", madeUp: "রাতে বিশ্ববিদ্যালয়ের প্রধান বিভাগের পরিচালক মো", said: "এয়ার ফিল্টার আছে" },
+    {
+      style: "Banglish",
+      madeUp: "rate bishwobiddaloyer prodhan bibhager porichalok mo",
+      said: "air filter ache",
+    },
+  ])("finds a transcript with more words than its speech could hold ($style)", ({ madeUp, said }) => {
+    const { speechMs } = trimSilence(clicked());
+    expect(tooManyWords(madeUp, speechMs)).toBe(true);
+    expect(tooManyWords(said, speechMs)).toBe(false);
+    expect(tooManyWords(madeUp, 2000)).toBe(false); // the same words in two seconds of speech are possible
   });
 });
 

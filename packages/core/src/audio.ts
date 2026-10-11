@@ -25,12 +25,26 @@ export interface Trimmed {
   pcm: Uint8Array;
   speech: boolean;
   noiseFloor: number;
+  /** How long the speech frames last together, in ms: no transcript may hold more words than this allows (D156). */
+  speechMs: number;
 }
 
 const FRAME_MS = 30;
 const KEEP_MS = 250;
 /** No frame quieter than this is speech, however quiet the room (D150; it was 0.015, above a quiet phone's speech). */
 const SPEECH_FLOOR = 0.003;
+
+/** The microphone's switch-on click: a loud burst of at most 120 ms at the very start, then 300 ms of silence (D156). */
+const CLICK_FRAMES = 4;
+const AFTER_CLICK_FRAMES = 10;
+
+/** Frames of the switch-on click at the start of a clip, which are not speech (0 when there is none). */
+function clickFrames(frames: readonly number[], threshold: number): number {
+  const loud = frames.findIndex((rms) => rms < threshold);
+  if (loud <= 0 || loud > CLICK_FRAMES) return 0;
+  const after = frames.slice(loud, loud + AFTER_CLICK_FRAMES);
+  return after.length === AFTER_CLICK_FRAMES && after.every((rms) => rms < threshold) ? loud : 0;
+}
 
 /** The RMS of each 30 ms frame. */
 function frameRms(pcm: Uint8Array): number[] {
@@ -58,18 +72,41 @@ function speechThreshold(frames: readonly number[]): { noiseFloor: number; thres
 export function trimSilence(pcm: Uint8Array): Trimmed {
   const frameBytes = (SAMPLE_RATE * FRAME_MS * 2) / 1000;
   const frames = frameRms(pcm);
-  if (!frames.length) return { pcm: new Uint8Array(0), speech: false, noiseFloor: 0 };
+  if (!frames.length) return { pcm: new Uint8Array(0), speech: false, noiseFloor: 0, speechMs: 0 };
   const { noiseFloor, threshold } = speechThreshold(frames);
-  const first = frames.findIndex((rms) => rms >= threshold);
-  if (first < 0) return { pcm: new Uint8Array(0), speech: false, noiseFloor };
+  // The switch-on click is never speech, nor where the speech starts (D156).
+  const click = clickFrames(frames, threshold);
+  const isSpeech = (rms: number, index: number) => index >= click && rms >= threshold;
+  const first = frames.findIndex(isSpeech);
+  if (first < 0) return { pcm: new Uint8Array(0), speech: false, noiseFloor, speechMs: 0 };
   let last = first;
+  let count = 0;
   frames.forEach((rms, index) => {
-    if (rms >= threshold) last = index;
+    if (!isSpeech(rms, index)) return;
+    last = index;
+    count++;
   });
   const keep = (SAMPLE_RATE * KEEP_MS * 2) / 1000;
-  const start = Math.max(0, first * frameBytes - keep);
+  const start = Math.max(click * frameBytes, first * frameBytes - keep);
   const end = Math.min(pcm.byteLength, (last + 1) * frameBytes + keep);
-  return { pcm: pcm.slice(start, end - ((end - start) % 2)), speech: true, noiseFloor };
+  return {
+    pcm: pcm.slice(start, end - ((end - start) % 2)),
+    speech: true,
+    noiseFloor,
+    speechMs: count * FRAME_MS,
+  };
+}
+
+/** Words a person says at most per second of speech, with two to spare: a transcript with more was made up (D156). */
+const WORDS_PER_SECOND = 6;
+
+/**
+ * Whether a transcript holds more words than its speech could (D156): Whisper writes a sentence of its own ("রাতে
+ * বিশ্ববিদ্যালয়ের প্রধান বিভাগের পরিচালক") for a clip that is a click and silence.
+ */
+export function tooManyWords(text: string, speechMs: number): boolean {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return words > 2 + (speechMs / 1000) * WORDS_PER_SECOND;
 }
 
 /** The level quiet speech is raised to: the speech frames' 95th-percentile RMS (D150). */

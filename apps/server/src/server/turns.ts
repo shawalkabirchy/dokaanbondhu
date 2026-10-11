@@ -1,6 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { ErrorCode, ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN, normalizeLevel, pcmDurationMs, pcmToWav, trimSilence } from "@dokaanbondhu/core";
+import {
+  ASK_AGAIN,
+  normalizeLevel,
+  pcmDurationMs,
+  pcmToWav,
+  tooManyWords,
+  trimSilence,
+} from "@dokaanbondhu/core";
 import {
   buildKeyterms,
   CONFIRM_TTL_MS,
@@ -595,6 +602,11 @@ export async function voiceTurn(
       keyterms: keyterms.length,
       gain: level.gain,
     };
+    // More words than the speech could hold: Whisper made the sentence up from a click and silence (D156). It is
+    // asked again, and the made-up words are not shown.
+    if (result.text.trim() && tooManyWords(result.text, trimmed.speechMs)) {
+      return await again({ asr, reason: "more words than speech" }, timings, result.text);
+    }
     emit({
       type: "transcript",
       text: result.text,

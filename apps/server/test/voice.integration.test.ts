@@ -330,6 +330,28 @@ describe.skipIf(!allLocal)("voice turns", () => {
     expect(gain).toBeGreaterThan(5);
   });
 
+  it.each([
+    { style: "Bangla", madeUp: "রাতে বিশ্ববিদ্যালয়ের প্রধান বিভাগের পরিচালক মো" },
+    { style: "Banglish", madeUp: "rate bishwobiddaloyer prodhan bibhager porichalok mo" },
+  ])(
+    "asks again, showing nothing, when the transcript holds more words than the speech could (D156; $style)",
+    async ({ madeUp }) => {
+      // the microphone's switch-on click, silence and a faint blip: Whisper writes a sentence of its own
+      speech.asr.push({ text: madeUp, nbest: [madeUp] });
+      const { reply, events } = await say(
+        clip([
+          [100, 0.9],
+          [1100, 0],
+          [300, 0.015],
+          [1500, 0],
+        ]),
+      );
+      expect(reply).toBe(ASK_AGAIN);
+      expect(events.find((event) => event.type === "transcript")).toBeUndefined();
+      expect(llm.received).toHaveLength(0);
+    },
+  );
+
   it("keeps a consenting shop's clip and hypotheses for measuring, but not a replay's (D41, D149)", async () => {
     const { setClipStoreForTests } = await import("../src/server/recordings");
     const kept: { path: string; wav: Uint8Array }[] = [];
