@@ -385,6 +385,29 @@ interface Facts {
   report?: ReportResult;
 }
 
+/** A read's list of at most this many different names has them said, not only "see the screen" (D160). */
+const READ_ALOUD_NAMES = 6;
+
+/**
+ * A read's template answer (spec 12.2, D160): a list of two to six different Bangla names is said, from its text
+ * columns, those with Bangla names first ("পাওয়া গেছে: সেলফ মোটর, ডায়নামো, হর্ন সেট।"), then "see the screen". One
+ * name is a value looked up (a due), which the name alone does not answer; more names, a row without one, or names
+ * not in Bangla (the voice speaks Bangla) get only "see the screen".
+ */
+function readAnswer(result: ReadQueryResult): string {
+  const { rows } = result;
+  const said = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  const bangla = (key: string) => rows.filter((row) => /[ঀ-৿]/.test(said(row[key]) ?? "")).length;
+  const columns = result.columns
+    .filter((column) => column.kind === "text" && rows.some((row) => said(row[column.key])))
+    .sort((a, b) => bangla(b.key) - bangla(a.key));
+  const names = rows.map((row) => columns.map((column) => said(row[column.key])).find(Boolean) ?? null);
+  const different = [...new Set(names)];
+  const inBangla = different.every((name) => name !== null && /[ঀ-৿]/.test(name));
+  if (!inBangla || different.length < 2 || different.length > READ_ALOUD_NAMES) return SEE_ON_SCREEN;
+  return `পাওয়া গেছে: ${different.join(", ")}। ${SEE_ON_SCREEN}`;
+}
+
 function templateAnswer(facts: Facts): string {
   if (facts.report) {
     if (facts.report.kind === "see_in_app") return SEE_IN_APP;
@@ -403,7 +426,7 @@ function templateAnswer(facts: Facts): string {
     }
     return noFitmentAnswer(context, [...result.closeVehicle, ...result.mentioned]);
   }
-  if (facts.read) return SEE_ON_SCREEN;
+  if (facts.read) return readAnswer(facts.read);
   return helpAnswer();
 }
 
@@ -599,6 +622,8 @@ export async function runTurn(
 
   const facts: Facts = { allowed: new AllowedFacts() };
   facts.allowed.addFromText(text); // values the user said
+  // A rack the user said, as an answer writes it: "সি ২" for "সি দুই" (D160).
+  for (const rack of named.filter((name) => name.kind === "rack")) facts.allowed.addFromText(rack.name);
   if (state.context.vehicle?.year) facts.allowed.addNumber(state.context.vehicle.year);
   let questionsAsked = 0;
   const learned: TurnOutcome["learned"] = [];

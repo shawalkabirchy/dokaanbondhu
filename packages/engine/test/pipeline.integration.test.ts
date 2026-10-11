@@ -750,6 +750,35 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
+  const rackC2 = {
+    name: "run_read_query",
+    arguments: {
+      sql: "SELECT parts.name_en, parts.name_bn FROM parts WHERE parts.rack_location = 'C-2'",
+      purpose: "C-2 তাকের মাল",
+    },
+  };
+
+  it.each([
+    { style: "Bangla", text: "সি দুই থাকে কি কি আছে" },
+    { style: "Banglish", text: "c dui take ki ki ache" },
+  ])(
+    "keeps the LLM's answer that writes the rack the user said; a failed one says the names (D160; $style)",
+    async ({ text }) => {
+      // Whisper writes তাকে as থাকে; the rows hold only names, so the ২ of "সি ২" is a fact only because it was said.
+      const said = "সি ২ র‍্যাকে সেলফ মোটর, ডায়নামো, হর্ন সেট, ফিউজ বক্স এবং রিলে আছে।";
+      const kept = await turn(text, fresh(), [scripted([{ calls: [rackC2] }, { text: said }])]);
+      expect(kept.outcome.meta.grounding_failures).toBe(0);
+      expect(kept.reply).toBe(said);
+      // An invented count fails the check; the template then says the rows' Bangla names.
+      const invented = await turn(text, fresh(), [
+        scripted([{ calls: [rackC2] }, { text: "সি ২ র‍্যাকে ৯৯টা পার্ট আছে।" }]),
+      ]);
+      expect(invented.outcome.meta.grounding_failures).toBe(1);
+      expect(invented.reply).toMatch(/^পাওয়া গেছে: .*সেলফ.*। বিস্তারিত স্ক্রিনে দেখুন।$/);
+      expect(invented.reply).not.toContain("৯৯");
+    },
+  );
+
   it.each([
     { style: "Bangla", text: "কোন কোন মাল অর্ডার দিতে হবে?" },
     { style: "Banglish", text: "kon kon mal order dite hobe?" },
