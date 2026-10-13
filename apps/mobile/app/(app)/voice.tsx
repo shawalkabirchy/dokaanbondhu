@@ -7,12 +7,13 @@ import {
   type RecordingConfig,
 } from "@siteed/audio-studio";
 import * as Crypto from "expo-crypto";
-import { useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AssistantBubble, MemoryLine, UserBubble } from "../../src/chat-ui";
 import { phonePlayer, playAskAgain, stopPlayback } from "../../src/lib/audio";
-import { useHealth } from "../../src/lib/health";
+import { useHealth, wakeSpeech } from "../../src/lib/health";
 import { base64ToBytes } from "../../src/lib/pcm";
 import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useMe } from "../../src/lib/session";
@@ -29,6 +30,10 @@ const LAST_CHUNK_SLACK_MS = 250;
  * way through the microphone when the finger lifts. Not after a tap, and never past the 30 s limit.
  */
 const TAIL_MS = 500;
+/** While the page is in front the speech worker is woken this often, since Modal sleeps after 5 idle minutes (D164). */
+const KEEP_AWAKE_MS = 4 * 60_000;
+/** How long "voice is ready" shows once the speech worker has woken (D164). */
+const READY_MS = 5000;
 import { Button, colors, OfflineBanner } from "../../src/ui";
 
 // The voice page (spec 15.2, 15.3, 15.4): hold the button and speak; on release the clip is finished and the answer
@@ -36,12 +41,14 @@ import { Button, colors, OfflineBanner } from "../../src/ui";
 // is prepared before the press (on opening the page and after every stop), because unprepared it takes about 1.4 s
 // to start and loses the first words (P5). Pressing again while an answer plays stops it (barge-in). After the release
 // the recorder listens for half a second more, so the last word is not cut (D113). The conversation and its list are
-// the chat page's too, so a question asked here can be finished by typing there (D125).
+// the chat page's too, so a question asked here can be finished by typing there (D125). While the speech worker wakes
+// the page says voice is getting ready (the button still works), then that it is ready; while the page is in front it
+// keeps the worker awake (D164).
 
 export default function Voice() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
-  const { micAllowed, speechTrouble, refresh } = useHealth();
+  const { health, micAllowed, starting, speechTrouble, speechWaking, refresh } = useHealth();
   const { messages, busy, runTurn, ensureConversation, send, decide, reset, note, remembered, forget } =
     useChat();
   /** False when the developer has switched reading aloud off (AI_SPEAK=off, D114). */
@@ -56,6 +63,8 @@ export default function Voice() {
   const limit = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micReady = useRef(false);
   const list = useRef<ScrollView>(null);
+  const [ready, setReady] = useState(false);
+  const wasWaking = useRef(false);
   const newestReply = [...messages].reverse().find((message) => message.kind === "assistant");
 
   // The settings of spec 15.3; the same object prepares and starts the recorder.
@@ -80,6 +89,32 @@ export default function Voice() {
     ensureConversation("voice").catch(() => undefined); // opened early, so the first press starts at once
     return () => player.current?.stop();
   }, [prepareRecording, config, ensureConversation]);
+
+  // "Voice is ready" for a few seconds once the worker that was waking answers (D164).
+  useEffect(() => {
+    if (speechWaking) {
+      wasWaking.current = true;
+      setReady(false);
+    } else if (wasWaking.current) {
+      wasWaking.current = false;
+      if (health.speech === "ok") setReady(true);
+    }
+  }, [speechWaking, health.speech]);
+  useEffect(() => {
+    if (!ready) return;
+    const timer = setTimeout(() => setReady(false), READY_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
+
+  // Only while this page is in front and the app is in use: a closed app lets the worker sleep (D164).
+  useFocusEffect(
+    useCallback(() => {
+      const timer = setInterval(() => {
+        if (AppState.currentState === "active") void wakeSpeech(refresh);
+      }, KEEP_AWAKE_MS);
+      return () => clearInterval(timer);
+    }, [refresh]),
+  );
 
   /** A new reply's audio player; the previous one stops. */
   function playerTap(): (event: ReplyEvent) => void {
@@ -210,12 +245,24 @@ export default function Voice() {
             { backgroundColor: recording ? colors.danger : micAllowed ? colors.green : colors.line },
           ]}
         >
-          <Text style={styles.buttonText}>{recording ? t("status.listening") : t("voice.hold")}</Text>
+          <Text style={styles.buttonText}>
+            {recording ? t("status.listening") : starting ? t("status.starting") : t("voice.hold")}
+          </Text>
         </Pressable>
+        {/* While starting, the banner above says the assistant is starting (D164). */}
         {!micAllowed ? (
-          <Text style={styles.danger}>{t("offline.mic_off")}</Text>
+          starting ? null : (
+            <Text style={styles.danger}>{t("offline.mic_off")}</Text>
+          )
         ) : speechTrouble ? (
           <Text style={styles.danger}>{t("offline.speech_trouble")}</Text>
+        ) : speechWaking ? (
+          <View style={styles.waking}>
+            <ActivityIndicator color={colors.muted} />
+            <Text style={styles.note}>{t("voice.waking")}</Text>
+          </View>
+        ) : ready ? (
+          <Text style={styles.ready}>{t("voice.ready")}</Text>
         ) : null}
         {messages.length > 0 && !busy && !recording ? (
           <Button
@@ -241,4 +288,7 @@ const styles = StyleSheet.create({
   button: { height: 120, borderRadius: 60, alignItems: "center", justifyContent: "center" },
   buttonText: { color: colors.white, fontSize: 22, fontWeight: "700" },
   danger: { fontSize: 15, color: colors.danger },
+  waking: { flexDirection: "row", alignItems: "center", gap: 10 },
+  note: { flex: 1, fontSize: 15, color: colors.muted },
+  ready: { fontSize: 15, color: colors.green },
 });

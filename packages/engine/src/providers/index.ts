@@ -1,6 +1,6 @@
 export { llmChain, type StoredProviderRow } from "./chain";
 export { llmStream, NothingLeftError, type FallbackOptions } from "./fallback";
-export { recentHealth, recordProviderCall, speechHealth } from "./health";
+export { recentHealth, recordProviderCall, speechHealth, type SpeechHealth } from "./health";
 export {
   openAiCompatibleProvider,
   type ChatMessage,
@@ -29,6 +29,7 @@ export {
   SpeechError,
   speechWorkerStt,
   speechWorkerTts,
+  speechWorkerWake,
   sttAdapter,
   ttsAdapter,
   type AsrResult,
@@ -38,3 +39,4 @@ export {
   type SttProvider,
   type TtsProvider,
 } from "./speech";
+export { wakeSpeech } from "./wake";

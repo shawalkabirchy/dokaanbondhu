@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { AppState } from "react-native";
 import Voice from "../app/(app)/voice";
 import { streamTurn, uploadChunk } from "./lib/stream";
 
 // The voice page (spec 15.3, 15.8) with the recorder, the player and the server replaced: holding the button records,
 // recording stops by itself at 30 s, a quiet clip never reaches finish, and the button is never locked while speech
-// only had trouble or while a question is being recorded (D111).
+// only had trouble or while a question is being recorded (D111); while the speech worker wakes the page says so and
+// the button works, then it says voice is ready, and it keeps the worker awake while in front (D164).
 
 const mockRecorder = {
   prepareRecording: jest.fn(async () => undefined),
@@ -25,13 +27,25 @@ jest.mock("expo-crypto", () => {
 });
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 const mockHealth = {
+  health: { speech: "unknown" },
   online: true,
+  starting: false,
   checking: false,
   micAllowed: true,
   speechTrouble: false,
+  speechWaking: false,
   refresh: jest.fn(),
 };
-jest.mock("./lib/health", () => ({ useHealth: () => mockHealth }));
+const mockWake = jest.fn(async (_refresh: unknown) => undefined);
+jest.mock("./lib/health", () => ({
+  useHealth: () => mockHealth,
+  wakeSpeech: (refresh: unknown) => mockWake(refresh),
+}));
+// The page in front, as on the phone (the test has no navigator).
+jest.mock("expo-router", () => {
+  const { useEffect } = jest.requireActual("react");
+  return { useFocusEffect: (effect: () => void) => useEffect(effect, [effect]) };
+});
 const mockMe = { data: { providers: { speaks: true } } };
 jest.mock("./lib/session", () => ({ useMe: () => mockMe }));
 jest.mock("./lib/audio", () => ({
@@ -71,7 +85,14 @@ describe("voice page", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
-    Object.assign(mockHealth, { online: true, micAllowed: true, speechTrouble: false });
+    Object.assign(mockHealth, {
+      health: { speech: "unknown" },
+      online: true,
+      starting: false,
+      micAllowed: true,
+      speechTrouble: false,
+      speechWaking: false,
+    });
     mockMe.data.providers.speaks = true;
   });
   afterEach(() => jest.useRealTimers());
@@ -221,6 +242,54 @@ describe("voice page", () => {
     expect(screen.getByText("offline.mic_off")).toBeTruthy();
     await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
     expect(mockRecorder.startRecording).not.toHaveBeenCalled();
+  });
+
+  // From the owner on 13 Oct (D164): a server that has not answered yet may be waking on Render, not offline.
+  it("shows the button as starting, not voice off, while the server may still be waking", async () => {
+    Object.assign(mockHealth, { online: false, micAllowed: false, starting: true });
+    await render(<Voice />);
+    expect(screen.getByText("status.starting")).toBeTruthy();
+    expect(screen.queryByText("offline.mic_off")).toBeNull();
+    await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
+    expect(mockRecorder.startRecording).not.toHaveBeenCalled();
+  });
+
+  it("says voice is getting ready while the speech worker wakes, then for 5 s that it is ready", async () => {
+    Object.assign(mockHealth, { speechWaking: true, health: { speech: "waking" } });
+    await render(<Voice />);
+    expect(screen.getByText("voice.waking")).toBeTruthy();
+    Object.assign(mockHealth, { speechWaking: false, health: { speech: "ok" } });
+    await screen.rerender(<Voice />);
+    expect(screen.queryByText("voice.waking")).toBeNull();
+    expect(screen.getByText("voice.ready")).toBeTruthy();
+    await act(async () => jest.advanceTimersByTime(5000));
+    expect(screen.queryByText("voice.ready")).toBeNull();
+  });
+
+  it("keeps the button working while voice is getting ready", async () => {
+    Object.assign(mockHealth, { speechWaking: true, health: { speech: "waking" } });
+    await render(<Voice />);
+    await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
+    expect(mockRecorder.startRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("wakes the speech worker every 4 minutes while the page is in front, and not after it is left", async () => {
+    // The app in use (the test environment's AppState has no state of its own).
+    const before = Object.getOwnPropertyDescriptor(AppState, "currentState")!;
+    Object.defineProperty(AppState, "currentState", { value: "active", configurable: true });
+    try {
+      const { unmount } = await render(<Voice />);
+      expect(mockWake).not.toHaveBeenCalled();
+      await act(async () => jest.advanceTimersByTime(4 * 60_000));
+      expect(mockWake).toHaveBeenCalledTimes(1);
+      await act(async () => jest.advanceTimersByTime(4 * 60_000));
+      expect(mockWake).toHaveBeenCalledTimes(2);
+      await unmount();
+      await act(async () => jest.advanceTimersByTime(8 * 60_000));
+      expect(mockWake).toHaveBeenCalledTimes(2);
+    } finally {
+      Object.defineProperty(AppState, "currentState", before);
+    }
   });
 
   it("finishes and sends a question even when the server goes offline while the button is held", async () => {

@@ -61,10 +61,11 @@ export interface SpeechWorkerConfig {
   maxKeyterms?: number;
 }
 
-// Timeouts (spec 13.4): 10 s to transcribe, 8 s per sentence to speak; Modal may first have to start the container
-// (P2: up to 193 s; over 240 s after a laptop restart on 29 Sep, D101), so with Modal both are 360 s.
+// Timeouts (spec 13.4): 10 s to transcribe, 8 s per sentence to speak, 10 s to wake (D164); Modal may first have to
+// start the container (P2: up to 193 s; over 240 s after a laptop restart on 29 Sep, D101), so with Modal all are 360 s.
 const STT_TIMEOUT_MS = 10_000;
 const TTS_TIMEOUT_MS = 8_000;
+const WAKE_TIMEOUT_MS = 10_000;
 const MODAL_TIMEOUT_MS = 360_000;
 
 function authHeaders(config: SpeechWorkerConfig): Record<string, string> {
@@ -352,6 +353,29 @@ function elevenLabsConfig(row: StoredProviderRow, aesKey: Buffer, model: string)
     apiKey,
     model: row.model ?? model,
     ...(options.voice_ids ? { voiceIds: options.voice_ids } : {}),
+  };
+}
+
+/**
+ * The speech worker behind a stored row, to wake it (spec 13.4, D164): its own GET /health, true when it says "ok".
+ * Null for a provider that never sleeps (ElevenLabs). The address tells two rows of one worker apart from two workers.
+ */
+export function speechWorkerWake(
+  row: StoredProviderRow,
+  aesKey: Buffer,
+): { address: string; wake: () => Promise<boolean> } | null {
+  const worker = workerConfig(row, aesKey);
+  if (!worker) return null;
+  return {
+    address: worker.baseUrl.replace(/\/$/, ""),
+    async wake() {
+      try {
+        const response = await call(worker, "/health", { method: "GET" }, WAKE_TIMEOUT_MS);
+        return ((await response.json()) as { status?: unknown }).status === "ok";
+      } catch {
+        return false;
+      }
+    },
   };
 }
 

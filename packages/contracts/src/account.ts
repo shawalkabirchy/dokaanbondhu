@@ -2,14 +2,22 @@ import { z } from "zod";
 
 // Health, the signed-in user, staff, settings and providers (spec 8.3, 8.8, 13.2).
 
+/** Speech readiness: "waking" while a wake call waits for the speech worker (D164). */
+export const speechStateSchema = z.enum(["ok", "down", "unknown", "waking"]);
+export type SpeechState = z.infer<typeof speechStateSchema>;
+
 export const healthSchema = z.object({
   status: z.enum(["ok", "down"]),
   version: z.string(),
   db: z.enum(["ok", "down"]),
-  speech: z.enum(["ok", "down", "unknown"]),
+  speech: speechStateSchema,
   llm: z.enum(["ok", "down", "unknown"]),
 });
 export type Health = z.infer<typeof healthSchema>;
+
+/** POST /speech/wake's answer (spec 8.3, D164). */
+export const speechWakeSchema = z.object({ speech: speechStateSchema });
+export type SpeechWake = z.infer<typeof speechWakeSchema>;
 
 /** A shop's settings with every default filled in (spec 7.2). */
 export const shopSettingsSchema = z.object({

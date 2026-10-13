@@ -3,7 +3,8 @@ import type { AddressInfo } from "node:net";
 
 // A stub speech worker on a local port for the server's integration tests (spec 14.1 API): /asr answers the next
 // scripted transcript (or fails), /tts answers a few bytes that name the sentence, so a test can check which audio
-// belongs to which sentence. The requests are kept.
+// belongs to which sentence, and /health answers "ok" after a set delay, as a worker that is starting (D164). The
+// requests are kept.
 
 export interface AsrStep {
   text: string;
@@ -30,6 +31,9 @@ export interface StubSpeech {
   asrRequests: AsrRequest[];
   ttsTexts: string[];
   ttsFails: boolean;
+  /** How long /health takes to answer, as a worker that is still starting (D164); and how often it was asked. */
+  healthDelayMs: number;
+  healthCalls: number;
   baseUrl: string;
   close(): Promise<void>;
 }
@@ -54,12 +58,22 @@ export async function startStubSpeech(): Promise<StubSpeech> {
     asrRequests: [],
     ttsTexts: [],
     ttsFails: false,
+    healthDelayMs: 0,
+    healthCalls: 0,
   };
   const server: Server = createServer((request, response) => {
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
       const body = Buffer.concat(chunks);
+      if (request.url === "/health") {
+        stub.healthCalls++;
+        setTimeout(
+          () => response.writeHead(200, { "content-type": "application/json" }).end('{"status":"ok"}'),
+          stub.healthDelayMs,
+        );
+        return;
+      }
       if (request.url === "/asr") {
         const audio = field(body, "audio") ?? Buffer.alloc(0);
         stub.asrRequests.push({

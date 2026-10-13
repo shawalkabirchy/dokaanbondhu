@@ -11,9 +11,11 @@ import {
   selectProviders,
   sttAdapter,
   ttsAdapter,
+  wakeSpeech,
   type LlmProvider,
   type ProviderJob,
   type Sides,
+  type SpeechHealth,
   type SttProvider,
   type TtsProvider,
 } from "@dokaanbondhu/engine/providers";
@@ -120,4 +122,10 @@ export async function shopSpeech(
     tts: used.tts ? ttsAdapter(used.tts, key) : null,
     speaks,
   };
+}
+
+/** Wakes the shop's speech worker (spec 8.3, D164): the rows the developer's sides choose, as for a normal turn. */
+export async function wakeShopSpeech(shopId: string): Promise<SpeechHealth> {
+  const used = selectProviders(await providerRows(shopId), shopId, serverSides());
+  return wakeSpeech(used, parseAesKey(serverEnv().AES_KEY));
 }

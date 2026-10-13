@@ -630,4 +630,44 @@ describe.skipIf(!allLocal)("voice turns", () => {
       delete cached.__dokaanServerEnv;
     }
   });
+
+  it("wakes the speech worker once, answers within 2 s, and /health says waking until the worker answers (D164)", async () => {
+    const { recordProviderCall } = await import("@dokaanbondhu/engine/providers");
+    const wakeRoute = (await import("../app/api/v1/speech/wake/route")).POST;
+    const healthRoute = (await import("../app/api/v1/health/route")).GET;
+    const healthSpeech = async () => ((await (await healthRoute()).json()) as { speech: string }).speech;
+    const wake = async () =>
+      ((await (await post(wakeRoute, shop.owner.auth, {})).json()) as { speech: string }).speech;
+    const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Asleep: the last calls failed, and the worker takes 2.5 s to answer, as Modal while it starts.
+    recordProviderCall("stt", false);
+    recordProviderCall("tts", false);
+    speech.healthCalls = 0;
+    speech.healthDelayMs = 2500;
+    const first = wake();
+    await pause(100);
+    expect(await healthSpeech()).toBe("waking");
+    const second = wake(); // the app came back to the front meanwhile: the same wake, no second call
+    expect(await first).toBe("waking"); // answered after 2 s, without waiting for the worker
+    expect(await second).toBe("waking");
+    await pause(600);
+    expect(await healthSpeech()).toBe("ok");
+    expect(speech.healthCalls).toBe(1); // /health itself never called the worker (D55)
+
+    // Awake: a wake only keeps it awake and never says "waking".
+    const keepAwake = wake();
+    await pause(100);
+    expect(await healthSpeech()).toBe("ok");
+    expect(await keepAwake).toBe("ok");
+    expect(speech.healthCalls).toBe(2);
+    await pause(600);
+
+    // ElevenLabs never sleeps: nothing to wake.
+    speech.healthDelayMs = 0;
+    await withSides({ AI_LISTEN: "api", AI_SPEAK: "api" }, async () => {
+      await wake();
+      expect(speech.healthCalls).toBe(2);
+    });
+  });
 });

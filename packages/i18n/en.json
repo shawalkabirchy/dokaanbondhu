@@ -48,17 +48,21 @@
   },
   "offline": {
     "banner": "The assistant is offline. The shop's own app keeps working.",
+    "starting": "The assistant is starting… this takes about a minute.",
     "mic_off": "Voice is off right now. You can still type.",
     "speech_trouble": "Voice had a problem a moment ago. Try again, or type."
   },
   "status": {
     "listening": "Listening…",
+    "starting": "Starting…",
     "saving": "Saving…",
     "searching": "Searching…",
     "understanding": "Understanding…"
   },
   "voice": {
     "hold": "Hold to talk",
+    "waking": "Voice is getting ready… this can take a few minutes. You can type in Chat meanwhile.",
+    "ready": "Voice is ready. Hold the button and speak.",
     "hint": "Hold the button and ask, for example: Axio 2014 front brake pad ache? Let go to hear the answer."
   },
   "memory": {

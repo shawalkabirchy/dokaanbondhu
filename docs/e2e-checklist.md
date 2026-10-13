@@ -17,8 +17,8 @@ Write each run into the table at the end. A failed line gets a note there and a 
       switch off when the emulator restarts).
 - [ ] Signed in as the test shop's **owner**. In setup the connection is Active, the data map is confirmed and the
       catalog has been synced.
-- [ ] The speech worker is awake: the first voice question after a quiet hour can take up to 6 minutes (Modal cold
-      start), so ask one warm-up question first and do not count it.
+- [ ] The speech worker is awake: open the app and wait until the voice page says "ভয়েস প্রস্তুত।" (after a quiet
+      hour it can take up to 6 minutes; the app wakes it by itself, D164).
 
 ## A. Sign-in and screens
 
@@ -49,17 +49,19 @@ Type each line in a **new chat**; the second line of a row is typed after the fi
 
 Speak at a normal distance in a quiet room. Hold the button, speak, let go.
 
-| #   | Say (Bangla)                                             | Say (Banglish)                                   | Expect (both)                                                                                                                                |
-| --- | -------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1  | এক্সিও দুই হাজার চৌদ্দ সামনের ব্রেক প্যাড আছে?           | Axio dui hajar choddo er shamner brake pad ache? | Your words as a bubble (Axio as one word, 2014 as a year), then the B1 answer as text and speech; "খুঁজছি…" stops when the text shows (D101) |
-| C2  | নোয়া দুই হাজার ষোল এর ব্রেক প্যাড আছে?                  | Noah dui hajar sholo er brake pad ache?          | The last word (ষোল / sholo) is in your bubble, so the year is 2016 (D103)                                                                    |
-| C3  | ব্রেক প্যাড আছে? → (answer) এক্সিও দুই হাজার চৌদ্দ       | brake pad ache? → Axio 2014                      | "কোন গাড়ির?" is spoken; your answer brings the list                                                                                         |
-| C4  | নিউ ঢাকা গ্যারেজের বাকি কত?                              | New Dhaka Garage er baki koto?                   | ২০,৫০০ টাকা, spoken                                                                                                                          |
-| C5  | Tap the button quickly (under 0.3 s)                     |                                                  | Nothing is sent; no bubble                                                                                                                   |
-| C6  | Hold for 2 s without speaking                            |                                                  | The "আবার বলবেন?" clip plays; nothing is sent                                                                                                |
-| C7  | While an answer is being spoken, press the button again  |                                                  | The speech stops at once and a new recording starts                                                                                          |
-| C8  | Hold for more than 30 s while talking                    |                                                  | The recording stops at 30 s and the question is sent                                                                                         |
-| C9  | Stop the server (Ctrl+C), wait 30 s, then start it again |                                                  | The offline banner shows while it is down ("অ্যাসিস্ট্যান্ট এখন অফলাইন…") and goes away once it is back                                      |
+| #   | Say (Bangla)                                                   | Say (Banglish)                                   | Expect (both)                                                                                                                                                               |
+| --- | -------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1  | এক্সিও দুই হাজার চৌদ্দ সামনের ব্রেক প্যাড আছে?                 | Axio dui hajar choddo er shamner brake pad ache? | Your words as a bubble (Axio as one word, 2014 as a year), then the B1 answer as text and speech; "খুঁজছি…" stops when the text shows (D101)                                |
+| C2  | নোয়া দুই হাজার ষোল এর ব্রেক প্যাড আছে?                        | Noah dui hajar sholo er brake pad ache?          | The last word (ষোল / sholo) is in your bubble, so the year is 2016 (D103)                                                                                                   |
+| C3  | ব্রেক প্যাড আছে? → (answer) এক্সিও দুই হাজার চৌদ্দ             | brake pad ache? → Axio 2014                      | "কোন গাড়ির?" is spoken; your answer brings the list                                                                                                                        |
+| C4  | নিউ ঢাকা গ্যারেজের বাকি কত?                                    | New Dhaka Garage er baki koto?                   | ২০,৫০০ টাকা, spoken                                                                                                                                                         |
+| C5  | Tap the button quickly (under 0.3 s)                           |                                                  | Nothing is sent; no bubble                                                                                                                                                  |
+| C6  | Hold for 2 s without speaking                                  |                                                  | The "আবার বলবেন?" clip plays; nothing is sent                                                                                                                               |
+| C7  | While an answer is being spoken, press the button again        |                                                  | The speech stops at once and a new recording starts                                                                                                                         |
+| C8  | Hold for more than 30 s while talking                          |                                                  | The recording stops at 30 s and the question is sent                                                                                                                        |
+| C9  | Stop the server (Ctrl+C), wait 30 s, then start it again       |                                                  | The offline banner shows while it is down ("অ্যাসিস্ট্যান্ট এখন অফলাইন…") and goes away once it is back                                                                     |
+| C10 | Close the app, wait 10 minutes, open it again                  |                                                  | Under the button "ভয়েস প্রস্তুত হচ্ছে…" with a spinner; after up to 6 minutes "ভয়েস প্রস্তুত।" for 5 s. A question asked meanwhile is answered once voice is ready (D164) |
+| C11 | Demo phone only: leave the app closed 20 minutes, then open it |                                                  | The banner says "অ্যাসিস্ট্যান্ট চালু হচ্ছে…" (not "অফলাইন") for about a minute, then goes; then C10's lines (D164)                                                         |
 
 ## D. Setup and learned words (owner)
 

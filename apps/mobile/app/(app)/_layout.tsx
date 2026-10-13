@@ -1,6 +1,7 @@
 import { Redirect, Tabs } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, View } from "react-native";
+import { useSpeechWake } from "../../src/lib/health";
 import { useMe, useSession } from "../../src/lib/session";
 import { colors } from "../../src/ui";
 
@@ -9,6 +10,7 @@ export default function AppLayout() {
   const { t } = useTranslation();
   const { session, loading } = useSession();
   const me = useMe(!!session);
+  useSpeechWake(!!session); // the speech worker starts waking as soon as the app opens (D164)
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>

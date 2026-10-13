@@ -29,11 +29,12 @@ export const colors = {
 
 export function OfflineBanner() {
   const { t } = useTranslation();
-  const { online, checking } = useHealth();
+  const { online, checking, starting } = useHealth();
   if (online || checking) return null;
   return (
     <View style={styles.banner} accessibilityRole="alert">
-      <Text style={styles.bannerText}>{t("offline.banner")}</Text>
+      {/* A server that has not answered yet may be waking (about a minute on Render), not offline (D164). */}
+      <Text style={styles.bannerText}>{t(starting ? "offline.starting" : "offline.banner")}</Text>
     </View>
   );
 }
