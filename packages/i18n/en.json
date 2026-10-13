@@ -29,19 +29,22 @@
     "cancel": "Cancel",
     "loading": "Loading…",
     "retry": "Try again",
-    "error": "Something went wrong."
+    "error": "Something went wrong.",
+    "back": "Back"
   },
   "login": {
     "title": "DokaanBondhu",
-    "subtitle": "Sign in to your shop",
+    "subtitle": "The assistant for car parts shops",
     "email": "Email",
     "password": "Password",
     "submit": "Sign in",
-    "failed": "Wrong email or password."
+    "failed": "Wrong email or password.",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
+    "note": "Logins are given by the shop's owner. Forgot your password? Ask the owner."
   },
   "tabs": {
-    "voice": "Voice",
-    "chat": "Chat",
+    "assistant": "Assistant",
     "history": "History",
     "staff": "Staff",
     "more": "More"
@@ -57,13 +60,43 @@
     "starting": "Starting…",
     "saving": "Saving…",
     "searching": "Searching…",
-    "understanding": "Understanding…"
+    "understanding": "Understanding…",
+    "speaking": "Speaking…",
+    "undoing": "Undoing…"
   },
   "voice": {
     "hold": "Hold to talk",
-    "waking": "Voice is getting ready… this can take a few minutes. You can type in Chat meanwhile.",
-    "ready": "Voice is ready. Hold the button and speak.",
-    "hint": "Hold the button and ask, for example: Axio 2014 front brake pad ache? Let go to hear the answer."
+    "waking": "Voice is getting ready… this can take a few minutes. You can type meanwhile.",
+    "ready": "Voice is ready. Hold the button and speak."
+  },
+  "assistant": {
+    "title": "DokaanBondhu",
+    "empty_title": "What would you like to know?",
+    "empty_text": "Hold the button below and speak; let go to get the answer. Tap the keyboard to type.",
+    "examples_title": "You could ask (a tap puts it in the box)",
+    "examples": {
+      "find": {
+        "label": "Find",
+        "text": "axio 2014 er samner brake pad ache?"
+      },
+      "price": {
+        "label": "Price",
+        "text": "axio 2014 er air filter er dam koto?"
+      },
+      "due": {
+        "label": "Due",
+        "text": "rahim motors er baki koto?"
+      },
+      "sale": {
+        "label": "Sale",
+        "text": "rahim motors ke 2 set brake pad bakite dao"
+      }
+    },
+    "keyboard": "Type a question",
+    "mic": "Speak instead",
+    "stop": "Stop",
+    "held": "{{seconds}} / 0:30",
+    "release": "Let go to send"
   },
   "memory": {
     "title": "Remembered:",
@@ -74,7 +107,6 @@
     "placeholder": "Type a question…",
     "send": "Send",
     "new": "New chat",
-    "empty": "For example: Axio 2014 front brake pad ache?",
     "stock": "Stock",
     "rack": "Rack",
     "out": "Out of stock",
@@ -89,14 +121,23 @@
       "aftermarket": "Non-genuine",
       "reconditioned": "Reconditioned"
     },
-    "speak": "Hear the answers"
+    "speak": "Hear the answers",
+    "price": "price",
+    "in_stock": "In stock:",
+    "undo_left": "{{minutes}} min left"
   },
   "confirm": {
     "title": "Save this?",
     "yes": "Yes",
     "no": "No",
-    "left": "{{count}} s left",
-    "expired": "Time is up; nothing was saved. Ask again."
+    "left": "{{seconds}} s left",
+    "expired": "Time is up; nothing was saved. Ask again.",
+    "say": "You can also say yes or no",
+    "unsure": "Did I hear this right? Check it",
+    "result_done": "Saved",
+    "result_cancelled": "Cancelled; nothing was saved",
+    "result_failed": "Not saved",
+    "result_review": "Not sure; check the shop app"
   },
   "history": {
     "title": "History",
@@ -110,10 +151,12 @@
     "status_failed": "Not done",
     "status_review": "Not sure; check the shop app",
     "status_cancelled": "Cancelled",
-    "status_undone": "Undone"
+    "status_undone": "Undone",
+    "today": "Today",
+    "yesterday": "Yesterday"
   },
   "settings": {
-    "title": "Settings",
+    "title": "More",
     "shop": "Shop",
     "signed_in_as": "Signed in as",
     "role_owner": "Owner",
@@ -128,7 +171,17 @@
     "server_ok": "Server found. Saved.",
     "server_bad": "No DokaanBondhu server answers at this address.",
     "server_https": "Only https addresses are allowed.",
-    "sign_out": "Sign out"
+    "sign_out": "Sign out",
+    "signed_in_role": "Signed in as {{role}}: {{name}}",
+    "group_app": "App",
+    "group_shop": "Shop (owner only)",
+    "group_other": "Other",
+    "staff_price_note": "Staff may say their own price in a sale",
+    "setup_note": "Connect the shop's database and app",
+    "advanced_note": "Server address",
+    "sign_out_ask": "Sign out?",
+    "sign_out_ask_text": "You will need your email and password to sign in again.",
+    "version": "DokaanBondhu {{version}}"
   },
   "staff": {
     "title": "Staff",
@@ -144,11 +197,14 @@
     "active": "Active",
     "disabled": "Off",
     "owner": "Owner",
-    "none": "No staff logins yet."
+    "none": "No staff logins yet.",
+    "add_button": "New staff",
+    "disable_ask": "Turn off {{name}}'s login?",
+    "disable_ask_text": "They will not be able to sign in. Their earlier actions stay in History."
   },
   "setup": {
     "title": "Setup",
-    "open": "Connect the shop's database (setup)",
+    "open": "Connect the shop's app (setup)",
     "step_connection": "1. Database connection",
     "dialect": "Database type",
     "host": "Host",
@@ -210,14 +266,22 @@
       "unit": "Unit"
     },
     "our": {
-      "price_tier": { "retail": "Retail", "paikari": "Paikari (trade)" },
+      "price_tier": {
+        "retail": "Retail",
+        "paikari": "Paikari (trade)"
+      },
       "quality": {
         "genuine": "Genuine",
         "aftermarket": "Non-genuine",
         "reconditioned": "Reconditioned",
         "used": "Used"
       },
-      "position": { "front": "Front", "rear": "Rear", "left": "Left", "right": "Right" },
+      "position": {
+        "front": "Front",
+        "rear": "Rear",
+        "left": "Left",
+        "right": "Right"
+      },
       "unit": {
         "piece": "Piece",
         "set": "Set",
@@ -285,6 +349,14 @@
       "brand": "Brand",
       "customer": "Customer",
       "supplier": "Supplier"
+    },
+    "progress": "{{done}} of {{total}} steps done",
+    "step_state": {
+      "done": "Done",
+      "todo": "To do",
+      "attention": "Needs your choice",
+      "locked": "After the step before",
+      "words": "{{shown}} new"
     }
   }
 }

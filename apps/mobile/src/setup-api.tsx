@@ -8,7 +8,7 @@ import type {
   HostFeatures,
 } from "@dokaanbondhu/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Switch, Text, View } from "react-native";
 import { api, errorText } from "./lib/api";
@@ -18,6 +18,19 @@ import { Button, Chips, colors, Field, Heading, Note, styles } from "./ui";
 // Setup, the API half (spec 15.2, 11.8, 11.12, 11.13; D134): the shop app's API connection, its actions found in its
 // OpenAPI description (switched on only once the sandbox check has verified them and their fields are confirmed), and
 // the shop app's feature list. Owner only; shown below the database half.
+
+/** A step's title on the setup page; the step list at the top scrolls to it (D166). */
+export function StepHeading(props: {
+  id: string;
+  children: ReactNode;
+  onStepLayout?: (id: string, y: number) => void;
+}) {
+  return (
+    <View onLayout={(event) => props.onStepLayout?.(props.id, event.nativeEvent.layout.y)}>
+      <Heading>{props.children}</Heading>
+    </View>
+  );
+}
 
 function useErrorText() {
   const { t } = useTranslation();
@@ -119,7 +132,7 @@ function ApiConnectionSummary(props: {
     onSuccess: props.onTested,
   });
   return (
-    <View style={styles.card}>
+    <View style={styles.box}>
       <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>{connection.base_url}</Text>
       <Note>
         {t(connection.auth_type === "bearer" ? "setup.api_auth_bearer" : "setup.api_auth_key")}
@@ -156,7 +169,7 @@ function ActionCard({ capability }: { capability: CapabilityView }) {
   });
   const unconfirmed = capability.params.filter((param) => !param.confirmed);
   return (
-    <View style={[styles.card, { gap: 8 }]}>
+    <View style={[styles.box, { gap: 8 }]}>
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>{capability.name}</Text>
@@ -176,11 +189,11 @@ function ActionCard({ capability }: { capability: CapabilityView }) {
         <View style={{ gap: 6 }}>
           <Note>{t("setup.action_fields", { count: unconfirmed.length })}</Note>
           {unconfirmed.map((param) => (
-            <Note key={param.path}>
+            <Text key={param.path} style={{ fontSize: 13, color: colors.muted }}>
               {param.path}
               {param.semantic_slot ? ` → ${param.semantic_slot}` : ""}
               {param.entity_concept ? ` (${param.entity_concept})` : ""}
-            </Note>
+            </Text>
           ))}
           <Button
             kind="plain"
@@ -269,12 +282,12 @@ function FeaturesSection({ connectionId }: { connectionId: string }) {
     return view.isLoading ? <Note>{t("common.loading")}</Note> : <Note>{t("setup.features_none")}</Note>;
   const entries = Object.entries(mine.features);
   return (
-    <View style={[styles.card, { gap: 6 }]}>
+    <View style={[styles.box, { gap: 6 }]}>
       {entries.length === 0 ? <Note>{t("setup.features_none")}</Note> : null}
       {entries.map(([key, value]) => (
-        <Note key={key}>
+        <Text key={key} style={{ fontSize: 13, color: colors.muted }}>
           {key}: {Array.isArray(value) ? value.join(", ") : String(value)}
-        </Note>
+        </Text>
       ))}
       <Note tone={mine.confirmed_at ? "ok" : "muted"}>
         {t(mine.confirmed_at ? "setup.features_confirmed" : "setup.features_detected")}
@@ -292,7 +305,14 @@ function FeaturesSection({ connectionId }: { connectionId: string }) {
 }
 
 /** The API half of setup: its steps, each shown once the one before it works. */
-export function ApiSetup({ connections }: { connections: ConnectionView[] }) {
+export function ApiSetup({
+  connections,
+  onStepLayout,
+}: {
+  connections: ConnectionView[];
+  /** Where each step's title is, for the step list (D166). */
+  onStepLayout?: (id: string, y: number) => void;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
@@ -308,7 +328,9 @@ export function ApiSetup({ connections }: { connections: ConnectionView[] }) {
   };
   return (
     <>
-      <Heading>{t("setup.step_api")}</Heading>
+      <StepHeading id="api" onStepLayout={onStepLayout}>
+        {t("setup.step_api")}
+      </StepHeading>
       {tested ? <Note tone={tested.ok ? "ok" : "danger"}>{testNote(tested, t)}</Note> : null}
       {current && !adding ? (
         <>
@@ -320,9 +342,13 @@ export function ApiSetup({ connections }: { connections: ConnectionView[] }) {
       )}
       {current?.status === "active" && !adding ? (
         <>
-          <Heading>{t("setup.step_actions")}</Heading>
+          <StepHeading id="actions" onStepLayout={onStepLayout}>
+            {t("setup.step_actions")}
+          </StepHeading>
           <ActionsSection connectionId={current.id} />
-          <Heading>{t("setup.step_features")}</Heading>
+          <StepHeading id="features" onStepLayout={onStepLayout}>
+            {t("setup.step_features")}
+          </StepHeading>
           <FeaturesSection connectionId={current.id} />
         </>
       ) : null}

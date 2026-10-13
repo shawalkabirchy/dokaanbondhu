@@ -11,5 +11,5 @@ export default function Index() {
       </View>
     );
   }
-  return <Redirect href={session ? "/voice" : "/login"} />;
+  return <Redirect href={session ? "/assistant" : "/login"} />;
 }

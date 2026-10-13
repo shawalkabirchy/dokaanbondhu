@@ -4,8 +4,8 @@ import type { AssistantMessage, ConfirmEvent } from "./lib/chat-store";
 
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 
-// What a reply shows (spec 15.8): a table event's money cells arrive in whole taka (D110); a part card
-// shows stock, price and rack, and says when fitment is not recorded.
+// What a reply shows (spec 15.8, D166): a table event's money cells arrive in whole taka (D110); a part card
+// shows stock, price and rack, and says when fitment is not recorded or the part is out of stock.
 
 describe("reply content", () => {
   it("shows a table's money in taka, with Bangla digits in Bangla", async () => {
@@ -63,10 +63,32 @@ describe("reply content", () => {
         ]}
       />,
     );
-    expect(screen.getByText("chat.stock: ৩ সেট")).toBeTruthy();
-    expect(screen.getByText("chat.prices.retail: ৪,৫০০ টাকা")).toBeTruthy();
-    expect(screen.getByText("chat.rack: B-3")).toBeTruthy();
+    expect(screen.getByText("chat.in_stock ৩ সেট")).toBeTruthy();
+    expect(screen.getByText("chat.prices.retail chat.price")).toBeTruthy();
+    expect(screen.getByText("৪,৫০০ টাকা")).toBeTruthy();
+    expect(screen.getByText("chat.rack B-3")).toBeTruthy();
     expect(screen.getByText("chat.no_fitment")).toBeTruthy();
+  });
+
+  it("says a part is out of stock", async () => {
+    await render(
+      <PartCards
+        language="bn"
+        parts={[
+          {
+            host_part_id: "p2",
+            name: "Air filter",
+            unit: "piece",
+            stock: 0,
+            price_taka: { retail: 650 },
+            rack: null,
+            fitment_verified: true,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("chat.out")).toBeTruthy();
+    expect(screen.queryByText("chat.no_fitment")).toBeNull();
   });
 
   it("shows the working spinner only until the answer's text arrives, though its audio may still come (D101)", async () => {
@@ -130,5 +152,63 @@ describe("confirmation sheet", () => {
     await render(<ConfirmSheet confirm={confirm(-5)} active onDecide={jest.fn()} />);
     expect(screen.queryByText("confirm.yes")).toBeNull();
     expect(screen.getByText("confirm.expired")).toBeTruthy();
+  });
+
+  // D166: once decided, the sheet says what became of it.
+  it("says saved or cancelled once decided, with no Yes or No", async () => {
+    const result = (status: "done" | "cancelled") =>
+      ({ type: "action_result", action_id: confirm(45).action_id, status, undo_available: false }) as const;
+    const { rerender } = await render(
+      <ConfirmSheet confirm={confirm(45)} active={false} result={result("done")} onDecide={jest.fn()} />,
+    );
+    expect(screen.getByText("confirm.result_done")).toBeTruthy();
+    expect(screen.queryByText("confirm.yes")).toBeNull();
+    expect(screen.queryByText("Rahim Motors-এর বাকি ক্রেডিট লিমিট ছাড়িয়ে যাবে।")).toBeNull();
+    await rerender(
+      <ConfirmSheet confirm={confirm(45)} active={false} result={result("cancelled")} onDecide={jest.fn()} />,
+    );
+    expect(screen.getByText("confirm.result_cancelled")).toBeTruthy();
+  });
+});
+
+// D166: ফিরিয়ে নিন under a saved action while it can be undone.
+describe("undo under a saved action", () => {
+  const saved = (undoUntil?: number): AssistantMessage => ({
+    kind: "assistant",
+    id: "r2",
+    turnId: "t2",
+    status: null,
+    texts: ["হয়ে গেছে।"],
+    cards: [],
+    tables: [],
+    choices: null,
+    confirm: null,
+    result: {
+      type: "action_result",
+      action_id: "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e",
+      status: "done",
+      undo_available: undoUntil !== undefined,
+    },
+    error: null,
+    done: true,
+    ...(undoUntil !== undefined ? { undoUntil } : {}),
+  });
+  const props = { language: "bn" as const, newest: true, busy: false, onChoose: () => undefined };
+
+  it("sends the undo of the saved action", async () => {
+    const onUndo = jest.fn();
+    const { unmount } = await render(
+      <AssistantBubble message={saved(Date.now() + 10 * 60_000)} {...props} onUndo={onUndo} />,
+    );
+    await fireEvent.press(screen.getByText("history.undo"));
+    expect(onUndo).toHaveBeenCalledWith("0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e");
+    await unmount();
+  });
+
+  it("offers no undo for an action that cannot be undone, or after its 10 minutes", async () => {
+    const { rerender } = await render(<AssistantBubble message={saved()} {...props} onUndo={jest.fn()} />);
+    expect(screen.queryByText("history.undo")).toBeNull();
+    await rerender(<AssistantBubble message={saved(Date.now() - 1000)} {...props} onUndo={jest.fn()} />);
+    expect(screen.queryByText("history.undo")).toBeNull();
   });
 });

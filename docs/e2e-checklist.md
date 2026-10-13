@@ -17,20 +17,24 @@ Write each run into the table at the end. A failed line gets a note there and a 
       switch off when the emulator restarts).
 - [ ] Signed in as the test shop's **owner**. In setup the connection is Active, the data map is confirmed and the
       catalog has been synced.
-- [ ] The speech worker is awake: open the app and wait until the voice page says "ভয়েস প্রস্তুত।" (after a quiet
+- [ ] The speech worker is awake: open the app and wait until the assistant page says "ভয়েস প্রস্তুত।" (after a quiet
       hour it can take up to 6 minutes; the app wakes it by itself, D164).
 
 ## A. Sign-in and screens
 
-| #   | Do                                                                  | Expect                                                              |
-| --- | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| A1  | Sign out; sign in with a wrong password                             | "Wrong email or password."                                          |
-| A2  | Sign in as the owner                                                | The Voice tab opens; the tabs are Voice, Chat, History, Staff, More |
-| A3  | Settings (gear): switch the language to English, then back to বাংলা | Every label changes at once and stays after a restart               |
+| #   | Do                                                                 | Expect                                                                                      |
+| --- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| A1  | Sign out; sign in with a wrong password                            | "Wrong email or password."                                                                  |
+| A2  | Sign in as the owner                                               | The assistant page opens; the tabs are সহকারী, ইতিহাস, স্টাফ, আরও, each with an icon (D166) |
+| A3  | আরও: switch the language to English, then back to বাংলা            | Every label changes at once and stays after a restart                                       |
+| A4  | On the assistant page tap the keyboard button, then the mic button | The typing bar replaces the round mic, and the mic comes back                               |
+| A5  | Empty page: tap an example question                                | It goes into the typing bar and is not sent; edit it and send it                            |
+| A6  | আরও → লগআউট                                                        | It asks first; "না" keeps you signed in                                                     |
 
 ## B. Chat (typed)
 
-Type each line in a **new chat**; the second line of a row is typed after the first answer.
+Tap the keyboard button and type each line in a **new conversation** ("নতুন আলাপ" at the top); the second line of a
+row is typed after the first answer.
 
 | #   | Bangla                                                   | Banglish                               | Expect (both)                                                                                                                               |
 | --- | -------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +51,8 @@ Type each line in a **new chat**; the second line of a row is typed after the fi
 
 ## C. Voice (push-to-talk)
 
-Speak at a normal distance in a quiet room. Hold the button, speak, let go.
+Speak at a normal distance in a quiet room. Hold the round button, speak, let go: the phone vibrates on press and on
+release, the ring grows while you speak, and the line under the button goes শুনছি… → বুঝছি… → খুঁজছি… → বলছি… (D166).
 
 | #   | Say (Bangla)                                                   | Say (Banglish)                                   | Expect (both)                                                                                                                                                               |
 | --- | -------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -62,6 +67,7 @@ Speak at a normal distance in a quiet room. Hold the button, speak, let go.
 | C9  | Stop the server (Ctrl+C), wait 30 s, then start it again       |                                                  | The offline banner shows while it is down ("অ্যাসিস্ট্যান্ট এখন অফলাইন…") and goes away once it is back                                                                     |
 | C10 | Close the app, wait 10 minutes, open it again                  |                                                  | Under the button "ভয়েস প্রস্তুত হচ্ছে…" with a spinner; after up to 6 minutes "ভয়েস প্রস্তুত।" for 5 s. A question asked meanwhile is answered once voice is ready (D164) |
 | C11 | Demo phone only: leave the app closed 20 minutes, then open it |                                                  | The banner says "অ্যাসিস্ট্যান্ট চালু হচ্ছে…" (not "অফলাইন") for about a minute, then goes; then C10's lines (D164)                                                         |
+| C12 | While an answer is being spoken, tap "থামান" under the button  |                                                  | The speech stops at once; nothing new is recorded                                                                                                                           |
 
 ## D. Setup and learned words (owner)
 
@@ -84,14 +90,14 @@ Speak at a normal distance in a quiet room. Hold the button, speak, let go.
 
 Ask in a **new chat**, one row after the other; the arrows are the next questions of the same conversation.
 
-| #   | Bangla                                                                         | Banglish                                                         | Expect (both)                                                                                                                                                                            |
-| --- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1  | এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে? → এয়ার ফিল্টার আছে?                       | Axio 2014 front brake pad ache? → air filter ache?               | The second answer is "এক্সিও ২০১৪-এর এয়ার ফিল্টার …" (A-1, A-2), without "কোন গাড়ির?"; above the input: "মনে আছে: এক্সিও ২০১৪ ✕"                                                       |
-| F2  | → প্রিমিওর এয়ার ফিল্টার আছে?                                                  | → premio r air filter ache?                                      | "কোন বছরের প্রিমিও?": the Axio's year is not used for another car                                                                                                                        |
-| F3  | নিউ ঢাকা গ্যারেজের বাকি কত? → এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে?              | New Dhaka Garage er baki koto? → Axio 2014 front brake pad ache? | The garage may show on the memory line; the pads are still at the **normal** price (৪,৫০০ and ১,৮০০ টাকা) with no rate sentence and no customer's name (D141); each card shows one price |
-| F4  | → এক্সিও ২০১৪ সামনের ব্রেক প্যাডের পাইকারি দাম কত?                             | → Axio 2014 front brake pad er paikari dam koto?                 | The paikari prices (৪,২০০ and ১,৬০০ টাকা, the app's garage price), ending "দাম পাইকারি রেটে।"; only two prices exist, normal and paikari (D142)                                          |
-| F5  | Ask by voice "ব্রেক প্যাড আছে?", then open the Chat tab and type "এক্সিও ২০১৪" | Voice "brake pad ache?", then type "axio 2014"                   | The voice question and its "কোন গাড়ির?" are on the Chat tab too; the typed answer brings the B1 list (one conversation for both tabs)                                                   |
-| F6  | Tap "নতুন আলাপ"                                                                |                                                                  | Both tabs are empty and the memory line is gone                                                                                                                                          |
+| #   | Bangla                                                                               | Banglish                                                         | Expect (both)                                                                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে? → এয়ার ফিল্টার আছে?                             | Axio 2014 front brake pad ache? → air filter ache?               | The second answer is "এক্সিও ২০১৪-এর এয়ার ফিল্টার …" (A-1, A-2), without "কোন গাড়ির?"; above the input: "মনে আছে: এক্সিও ২০১৪ ✕"                                                       |
+| F2  | → প্রিমিওর এয়ার ফিল্টার আছে?                                                        | → premio r air filter ache?                                      | "কোন বছরের প্রিমিও?": the Axio's year is not used for another car                                                                                                                        |
+| F3  | নিউ ঢাকা গ্যারেজের বাকি কত? → এক্সিও ২০১৪ সামনের ব্রেক প্যাড আছে?                    | New Dhaka Garage er baki koto? → Axio 2014 front brake pad ache? | The garage may show on the memory line; the pads are still at the **normal** price (৪,৫০০ and ১,৮০০ টাকা) with no rate sentence and no customer's name (D141); each card shows one price |
+| F4  | → এক্সিও ২০১৪ সামনের ব্রেক প্যাডের পাইকারি দাম কত?                                   | → Axio 2014 front brake pad er paikari dam koto?                 | The paikari prices (৪,২০০ and ১,৬০০ টাকা, the app's garage price), ending "দাম পাইকারি রেটে।"; only two prices exist, normal and paikari (D142)                                          |
+| F5  | Ask by voice "ব্রেক প্যাড আছে?", then tap the keyboard button and type "এক্সিও ২০১৪" | Voice "brake pad ache?", then type "axio 2014"                   | The typed answer brings the B1 list in the same conversation, under the voice question and its "কোন গাড়ির?"                                                                             |
+| F6  | Tap "নতুন আলাপ"                                                                      |                                                                  | The page is empty and the memory line is gone                                                                                                                                            |
 
 ## G. Writes: sale, payment, stock-in and undo (step 5, D136 to D138)
 
@@ -108,7 +114,8 @@ answers below add to those figures.
 | G1  | Voice: রহিম মোটরসকে এক্সিওর সামনের ব্রেক প্যাড বাকিতে দাও → ২০১৪ → নন-জেনুইন → দুই সেট                                           | Voice: Rahim Motors ke axior samner brake pad bakite dao → 2014 → non genuine → dui set                                      | A.6: the year, then the quality (with buttons), then "কয় সেট?"; the sheet says "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?" |
 | G2  | Say "হ্যাঁ"                                                                                                                      | Say "ha"                                                                                                                     | "হয়ে গেছে। Rahim Motors-এর মোট বাকি এখন … টাকা। ব্রেক প্যাড B-3 তাকে আছে।": the due went up by ৩,২০০; GearGrid shows the sale                                                   |
 | G3  | History → Undo on that sale                                                                                                      |                                                                                                                              | "আগের কাজটা ফিরিয়ে নেওয়া হয়েছে।" with the due as before G1; the sale is void in GearGrid                                                                                      |
-| G4  | Chat: রহিম থেকে ১০ হাজার টাকা জমা নাও → tap "Rahim Motors" → tap No on the sheet                                                 | Chat: Rahim theke 10 hajar taka joma nao → tap "Rahim Motors" → No                                                           | Two name buttons; the sheet says "Rahim Motors থেকে ১০,০০০ টাকা জমা, নগদ। ঠিক আছে?"; No gives "বাতিল করা হয়েছে, কিছু সেভ হয়নি।" and the due does not change                    |
+| G3b | Make G1 and G2 again, then tap "ফিরিয়ে নিন" under the answer                                                                    |                                                                                                                              | The sheet showed "সেভ হয়েছে"; the undo's answer comes in the same conversation and the due is as before (D166)                                                                  |
+| G4  | Typed: রহিম থেকে ১০ হাজার টাকা জমা নাও → tap "Rahim Motors" → tap No on the sheet                                                | Typed: Rahim theke 10 hajar taka joma nao → tap "Rahim Motors" → No                                                          | Two name buttons; the sheet says "Rahim Motors থেকে ১০,০০০ টাকা জমা, নগদ। ঠিক আছে?"; No gives "বাতিল করা হয়েছে, কিছু সেভ হয়নি।" and the due does not change                    |
 | G5  | নবাবপুর অটো পার্টস থেকে এক্সিও ২০১৪ সামনের নন-জেনুইন ব্রেক প্যাড ৫ সেট কিনলাম, প্রতি সেট ১২০০ টাকা, বাকিতে → না, ৪ সেট → tap Yes | Nawabpur Auto Parts theke axio 2014 samner non genuine brake pad 5 set kinlam, proti set 1200 taka, bakite → na, 4 set → Yes | The sheet first says ৫ সেট, মোট ৬,০০০ টাকা, then ৪ সেট, মোট ৪,৮০০ টাকা; Yes gives "হয়ে গেছে। Nawabpur Auto Parts Ltd.-এর পাওনা এখন … টাকা।"; then undo it in History            |
 | G6  | Sign in as staff, make G1 again and say yes; open History                                                                        |                                                                                                                              | Staff see only their own actions; Undo works from the same chat within 10 minutes; the owner sees both users' actions                                                            |
 

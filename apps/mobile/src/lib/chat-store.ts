@@ -8,6 +8,9 @@ import { ApiError } from "./api";
 
 export type Channel = "voice" | "chat";
 
+/** How long a saved action's reply offers its undo (D38: staff may undo within 10 minutes; D166). */
+export const UNDO_MS = 10 * 60_000;
+
 export type PartCard = Extract<ReplyEvent, { type: "cards" }>["parts"][number];
 export type TableEvent = Extract<ReplyEvent, { type: "table" }>;
 export type ChoicesEvent = Extract<ReplyEvent, { type: "choices" }>;
@@ -34,6 +37,8 @@ export interface AssistantMessage {
   confirm: ConfirmEvent | null;
   /** What became of an action decided in this turn. */
   result: ActionResultEvent | null;
+  /** Until when the reply offers ফিরিয়ে নিন: a saved action that can be undone (D166). */
+  undoUntil?: number;
   /** An error message key (errors.<CODE> or common.error). */
   error: string | null;
   done: boolean;
@@ -62,7 +67,11 @@ export function applyEvent(message: AssistantMessage, event: ReplyEvent): Assist
     case "confirm":
       return { ...message, confirm: event };
     case "action_result":
-      return { ...message, result: event };
+      return {
+        ...message,
+        result: event,
+        ...(event.status === "done" && event.undo_available ? { undoUntil: Date.now() + UNDO_MS } : {}),
+      };
     case "error":
       return { ...message, error: event.message_key };
     case "done":
@@ -103,6 +112,11 @@ export interface ChatState {
   send: (input: ChatInput, options?: SendOptions) => Promise<void>;
   /** The confirmation sheet's yes or no (POST /actions/{id}/decision): a turn of the conversation, shown as said. */
   decide: (actionId: string, decision: "yes" | "no", label: string, options?: SendOptions) => Promise<void>;
+  /**
+   * ফিরিয়ে নিন under a saved action (POST /actions/{id}/undo with this conversation, D38, D166): a turn of the
+   * conversation, shown as said; the button goes at once.
+   */
+  undo: (actionId: string, label: string) => Promise<void>;
   /**
    * Any turn: shows the user's words (a voice turn's are filled in by its transcript event) and an assistant message
    * that each reply event updates.
@@ -288,6 +302,23 @@ export function createChatStore(deps: ChatDeps) {
           options.tap,
           "status.saving",
         ),
+      undo: async (actionId, label) => {
+        if (get().busy) return;
+        set((state) => ({
+          messages: state.messages.map((message) =>
+            message.kind === "assistant" && message.result?.action_id === actionId
+              ? { ...message, undoUntil: undefined }
+              : message,
+          ),
+        }));
+        await runTurn(
+          label,
+          (conversationId, onEvent) =>
+            deps.stream(`/actions/${actionId}/undo`, { conversation_id: conversationId }, onEvent),
+          undefined,
+          "status.undoing",
+        );
+      },
     };
   });
 }

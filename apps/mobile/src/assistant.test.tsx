@@ -1,12 +1,14 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AppState } from "react-native";
-import Voice from "../app/(app)/voice";
+import Assistant from "../app/(app)/assistant";
 import { streamTurn, uploadChunk } from "./lib/stream";
 
-// The voice page (spec 15.3, 15.8) with the recorder, the player and the server replaced: holding the button records,
-// recording stops by itself at 30 s, a quiet clip never reaches finish, and the button is never locked while speech
-// only had trouble or while a question is being recorded (D111); while the speech worker wakes the page says so and
-// the button works, then it says voice is ready, and it keeps the worker awake while in front (D164).
+// The assistant page (spec 15.3, 15.8, D166) with the recorder, the player and the server replaced: holding the button
+// records, recording stops by itself at 30 s, a quiet clip never reaches finish, and the button is never locked while
+// speech only had trouble or while a question is being recorded (D111); while the speech worker wakes the page says
+// so and the button works, then it says voice is ready, and it keeps the worker awake while in front (D164). Typed
+// questions go from the typing bar, spoken only with the speaker on; an example only fills the bar; a spoken answer
+// can be stopped.
 
 const mockRecorder = {
   prepareRecording: jest.fn(async () => undefined),
@@ -26,6 +28,7 @@ jest.mock("expo-crypto", () => {
   return { randomUUID: () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}` };
 });
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
+jest.mock("./lib/haptics", () => ({ buzz: jest.fn() }));
 const mockHealth = {
   health: { speech: "unknown" },
   online: true,
@@ -57,16 +60,18 @@ jest.mock("./lib/audio", () => ({
   },
   playAskAgain: jest.fn(),
   stopPlayback: jest.fn(),
+  usePlayback: jest.requireActual("zustand").create(() => ({ playing: false })),
 }));
 jest.mock("./lib/stream", () => ({ streamTurn: jest.fn(async () => undefined), uploadChunk: jest.fn() }));
 const mockCreateConversation = jest.fn(async (_channel: string) => "conv-1");
+const mockStream = jest.fn(async (_path: string, _body: unknown, _onEvent: unknown) => undefined);
 jest.mock("./lib/chat", () => {
   const { createChatStore } = jest.requireActual("./lib/chat-store");
   let n = 0;
   return {
     useChat: createChatStore({
       createConversation: (channel: string) => mockCreateConversation(channel),
-      stream: async () => undefined,
+      stream: (path: string, body: unknown, onEvent: unknown) => mockStream(path, body, onEvent),
       forget: async () => undefined,
       newId: () => `m${++n}`,
     }),
@@ -81,7 +86,14 @@ const onChunk = async (base64: string) => {
   await config.onAudioStream({ data: base64 });
 };
 
-describe("voice page", () => {
+const audio = () =>
+  jest.requireMock("./lib/audio") as {
+    playAskAgain: jest.Mock;
+    stopPlayback: jest.Mock;
+    usePlayback: { setState: (state: { playing: boolean }) => void };
+  };
+
+describe("assistant page", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
@@ -94,17 +106,19 @@ describe("voice page", () => {
       speechWaking: false,
     });
     mockMe.data.providers.speaks = true;
+    audio().usePlayback.setState({ playing: false });
+    jest.requireMock("./lib/chat").useChat.getState().reset();
   });
   afterEach(() => jest.useRealTimers());
 
-  // D125, D126: one conversation for both pages, recorded as opened by the page that asked first.
+  // D125, D126: one conversation for voice and typing, recorded as opened by voice when the page opens it early.
   it("opens the shared conversation as a voice one", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     expect(mockCreateConversation).toHaveBeenCalledWith("voice");
   });
 
   it("stops recording by itself at 30 s", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     expect(mockRecorder.startRecording).toHaveBeenCalledTimes(1);
@@ -123,7 +137,7 @@ describe("voice page", () => {
 
   // D103: the recorder sends its last partial chunk a moment after stopRecording resolves.
   it("waits for the recorder's last chunk after release and sends it with the question", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(500));
@@ -149,13 +163,23 @@ describe("voice page", () => {
     );
   });
 
+  // D166: what the user sees while holding: listening, with the seconds held.
+  it("says it is listening while the button is held", async () => {
+    await render(<Assistant />);
+    await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
+    expect(screen.getByText("status.listening")).toBeTruthy();
+    expect(screen.getByText("assistant.held")).toBeTruthy();
+    expect(jest.requireMock("./lib/haptics").buzz).toHaveBeenCalledWith("press");
+    await act(async () => jest.advanceTimersByTime(30_000));
+  });
+
   // D115: the reply showed "খুঁজছি…", then "শুনছি…", then "খুঁজছি…"; it now only moves forward.
   it("shows the question being understood, not searched, until the server's first status", async () => {
     let finish: () => void = () => undefined;
     (streamTurn as jest.Mock).mockImplementationOnce(
       () => new Promise<void>((resolve) => (finish = resolve)),
     );
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(500));
@@ -170,7 +194,7 @@ describe("voice page", () => {
   });
 
   it("stops at once after a tap, without the half second more", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(100));
@@ -181,7 +205,7 @@ describe("voice page", () => {
   });
 
   it("drops a chunk that comes after the question was sent, so it never joins the next one", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(500));
@@ -196,7 +220,7 @@ describe("voice page", () => {
   });
 
   it("sends no finish for a quiet clip", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(1_000));
@@ -205,7 +229,7 @@ describe("voice page", () => {
     await act(async () => jest.advanceTimersByTime(500)); // the half second more (D113)
     await act(async () => jest.advanceTimersByTime(700)); // no last chunk comes
     expect(streamTurn).not.toHaveBeenCalled();
-    expect(jest.requireMock("./lib/audio").playAskAgain).toHaveBeenCalled();
+    expect(audio().playAskAgain).toHaveBeenCalled();
     expect(screen.getByText("আবার বলবেন?")).toBeTruthy(); // as text too (D114)
     expect(uploadChunk).toHaveBeenCalled(); // the press was long enough to upload, just too quiet to finish
   });
@@ -213,7 +237,7 @@ describe("voice page", () => {
   // D114: with reading aloud switched off by the developer (AI_SPEAK=off) the app makes no sound at all.
   it("asks again as text only when speaking is switched off", async () => {
     mockMe.data.providers.speaks = false;
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(1_000));
@@ -222,14 +246,14 @@ describe("voice page", () => {
     await act(async () => jest.advanceTimersByTime(500));
     await act(async () => jest.advanceTimersByTime(700));
     expect(screen.getByText("আবার বলবেন?")).toBeTruthy();
-    expect(jest.requireMock("./lib/audio").playAskAgain).not.toHaveBeenCalled();
+    expect(audio().playAskAgain).not.toHaveBeenCalled();
     expect(streamTurn).not.toHaveBeenCalled();
   });
 
   // From the owner's test on 30 Sep (D111): one "audio too short" locked the microphone for five minutes.
   it("keeps the button working when speech had trouble, with a warning", async () => {
     mockHealth.speechTrouble = true;
-    await render(<Voice />);
+    await render(<Assistant />);
     expect(screen.getByText("offline.speech_trouble")).toBeTruthy();
     await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
     expect(mockRecorder.startRecording).toHaveBeenCalledTimes(1);
@@ -238,7 +262,7 @@ describe("voice page", () => {
   it("turns the button off while the server is offline", async () => {
     mockHealth.online = false;
     mockHealth.micAllowed = false;
-    await render(<Voice />);
+    await render(<Assistant />);
     expect(screen.getByText("offline.mic_off")).toBeTruthy();
     await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
     expect(mockRecorder.startRecording).not.toHaveBeenCalled();
@@ -247,7 +271,7 @@ describe("voice page", () => {
   // From the owner on 13 Oct (D164): a server that has not answered yet may be waking on Render, not offline.
   it("shows the button as starting, not voice off, while the server may still be waking", async () => {
     Object.assign(mockHealth, { online: false, micAllowed: false, starting: true });
-    await render(<Voice />);
+    await render(<Assistant />);
     expect(screen.getByText("status.starting")).toBeTruthy();
     expect(screen.queryByText("offline.mic_off")).toBeNull();
     await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
@@ -256,10 +280,10 @@ describe("voice page", () => {
 
   it("says voice is getting ready while the speech worker wakes, then for 5 s that it is ready", async () => {
     Object.assign(mockHealth, { speechWaking: true, health: { speech: "waking" } });
-    await render(<Voice />);
+    await render(<Assistant />);
     expect(screen.getByText("voice.waking")).toBeTruthy();
     Object.assign(mockHealth, { speechWaking: false, health: { speech: "ok" } });
-    await screen.rerender(<Voice />);
+    await screen.rerender(<Assistant />);
     expect(screen.queryByText("voice.waking")).toBeNull();
     expect(screen.getByText("voice.ready")).toBeTruthy();
     await act(async () => jest.advanceTimersByTime(5000));
@@ -268,7 +292,7 @@ describe("voice page", () => {
 
   it("keeps the button working while voice is getting ready", async () => {
     Object.assign(mockHealth, { speechWaking: true, health: { speech: "waking" } });
-    await render(<Voice />);
+    await render(<Assistant />);
     await act(async () => fireEvent(screen.getByRole("button", { name: "voice.hold" }), "pressIn"));
     expect(mockRecorder.startRecording).toHaveBeenCalledTimes(1);
   });
@@ -278,7 +302,7 @@ describe("voice page", () => {
     const before = Object.getOwnPropertyDescriptor(AppState, "currentState")!;
     Object.defineProperty(AppState, "currentState", { value: "active", configurable: true });
     try {
-      const { unmount } = await render(<Voice />);
+      const { unmount } = await render(<Assistant />);
       expect(mockWake).not.toHaveBeenCalled();
       await act(async () => jest.advanceTimersByTime(4 * 60_000));
       expect(mockWake).toHaveBeenCalledTimes(1);
@@ -293,14 +317,14 @@ describe("voice page", () => {
   });
 
   it("finishes and sends a question even when the server goes offline while the button is held", async () => {
-    await render(<Voice />);
+    await render(<Assistant />);
     const button = screen.getByRole("button", { name: "voice.hold" });
     await act(async () => fireEvent(button, "pressIn"));
     await act(async () => jest.advanceTimersByTime(500));
     await act(async () => onChunk(loud()));
     mockHealth.online = false;
     mockHealth.micAllowed = false;
-    await screen.rerender(<Voice />);
+    await screen.rerender(<Assistant />);
     await act(async () => void fireEvent(button, "pressOut"));
     await act(async () => jest.advanceTimersByTime(500)); // the half second more (D113)
     await act(async () => jest.advanceTimersByTime(700));
@@ -309,5 +333,46 @@ describe("voice page", () => {
       expect.objectContaining({ chunk_count: 1 }),
       expect.any(Function),
     );
+  });
+
+  // D166: typing on the same page, in the same conversation.
+  it("sends a typed question from the typing bar, asking for audio only while the speaker is on", async () => {
+    await render(<Assistant />);
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "assistant.keyboard" })));
+    await act(async () =>
+      fireEvent.changeText(screen.getByLabelText("chat.placeholder"), "axio 2014 brake pad ache?"),
+    );
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "chat.send" })));
+    expect(mockStream).toHaveBeenCalledWith(
+      "/chat/messages",
+      { conversation_id: "conv-1", text: "axio 2014 brake pad ache?" },
+      expect.any(Function),
+    );
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "chat.speak" })));
+    await act(async () => fireEvent.changeText(screen.getByLabelText("chat.placeholder"), "এক্সিও ২০১৪"));
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "chat.send" })));
+    expect(mockStream).toHaveBeenLastCalledWith(
+      "/chat/messages",
+      { conversation_id: "conv-1", text: "এক্সিও ২০১৪", speak: true },
+      expect.any(Function),
+    );
+    // Back to the talk button.
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "assistant.mic" })));
+    expect(screen.getByRole("button", { name: "voice.hold" })).toBeTruthy();
+  });
+
+  it("puts an example question in the typing bar without sending it", async () => {
+    await render(<Assistant />);
+    await act(async () => fireEvent.press(screen.getByText("assistant.examples.sale.text")));
+    expect(screen.getByDisplayValue("assistant.examples.sale.text")).toBeTruthy();
+    expect(mockStream).not.toHaveBeenCalled();
+  });
+
+  it("shows speaking with a stop button while an answer plays, and stops it", async () => {
+    await render(<Assistant />);
+    await act(async () => audio().usePlayback.setState({ playing: true }));
+    expect(screen.getByText("status.speaking")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByText("assistant.stop")));
+    expect(audio().stopPlayback).toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { File, Paths } from "expo-file-system";
+import { create } from "zustand";
 import type { PlayerDeps } from "./reply-player";
 
 // The phone's side of spoken replies (spec 15.3, 15.4): MP3 files in the cache folder played with expo-audio, one at
@@ -7,19 +8,26 @@ import type { PlayerDeps } from "./reply-player";
 
 let current: { player: AudioPlayer; finish: () => void } | null = null;
 
+/** Whether an answer is being spoken now, for the assistant page's "বলছি…" and its stop button (D166). */
+export const usePlayback = create<{ playing: boolean }>(() => ({ playing: false }));
+
 function playSource(source: string | number): Promise<void> {
   return new Promise((resolve) => {
     const player = createAudioPlayer(source);
     const finish = () => {
       subscription.remove();
       player.remove();
-      if (current?.player === player) current = null;
+      if (current?.player === player) {
+        current = null;
+        usePlayback.setState({ playing: false });
+      }
       resolve();
     };
     const subscription = player.addListener("playbackStatusUpdate", (status) => {
       if (status.didJustFinish) finish();
     });
     current = { player, finish };
+    usePlayback.setState({ playing: true });
     player.play();
   });
 }

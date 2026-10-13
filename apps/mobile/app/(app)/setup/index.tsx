@@ -1,30 +1,36 @@
 import {
   appWordOurValues,
   type AppWordsView,
+  type CapabilityView,
   type CatalogSyncResult,
   type ConnectionCreate,
   type ConnectionTest,
   type ConnectionView,
   type EntityView,
+  type FeaturesView,
   type PaikariPriceView,
   type ReportsView,
   type SchemaView,
   type WordsView,
 } from "@dokaanbondhu/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { banglaDigits } from "@dokaanbondhu/core";
+import { router } from "expo-router";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { api, errorText } from "../../../src/lib/api";
 import { takaText } from "../../../src/lib/money";
-import { ApiSetup } from "../../../src/setup-api";
+import { ApiSetup, StepHeading } from "../../../src/setup-api";
 import { useMe } from "../../../src/lib/session";
 import { useDeviceSettings } from "../../../src/lib/settings-store";
-import { Button, Chips, colors, Field, Heading, Note, Screen, styles } from "../../../src/ui";
+import { radius, space, type as fontSize } from "../../../src/theme";
+import { Badge, Button, Card, Chips, colors, Field, Icon, Note, Screen, styles } from "../../../src/ui";
 
-// Setup (spec 15.2): the database half (11.3: the connection, the schema map review with sample values as they will be
-// spoken, the catalog sync, the stock-value formula, the app's own words (D121, D122), and the words the assistant
-// learned (D102)), then the API half (src/setup-api.tsx). Owner only.
+// Setup (spec 15.2): at the top the list of its steps, each ticked once the app knows it is done (D166); then the
+// database half (11.3: the connection, the schema map review with sample values as they will be spoken, the catalog
+// sync, the stock-value formula, the app's own words (D121, D122), and the words the assistant learned (D102)), then
+// the API half (src/setup-api.tsx). Owner only.
 
 type Language = "bn" | "en";
 
@@ -140,7 +146,7 @@ function ConnectionSummary(props: { connection: ConnectionView; onTested: (test:
     onSuccess: props.onTested,
   });
   return (
-    <View style={styles.card}>
+    <View style={styles.box}>
       <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>
         {connection.username}@{connection.host}/{connection.database}
       </Text>
@@ -180,7 +186,7 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
     onSuccess: (data) => props.onSchema(data.schema),
   });
   return (
-    <View style={styles.card}>
+    <View style={styles.box}>
       <Text style={{ fontSize: 18, fontWeight: "700", color: colors.ink }}>
         {t(`setup.concepts.${entity.concept}`, { defaultValue: entity.concept })} ({entity.host_table})
       </Text>
@@ -189,7 +195,7 @@ function EntityCard(props: { entity: EntityView; onSchema: (schema: SchemaView) 
       </Note>
       {entity.fields.map((field) => (
         <View key={field.concept_field} style={{ gap: 4 }}>
-          <Text style={{ fontSize: 15, color: colors.muted }}>
+          <Text style={{ fontSize: 13, color: colors.faint }}>
             {field.concept_field} ← {field.host_table}.{field.host_column}
           </Text>
           {/* Keys and links are shown by column only: their sample values mean nothing to an owner. */}
@@ -372,7 +378,7 @@ function AppWordsSection({ connectionId }: { connectionId: string }) {
             {t(`setup.app_word_group.${concept}`)}
           </Text>
           {groups![concept].map((word) => (
-            <View key={word.value} style={styles.card}>
+            <View key={word.value} style={styles.box}>
               <Text style={{ fontSize: 18, color: colors.ink }}>“{word.value}”</Text>
               <Note tone={word.our ? "muted" : "danger"}>
                 {t(concept === "price_tier" ? "setup.app_words_customers" : "setup.app_words_parts", {
@@ -424,7 +430,7 @@ function PaikariSection({ connectionId, language }: { connectionId: string; lang
   const view = paikari.data?.paikari;
   if (!view || view.options.length < 2) return null;
   return (
-    <View style={[styles.card, { gap: 8 }]}>
+    <View style={[styles.box, { gap: 8 }]}>
       <Text style={{ fontSize: 18, fontWeight: "600", color: colors.ink }}>
         {t("setup.paikari_question")}
       </Text>
@@ -469,7 +475,7 @@ function WordsSection() {
       <Note>{t("setup.words_note")}</Note>
       {view && view.suggestions.length === 0 ? <Note>{t("setup.words_none")}</Note> : null}
       {view?.suggestions.map((word) => (
-        <View key={word.id} style={styles.card}>
+        <View key={word.id} style={styles.box}>
           <Text style={{ fontSize: 18, color: colors.ink }}>
             “{word.heard}” → {word.value}
           </Text>
@@ -500,33 +506,269 @@ function WordsSection() {
   );
 }
 
-/** The setup page: its steps, each shown once the one before it works. */
+type StepState = "done" | "todo" | "attention" | "locked" | "plain";
+
+interface Step {
+  key: string;
+  title: string;
+  state: StepState;
+  /** Counted in "5 of 7 steps done"; catalog sync and learned words are kept up, never finished. */
+  counts: boolean;
+  /** A count of new things to look at, beside the step. */
+  badge?: string;
+}
+
+const STEP_CIRCLE: Record<StepState, { bg: string; ink: string; border?: string }> = {
+  done: { bg: colors.green, ink: colors.white },
+  todo: { bg: colors.card, ink: colors.greenInk, border: colors.green },
+  attention: { bg: colors.warnSoft, ink: colors.warnInk },
+  locked: { bg: colors.chip, ink: colors.faint },
+  plain: { bg: colors.chip, ink: "#3b444c" },
+};
+
+/** The steps at a glance (D166): done, to do, waiting for the owner's choice, or for the step before. */
+function StepList(props: { steps: Step[]; onOpen: (key: string) => void }) {
+  const { t } = useTranslation();
+  const language = useDeviceSettings((state) => state.language);
+  const digits = (value: number) => (language === "bn" ? banglaDigits(String(value)) : String(value));
+  const counted = props.steps.filter((step) => step.counts);
+  const done = counted.filter((step) => step.state === "done").length;
+  const percent = Math.round((100 * done) / Math.max(1, counted.length));
+  return (
+    <>
+      <Card padded>
+        <Text style={local.progressTitle}>
+          {t("setup.progress", { done: digits(done), total: digits(counted.length) })}
+        </Text>
+        <View style={local.bar}>
+          <View style={[local.barFill, { width: `${percent}%` as `${number}%` }]} />
+        </View>
+      </Card>
+      <Card rows>
+        {props.steps.map((step, index) => {
+          const circle = STEP_CIRCLE[step.state];
+          return (
+            <Pressable
+              key={step.key}
+              accessibilityRole="button"
+              onPress={() => props.onOpen(step.key)}
+              style={({ pressed }) => [
+                local.step,
+                step.state === "attention" && local.stepAttention,
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <View
+                style={[
+                  local.circle,
+                  { backgroundColor: circle.bg },
+                  circle.border ? { borderWidth: 2, borderColor: circle.border } : null,
+                ]}
+              >
+                {step.state === "done" ? (
+                  <Icon name="check-bold" size={16} color={circle.ink} />
+                ) : step.state === "attention" ? (
+                  <Icon name="exclamation-thick" size={16} color={circle.ink} />
+                ) : step.state === "locked" ? (
+                  <Icon name="lock-outline" size={16} color={circle.ink} />
+                ) : (
+                  <Text style={[local.circleText, { color: circle.ink }]}>{digits(index + 1)}</Text>
+                )}
+              </View>
+              <View style={local.stepText}>
+                <Text style={local.stepTitle}>{step.title}</Text>
+                {step.state !== "plain" ? (
+                  <Text style={[local.stepState, step.state === "attention" && { color: colors.warnInk }]}>
+                    {t(`setup.step_state.${step.state}`)}
+                  </Text>
+                ) : null}
+              </View>
+              {step.badge ? <Badge label={step.badge} tone="green" /> : null}
+              <Icon name="chevron-right" color={colors.faint} />
+            </Pressable>
+          );
+        })}
+      </Card>
+    </>
+  );
+}
+
+/** The setup page: the step list, then its steps, each shown once the one before it works. */
 export default function Setup() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const me = useMe();
+  const owner = me.data?.user.role === "owner";
   const queryClient = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [tested, setTested] = useState<ConnectionTest | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const positions = useRef<Record<string, number>>({});
+  const onStepLayout = (key: string, y: number) => {
+    positions.current[key] = y;
+  };
   const connections = useQuery({
     queryKey: ["setup", "connections"],
     queryFn: () => api<{ connections: ConnectionView[] }>("/setup/connections"),
-    enabled: me.data?.user.role === "owner",
+    enabled: owner,
   });
-  const databases = (connections.data?.connections ?? []).filter(
-    (connection) => connection.kind === "db" && connection.status !== "disabled",
-  );
+  const all = connections.data?.connections ?? [];
+  const databases = all.filter((connection) => connection.kind === "db" && connection.status !== "disabled");
   const current = databases.find((connection) => connection.status === "active") ?? databases.at(-1) ?? null;
+  const apis = all.filter((connection) => connection.kind === "api" && connection.status !== "disabled");
+  const apiCurrent = apis.find((connection) => connection.status === "active") ?? apis.at(-1) ?? null;
+  const dbOn = current?.status === "active";
+  const apiOn = apiCurrent?.status === "active";
+  // The same reads as the steps below (one request each, shared by key), for the ticks at the top (D166).
+  const id = current?.id ?? "";
+  const schema = useQuery({
+    queryKey: ["setup", "schema", id],
+    queryFn: () => api<{ schema: SchemaView }>(`/setup/schema?connection_id=${id}`),
+    enabled: dbOn,
+  });
+  const reports = useQuery({
+    queryKey: ["setup", "reports", id],
+    queryFn: () => api<{ reports: ReportsView }>(`/setup/reports?connection_id=${id}`),
+    enabled: dbOn,
+  });
+  const appWords = useQuery({
+    queryKey: ["setup", "app-words", id],
+    queryFn: () => api<{ words: AppWordsView }>(`/setup/app-words?connection_id=${id}`),
+    enabled: dbOn,
+  });
+  const paikari = useQuery({
+    queryKey: ["setup", "paikari-price", id],
+    queryFn: () => api<{ paikari: PaikariPriceView }>(`/setup/paikari-price?connection_id=${id}`),
+    enabled: dbOn,
+  });
+  const learned = useQuery({
+    queryKey: ["setup", "words"],
+    queryFn: () => api<{ words: WordsView }>("/setup/words"),
+    enabled: dbOn,
+  });
+  const apiId = apiCurrent?.id ?? "";
+  const capabilities = useQuery({
+    queryKey: ["setup", "capabilities", apiId],
+    queryFn: () => api<{ capabilities: CapabilityView[] }>(`/setup/capabilities?connection_id=${apiId}`),
+    enabled: apiOn,
+  });
+  const features = useQuery({
+    queryKey: ["setup", "features"],
+    queryFn: () => api<FeaturesView>("/setup/features"),
+    enabled: apiOn,
+  });
   const onTested = (test: ConnectionTest) => {
     setTested(test);
     setAdding(false);
     void queryClient.invalidateQueries({ queryKey: ["setup"] });
   };
 
-  if (me.data && me.data.user.role !== "owner") return null;
+  const entities = schema.data?.schema.entities ?? [];
+  const groups = appWords.data?.words.groups;
+  const choice = paikari.data?.paikari;
+  const wordsAsked =
+    (groups ? Object.values(groups).some((list) => list.some((word) => word.our === null)) : false) ||
+    (!!choice && choice.options.length >= 2 && choice.chosen === null);
+  const writes = (capabilities.data?.capabilities ?? []).filter(
+    (item) => item.kind === "write" && !item.is_compensation,
+  );
+  const mine = features.data?.connections.find((item) => item.connection_id === apiCurrent?.id);
+  const suggestions = learned.data?.words.suggestions.length ?? 0;
+  // A step whose reads have not come back yet shows no state, rather than "to do".
+  const db = (state: StepState): StepState => (dbOn ? state : "locked");
+  const app = (state: StepState): StepState => (apiOn ? state : "locked");
+  const steps: Step[] = [
+    {
+      key: "connection",
+      title: t("setup.step_connection"),
+      counts: true,
+      state: connections.data
+        ? dbOn
+          ? "done"
+          : current?.status === "error"
+            ? "attention"
+            : "todo"
+        : "plain",
+    },
+    {
+      key: "schema",
+      title: t("setup.step_schema"),
+      counts: true,
+      state: db(
+        !schema.data
+          ? "plain"
+          : entities.length > 0 && entities.every((entity) => entity.confirmed)
+            ? "done"
+            : "todo",
+      ),
+    },
+    { key: "catalog", title: t("setup.step_catalog"), counts: false, state: db("plain") },
+    {
+      key: "reports",
+      title: t("setup.step_reports"),
+      counts: true,
+      state: db(!reports.data ? "plain" : reports.data.reports.stock_value.confirmed ? "done" : "todo"),
+    },
+    {
+      key: "app_words",
+      title: t("setup.step_app_words"),
+      counts: true,
+      state: db(!groups ? "plain" : wordsAsked ? "attention" : "done"),
+    },
+    {
+      key: "api",
+      title: t("setup.step_api"),
+      counts: true,
+      state: connections.data
+        ? apiOn
+          ? "done"
+          : apiCurrent?.status === "error"
+            ? "attention"
+            : "todo"
+        : "plain",
+    },
+    {
+      key: "actions",
+      title: t("setup.step_actions"),
+      counts: true,
+      state: app(!capabilities.data ? "plain" : writes.some((item) => item.enabled) ? "done" : "todo"),
+    },
+    {
+      key: "features",
+      title: t("setup.step_features"),
+      counts: true,
+      state: app(!features.data ? "plain" : mine?.confirmed_at ? "done" : "todo"),
+    },
+    {
+      key: "words",
+      title: t("setup.step_words"),
+      counts: false,
+      state: db("plain"),
+      ...(suggestions
+        ? {
+            badge: t("setup.step_state.words", {
+              shown: language === "bn" ? banglaDigits(String(suggestions)) : String(suggestions),
+            }),
+          }
+        : {}),
+    },
+  ];
+  const open = (key: string) => {
+    const y = positions.current[key];
+    if (y !== undefined) scroll.current?.scrollTo({ y: Math.max(0, y - space.sm), animated: true });
+  };
+
+  if (me.data && !owner) return null;
   return (
-    <Screen>
-      <Heading>{t("setup.step_connection")}</Heading>
+    <Screen
+      title={t("setup.title")}
+      onBack={() => (router.canGoBack() ? router.back() : router.replace("/more"))}
+      scrollRef={scroll}
+    >
+      <StepList steps={steps} onOpen={open} />
+      <StepHeading id="connection" onStepLayout={onStepLayout}>
+        {t("setup.step_connection")}
+      </StepHeading>
       {tested ? (
         <Note tone={tested.ok ? "ok" : "danger"}>
           {tested.ok
@@ -547,20 +789,58 @@ export default function Setup() {
 
       {current?.status === "active" && !adding ? (
         <>
-          <Heading>{t("setup.step_schema")}</Heading>
+          <StepHeading id="schema" onStepLayout={onStepLayout}>
+            {t("setup.step_schema")}
+          </StepHeading>
           <SchemaSection connectionId={current.id} />
-          <Heading>{t("setup.step_catalog")}</Heading>
+          <StepHeading id="catalog" onStepLayout={onStepLayout}>
+            {t("setup.step_catalog")}
+          </StepHeading>
           <CatalogSection connectionId={current.id} />
-          <Heading>{t("setup.step_reports")}</Heading>
+          <StepHeading id="reports" onStepLayout={onStepLayout}>
+            {t("setup.step_reports")}
+          </StepHeading>
           <ReportsSection connectionId={current.id} language={language} />
-          <Heading>{t("setup.step_app_words")}</Heading>
+          <StepHeading id="app_words" onStepLayout={onStepLayout}>
+            {t("setup.step_app_words")}
+          </StepHeading>
           <PaikariSection connectionId={current.id} language={language} />
           <AppWordsSection connectionId={current.id} />
-          <Heading>{t("setup.step_words")}</Heading>
+          <StepHeading id="words" onStepLayout={onStepLayout}>
+            {t("setup.step_words")}
+          </StepHeading>
           <WordsSection />
         </>
       ) : null}
-      {connections.data ? <ApiSetup connections={connections.data.connections} /> : null}
+      {connections.data ? (
+        <ApiSetup connections={connections.data.connections} onStepLayout={onStepLayout} />
+      ) : null}
     </Screen>
   );
 }
+
+const local = StyleSheet.create({
+  progressTitle: { fontSize: fontSize.body, fontWeight: "700", color: colors.ink },
+  bar: { height: 8, borderRadius: 4, backgroundColor: "#e5ebe8", overflow: "hidden" },
+  barFill: { height: 8, borderRadius: 4, backgroundColor: colors.green },
+  step: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  stepAttention: { backgroundColor: "#fffaf0" },
+  circle: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  circleText: { fontSize: fontSize.small, fontWeight: "700" },
+  stepText: { flex: 1, minWidth: 0 },
+  stepTitle: { fontSize: fontSize.body - 1, fontWeight: "600", color: colors.ink },
+  stepState: { fontSize: 14, color: colors.muted, marginTop: 2 },
+});

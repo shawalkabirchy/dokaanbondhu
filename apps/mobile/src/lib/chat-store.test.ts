@@ -1,10 +1,10 @@
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { ApiError } from "./api";
-import { createChatStore, type AssistantMessage, type ChatDeps } from "./chat-store";
+import { createChatStore, UNDO_MS, type AssistantMessage, type ChatDeps } from "./chat-store";
 
 jest.mock("./supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 
-// The chat page's state (spec 15.2, 15.5): reply events fill the assistant message in order, a chip tap is sent as
+// The assistant page's conversation (spec 15.2, 15.5, D166): reply events fill the assistant message in order, a chip tap is sent as
 // a choice with its label shown as the user's message, and a refused request shows its error.
 
 function store(events: ReplyEvent[][], overrides: Partial<ChatDeps> = {}) {
@@ -281,5 +281,42 @@ describe("chat store", () => {
       result: { status: "done", undo_available: true },
       texts: ["হয়ে গেছে।"],
     });
+  });
+
+  // D166: ফিরিয়ে নিন under a saved action, for 10 minutes, sent with this conversation (D38 decides on the server).
+  it("offers the undo of a saved action for 10 minutes, and sends it as a turn of the conversation", async () => {
+    const actionId = "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e";
+    const { useChat, deps, sent } = store([
+      [
+        { type: "action_result", action_id: actionId, status: "done", undo_available: true },
+        { type: "text", seq: 0, text: "হয়ে গেছে।", final: true },
+        { type: "done", turn_id: "t1", state: "IDLE", timings_ms: {} },
+      ],
+      [
+        { type: "text", seq: 0, text: "আগের কাজটা ফিরিয়ে নেওয়া হয়েছে।", final: true },
+        { type: "done", turn_id: "t2", state: "IDLE", timings_ms: {} },
+      ],
+    ]);
+    const before = Date.now();
+    await useChat.getState().decide(actionId, "yes", "হ্যাঁ");
+    const saved = reply(useChat)[0]!;
+    expect(saved.undoUntil).toBeGreaterThanOrEqual(before + UNDO_MS);
+    await useChat.getState().undo(actionId, "ফিরিয়ে নিন");
+    expect((deps.stream as jest.Mock).mock.calls[1]![0]).toBe(`/actions/${actionId}/undo`);
+    expect(sent[1]).toEqual({ conversation_id: "c1" });
+    expect(reply(useChat)[0]!.undoUntil).toBeUndefined(); // the button goes at once
+    expect(useChat.getState().messages.at(-2)).toMatchObject({ kind: "user", text: "ফিরিয়ে নিন" });
+    expect(reply(useChat)[1]!.texts).toEqual(["আগের কাজটা ফিরিয়ে নেওয়া হয়েছে।"]);
+  });
+
+  it("offers no undo for an action that was not saved or cannot be undone", async () => {
+    const actionId = "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e";
+    const { useChat } = store([
+      [{ type: "action_result", action_id: actionId, status: "done", undo_available: false }],
+      [{ type: "action_result", action_id: actionId, status: "cancelled", undo_available: false }],
+    ]);
+    await useChat.getState().decide(actionId, "yes", "হ্যাঁ");
+    await useChat.getState().decide(actionId, "no", "না");
+    expect(reply(useChat).map((message) => message.undoUntil)).toEqual([undefined, undefined]);
   });
 });

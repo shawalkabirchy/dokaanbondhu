@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- DokaanBondhu's icon (spec D166): a white speech bubble with a green microphone, on the app's green.
+       scripts/make-icons.mjs turns it into the PNGs app.config.ts names; "art" is used alone for Android's
+       adaptive icon. -->
+  <rect id="bg" x="0" y="0" width="96" height="96" rx="24" fill="#1f7a4d"/>
+  <g id="art">
+    <path d="M24 30a8 8 0 0 1 8-8h32a8 8 0 0 1 8 8v24a8 8 0 0 1-8 8H44l-12 10V62a8 8 0 0 1-8-8z" fill="#ffffff"/>
+    <rect x="42" y="28" width="12" height="20" rx="6" fill="#1f7a4d"/>
+    <path d="M37 42a11 11 0 0 0 22 0" fill="none" stroke="#1f7a4d" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="48" y1="53" x2="48" y2="57" stroke="#1f7a4d" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+</svg>

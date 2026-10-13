@@ -1,20 +1,39 @@
 import { Redirect, Tabs } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View, type ColorValue } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSpeechWake } from "../../src/lib/health";
 import { useMe, useSession } from "../../src/lib/session";
-import { colors } from "../../src/ui";
+import { colors } from "../../src/theme";
+import { Icon, type IconName } from "../../src/ui";
 
-/** The signed-in app: voice (default), chat, history, staff (owner only) and more (spec 15.2). */
+/** A tab's icon: a soft green pill behind the chosen one (D166). */
+function tabIcon(name: IconName) {
+  function TabIcon({ focused, color }: { focused: boolean; color: ColorValue }) {
+    return (
+      <View style={[styles.pill, focused && styles.pillOn]}>
+        <Icon name={name} color={color} />
+      </View>
+    );
+  }
+  return TabIcon;
+}
+
+/**
+ * The signed-in app (spec 15.2, D166): the assistant (default), history, staff (owner only) and more; each page draws
+ * its own top bar.
+ */
 export default function AppLayout() {
   const { t } = useTranslation();
   const { session, loading } = useSession();
   const me = useMe(!!session);
+  // The bar's own height plus the phone's gesture or button bar under it, so the labels are not squeezed.
+  const bottom = useSafeAreaInsets().bottom;
   useSpeechWake(!!session); // the speech worker starts waking as soon as the app opens (D164)
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" />
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={colors.green} />
       </View>
     );
   }
@@ -25,22 +44,37 @@ export default function AppLayout() {
       // Back returns to the page before (setup goes back to More), not to the first tab.
       backBehavior="history"
       screenOptions={{
-        tabBarActiveTintColor: colors.green,
-        // Text labels only (D81): no icon package, and the navigator's placeholder glyph is not in every font.
-        tabBarIcon: () => null,
-        tabBarIconStyle: { display: "none" },
-        tabBarLabelStyle: { fontSize: 16 },
-        tabBarLabelPosition: "beside-icon",
-        headerTitleStyle: { fontSize: 20 },
+        headerShown: false,
+        tabBarActiveTintColor: colors.greenInk,
+        tabBarInactiveTintColor: colors.muted,
+        tabBarLabelStyle: styles.label,
+        tabBarStyle: [styles.bar, { height: 66 + bottom }],
       }}
     >
-      <Tabs.Screen name="voice" options={{ title: t("tabs.voice") }} />
-      <Tabs.Screen name="chat" options={{ title: t("tabs.chat") }} />
-      <Tabs.Screen name="history" options={{ title: t("tabs.history") }} />
-      <Tabs.Screen name="staff" options={{ title: t("tabs.staff"), href: owner ? undefined : null }} />
-      <Tabs.Screen name="more" options={{ title: t("tabs.more") }} />
+      <Tabs.Screen
+        name="assistant"
+        options={{ title: t("tabs.assistant"), tabBarIcon: tabIcon("microphone-outline") }}
+      />
+      <Tabs.Screen name="history" options={{ title: t("tabs.history"), tabBarIcon: tabIcon("history") }} />
+      <Tabs.Screen
+        name="staff"
+        options={{
+          title: t("tabs.staff"),
+          tabBarIcon: tabIcon("account-group-outline"),
+          href: owner ? undefined : null,
+        }}
+      />
+      <Tabs.Screen name="more" options={{ title: t("tabs.more"), tabBarIcon: tabIcon("menu") }} />
       {/* Setup is opened from More (owner only), not from the tab bar. */}
       <Tabs.Screen name="setup/index" options={{ title: t("setup.title"), href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.page },
+  bar: { paddingTop: 6, backgroundColor: colors.card, borderTopColor: colors.line },
+  label: { fontSize: 13, fontWeight: "600", marginTop: 2 },
+  pill: { width: 60, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  pillOn: { backgroundColor: colors.greenSoft },
+});

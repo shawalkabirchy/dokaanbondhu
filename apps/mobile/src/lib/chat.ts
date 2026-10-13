@@ -3,9 +3,9 @@ import { api } from "./api";
 import { createChatStore } from "./chat-store";
 import { streamTurn } from "./stream";
 
-// The app's one conversation store, shared by the voice and chat pages (D125): spoken and typed turns land in one
-// conversation, so a question asked by voice can be finished by typing. It is opened with the first turn, by the page
-// that asks first, and kept until "new chat".
+// The app's one conversation store, behind the assistant page (D125, D166): spoken and typed turns land in one
+// conversation, so a question asked by voice can be finished by typing. The page opens it early as a voice one; after
+// "new chat" the first question opens the next.
 export const useChat = createChatStore({
   createConversation: async (channel) =>
     (
