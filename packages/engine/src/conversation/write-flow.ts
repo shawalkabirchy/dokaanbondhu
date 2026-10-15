@@ -29,6 +29,7 @@ import {
   type QuestionSlot,
   type SaidQuantity,
   unitWord,
+  year as yearText,
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { HostCallFailed } from "../host/api";
@@ -45,6 +46,8 @@ import {
 } from "../write/request";
 import type { ActionPreview, PendingAction, WriteCapability, WriteHost } from "../write/types";
 import {
+  answeredSlots,
+  carChanged,
   correctedSlot,
   followUpSlot,
   newFrame,
@@ -91,7 +94,11 @@ export interface WriteTurn {
   /** Buttons for a car or part question: the shop's values near what was said, else its common ones (D154). */
   offersFor?: (slot: string) => Offer[];
   find: (query: PartQuery) => Promise<FindPartsResult>;
-  complete: (query: PartQuery) => { query: PartQuery; remembered: Set<string> };
+  /** The query completed from the request and the memory; `answered` names the slots the user answered (D167). */
+  complete: (
+    query: PartQuery,
+    answered?: ReadonlySet<string>,
+  ) => { query: PartQuery; remembered: Set<string> };
   emit: (event: ReplyEvent) => void;
   ask: (frame: RequestFrame, slot: string, text: string, offers: Offer[]) => void;
 }
@@ -279,7 +286,8 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   if ((slots.has("items") || slots.has("part")) && !chosen) {
     const query = partQueryOf(frame);
     if (!query.part_type && !query.part_number) return ask("part_type");
-    const full = turn.complete(query);
+    const answered = answeredSlots(frame);
+    const full = turn.complete(query, answered);
     for (const [key, value] of Object.entries(full.query)) {
       if (!frame.slots[key])
         frame.slots[key] = {
@@ -293,7 +301,8 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
       const listed: Offer[] = result.options.map((option, index) => ({
         id: `opt-${index + 1}`,
         label: result.slot === "year" ? option.replace("-", "–") : option,
-        value: result.slot === "year" ? option.split("-")[0]! : option,
+        // A year button is its car rows' years, so it picks exactly them (D167).
+        value: option,
       }));
       const offers = listed.length ? listed : (turn.offersFor?.(result.slot) ?? []);
       if (result.slot === "part_number")
@@ -319,7 +328,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     const picked = str(frame.slots.part_pick?.value);
     if (picked) rows = rows.filter((row) => row.hostPartId === picked);
     if (rows.length > 1) {
-      const separated = separatingSlot(rows, turn.tier);
+      const separated = separatingSlot(rows, turn.tier, answered);
       if (separated) {
         const chips = slotChips(separated.slot, separated.options);
         const offers = chips.map((chip, index) => ({
@@ -340,9 +349,19 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         );
         return { kind: "asked" };
       }
-      const offers = rows.slice(0, 6).map((row, index) => ({
+      const listed = rows.slice(0, 6);
+      const named = (row: PartRow) => [row.nameBn ?? row.name, row.brand].filter(Boolean).join(", ");
+      // Two parts that read the same (one per generation, after a year that two cars share) say their car's years.
+      const label = (row: PartRow) => {
+        const twin = listed.some((other) => other !== row && named(other) === named(row));
+        const car = row.vehicle && row.vehicle.yearFrom > 0 ? row.vehicle : null;
+        return twin && car
+          ? `${named(row)} (${yearText(car.yearFrom)}–${car.yearTo ? yearText(car.yearTo) : ""})`
+          : named(row);
+      };
+      const offers = listed.map((row, index) => ({
         id: `opt-${index + 1}`,
-        label: [row.nameBn ?? row.name, row.brand].filter(Boolean).join(", "),
+        label: label(row),
         value: row.hostPartId,
       }));
       return askSlot("part_pick", `${offers.map((offer) => offer.label).join(" না ")}?`, offers);
@@ -752,6 +771,7 @@ export function correctWrite(
     correctedSlot(text, turn.dictionary, turn.now) ?? followUpSlot(rest, turn.dictionary, turn.now);
   if (detail && forPart) {
     frame.slots[detail.slot] = understood(detail.value);
+    carChanged(frame, detail.slot);
     delete frame.slots.part;
     delete frame.slots.part_pick;
     return detail.slot;

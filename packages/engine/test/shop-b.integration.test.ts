@@ -13,7 +13,7 @@ import {
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runTurn, type TurnState } from "../src/conversation/turn";
+import { runTurn, type TurnInput, type TurnState } from "../src/conversation/turn";
 import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
 import { parsedFitments } from "../src/host/fitment-text";
@@ -246,10 +246,15 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
   });
 
   /** One whole turn on shop B with a scripted LLM step: its reply and the outcome (the next turn's state). */
-  const turn = async (said: string, state: TurnState, step: Step, words: Dictionary = dictionary) => {
+  const turn = async (
+    said: string | TurnInput,
+    state: TurnState,
+    step: Step,
+    words: Dictionary = dictionary,
+  ) => {
     const events: ReplyEvent[] = [];
     const outcome = await runTurn(
-      { text: said },
+      typeof said === "string" ? { text: said } : said,
       state,
       {
         llm: [scripted([step])],
@@ -271,9 +276,46 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       (event) => events.push(event),
     );
     const reply = events.flatMap((event) => (event.type === "text" ? [event.text] : [])).join(" ");
-    return { outcome, reply, done: events.at(-1) };
+    const choices = events.find((event) => event.type === "choices");
+    return {
+      outcome,
+      reply,
+      done: events.at(-1),
+      choices: choices?.type === "choices" ? choices : undefined,
+    };
   };
   const fresh = (): TurnState => ({ state: "IDLE", context: {}, frame: null, history: [] });
+
+  // D167: the car and its year tapped, on an app whose two Axio chassis share their years: one button for them, and
+  // nothing asked again after a tap.
+  it.each([
+    { style: "Bangla", text: "ব্রেক প্যাড আছে?", part: "ব্রেক প্যাড" },
+    { style: "Banglish", text: "brake pad ache?", part: "brake pad" },
+  ])(
+    "taps the Axio, then 2012–2017: every pad of both chassis, asked once ($style)",
+    async ({ text, part }) => {
+      const tap = (reply: Awaited<ReturnType<typeof turn>>, label: string): TurnInput => {
+        const option = reply.choices?.options.find((candidate) => candidate.label === label);
+        if (!reply.choices || !option) throw new Error(`no ${label} in ${JSON.stringify(reply.choices)}`);
+        return { choice: { slot: reply.choices.slot, optionId: option.id } };
+      };
+      const first = await turn(text, fresh(), {
+        calls: [{ name: "find_parts", arguments: { part_type: part } }],
+      });
+      expect(first.outcome.state.frame?.asking).toBe("vehicle");
+      const axio = await turn(tap(first, "Axio"), first.outcome.state, {});
+      expect(axio.outcome.state.frame?.asking).toBe("year");
+      expect(axio.choices?.options.map((option) => option.label)).toEqual(["2006–2011", "2012–2017"]);
+      const year = await turn(tap(axio, "2012–2017"), axio.outcome.state, {});
+      expect(year.outcome.state.frame?.status).toBe("done");
+      expect(year.outcome.trace.lookups.at(-1)?.parts.flat().sort()).toEqual([
+        "04465-12610",
+        "BP-141F",
+        "BP-141R",
+      ]);
+      expect(year.outcome.state.context.vehicle).toMatchObject({ years: { from: 2012, to: 2017 } });
+    },
+  );
 
   // D125: a new part with no car is looked up for the remembered car, on an app shaped unlike GearGrid too.
   it.each([

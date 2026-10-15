@@ -16,6 +16,7 @@ import {
   parseAmount,
   parseQuantity,
   parseYear,
+  parseYearRange,
   priceLevelIn,
   partPhrase,
   racksInText,
@@ -43,10 +44,18 @@ import {
   levelPrice,
   type PriceLevel,
   type PriceTier,
+  type YearRange,
+  yearRangeText,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
-import { findParts, type FindPartsResult, type FitmentExtra, type PartQuery } from "../host/find-parts";
+import {
+  findParts,
+  type FindPartsResult,
+  type FitmentExtra,
+  type PartQuery,
+  type Resolved,
+} from "../host/find-parts";
 import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
 import type { RunQuery } from "../host/pool";
 import {
@@ -60,8 +69,10 @@ import { getReport, type ReportFormula, type ReportName, type ReportResult } fro
 import type { SchemaMap } from "../host/schema-map";
 import { llmStream, NothingLeftError, type ChatMessage, type LlmProvider, type ToolCall } from "../providers";
 import {
+  answeredSlots,
   answerFrame,
   asking,
+  carChanged,
   correctedSlot,
   followUpSlot,
   isOpen,
@@ -86,9 +97,20 @@ import { advanceWrite, correctWrite, writeFrame, type WriteStep, type WriteTurn 
 export type { PriceTier };
 
 export interface SessionContext {
-  vehicle?: { model: string; year: number | null; engine: string | null };
+  /** `years`: a year button's car years, kept so the same car's next search picks the same rows (D167). */
+  vehicle?: { model: string; year: number | null; years?: YearRange; engine: string | null };
   customer?: { hostId: string; name: string; tier: PriceTier };
   updatedAt?: string;
+}
+
+/** The car a part search resolved, as remembered (D125), with a year button's car years (D167). */
+function rememberedCar(resolved: Resolved): NonNullable<SessionContext["vehicle"]> {
+  return {
+    model: resolved.vehicle!,
+    year: resolved.year,
+    ...(resolved.years ? { years: resolved.years } : {}),
+    engine: resolved.engine,
+  };
 }
 
 export const CONTEXT_TTL_MS = 30 * 60_000;
@@ -764,7 +786,8 @@ export async function runTurn(
       const listed: Offer[] = result.options.map((option, index) => ({
         id: `opt-${index + 1}`,
         label: result.slot === "year" ? option.replace("-", "–") : option,
-        value: result.slot === "year" ? option.split("-")[0]! : option,
+        // A year button is its car rows' years, so it picks exactly them (D167).
+        value: option,
       }));
       const offers = listed.length ? listed : nearOffers(result.slot);
       const slot = result.slot === "part_number" ? "part_number" : result.slot;
@@ -780,16 +803,10 @@ export async function runTurn(
       return "asked";
     }
     const context = partsContext(query, result);
-    if (result.resolved.vehicle) {
-      state.context.vehicle = {
-        model: result.resolved.vehicle,
-        year: result.resolved.year,
-        engine: result.resolved.engine,
-      };
-    }
+    if (result.resolved.vehicle) state.context.vehicle = rememberedCar(result.resolved);
     partsFacts(query, result);
     if (result.kind === "rows" && result.rows.length > LIST_KINDS) {
-      const separated = separatingSlot(result.rows, tier);
+      const separated = separatingSlot(result.rows, tier, answeredSlots(frame));
       if (separated) {
         delete facts.parts; // the cards are shown, the answer waits for the question
         const chips = slotChips(separated.slot, separated.options);
@@ -818,14 +835,25 @@ export async function runTurn(
    * is the request's candidate, and a year it left out or gave in a form that cannot be read is the request's own;
    * an unreadable year the request does not have is dropped, so it is asked.
    */
-  const completed = (query: PartQuery): { query: PartQuery; remembered: Set<string> } => {
+  const completed = (
+    query: PartQuery,
+    answered: ReadonlySet<string> = new Set(),
+  ): { query: PartQuery; remembered: Set<string> } => {
     const out = { ...query };
+    // A year answered to the year question, said or tapped, is the user's own like one said now: a tap says no words,
+    // so D127's rule below once dropped the year just chosen and asked it again (D167).
+    const answeredYear = answered.has("year") && Boolean(out.year);
     // The year the user said: in this input, or in the request an answer has just finished ("২০১৬ সালের নোয়া",
     // then "সেলফ").
     const said =
       saidYear ??
       (request === text ? null : parseYear(normalize(request, deps.dictionary.variants).tokens, { now }));
-    if (out.year && parseYear(normalize(out.year).tokens, { now, bare: true }) === null) delete out.year;
+    if (
+      out.year &&
+      parseYear(normalize(out.year).tokens, { now, bare: true }) === null &&
+      !parseYearRange(out.year)
+    )
+      delete out.year;
     if (!out.year && said !== null) out.year = String(said);
     for (const [slot, concept] of [
       ["part_type", "part_type"],
@@ -854,16 +882,27 @@ export async function runTurn(
         remembered.add(slot);
       }
     };
+    // The remembered year: a year button's car years when it gave them (D167).
+    const carYear = (remembered: NonNullable<typeof car>) =>
+      remembered.years
+        ? yearRangeText(remembered.years)
+        : remembered.year === null
+          ? null
+          : String(remembered.year);
     if (car && !out.vehicle) {
       out.vehicle = car.model;
       remembered.add("vehicle");
-      recall("year", car.year === null ? null : String(car.year));
+      recall("year", carYear(car));
       recall("engine", car.engine);
     } else if (car && out.vehicle && sameCar(out.vehicle, car.model)) {
-      if (said === null && !yearInside(out.vehicle))
-        recall("year", car.year === null ? null : String(car.year));
+      if (said === null && !yearInside(out.vehicle)) {
+        // The LLM copying the remembered first year ("ফিল্ডার ২০১২" in its context) gets the button's car years.
+        const copied = out.year ? parseYear(normalize(out.year).tokens, { now, bare: true }) : null;
+        if (car.years && !answeredYear && copied === car.year) delete out.year;
+        recall("year", carYear(car));
+      }
       recall("engine", car.engine);
-    } else if (out.vehicle && out.year && said === null) {
+    } else if (out.vehicle && out.year && said === null && !answeredYear) {
       delete out.year;
     }
     return { query: out, remembered };
@@ -904,13 +943,8 @@ export async function runTurn(
     // The car a write names is remembered like a search's (D125).
     find: async (query) => {
       const result = await lookup(query);
-      if (result.kind !== "ask" && result.resolved.vehicle) {
-        state.context.vehicle = {
-          model: result.resolved.vehicle,
-          year: result.resolved.year,
-          engine: result.resolved.engine,
-        };
-      }
+      if (result.kind !== "ask" && result.resolved.vehicle)
+        state.context.vehicle = rememberedCar(result.resolved);
       return result;
     },
     complete: completed,
@@ -1410,14 +1444,17 @@ export async function runTurn(
       // A write's answer, or "না, X" for a part detail: the write goes on from where it was (spec 9.3 rule 3).
       if (correction) {
         frame.slots[correction.slot] = { value: correction.value, status: "understood", source: "user" };
+        carChanged(frame, correction.slot);
         delete frame.slots.part;
         delete frame.slots.part_pick;
       }
       renew(frame, now);
       tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
     }
-    if (correction && frame.intent === "find_parts")
+    if (correction && frame.intent === "find_parts") {
       frame.slots[correction.slot] = { value: correction.value, status: "understood", source: "user" };
+      carChanged(frame, correction.slot);
+    }
     if ((filled || correction) && frame.intent === "find_parts" && deps.host.map && deps.host.run) {
       renew(frame, now);
       const query = partQueryOf(

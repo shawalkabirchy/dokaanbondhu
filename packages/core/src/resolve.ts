@@ -1,5 +1,6 @@
 import pairsData from "../data/part-pairs.json";
 import type { Dictionary } from "./glossary";
+import { yearRangeText, type YearRange } from "./numbers";
 import { decide, keySimilarity, matchScore, NBEST_WEIGHTS, phoneticKey } from "./phonetic";
 import { normalize } from "./text";
 
@@ -140,22 +141,46 @@ export function isModel(vehicle: { make: string; model: string }, wanted: string
   );
 }
 
-/** The vehicles of a model whose year range contains the year (and with the engine, if one is given). */
+/** Whether a car row has its years: an app that keeps none gives year 0 (D122), and such a row fits any year. */
+const hasYears = (vehicle: CatalogVehicle) => vehicle.yearFrom > 0;
+
+/**
+ * The vehicles of a model whose year range contains the year (and with the engine, if one is given). A year button's
+ * range picks the rows with exactly those years (D167). The year is asked only when the rows have different years:
+ * rows of the same years (two chassis, two engines) or none are told apart by their parts.
+ */
 export function matchVehicles(
   model: string,
   year: number | null,
   engine: string | null,
   vehicles: readonly CatalogVehicle[],
+  range: YearRange | null = null,
 ): VehicleMatch {
   let found = vehicles.filter((vehicle) => isModel(vehicle, model));
   if (engine) found = found.filter((vehicle) => (vehicle.engineCode ?? "").toUpperCase().startsWith(engine));
+  if (range) {
+    found = found.filter(
+      (vehicle) =>
+        !hasYears(vehicle) || (vehicle.yearFrom === range.from && (vehicle.yearTo ?? null) === range.to),
+    );
+    return { vehicles: found, needsYear: false };
+  }
   if (year !== null) {
     found = found.filter(
       (vehicle) => vehicle.yearFrom <= year && year <= (vehicle.yearTo ?? Number.MAX_SAFE_INTEGER),
     );
     return { vehicles: found, needsYear: false };
   }
-  return { vehicles: found, needsYear: found.length > 1 };
+  return { vehicles: found, needsYear: yearRanges(found).length > 1 };
+}
+
+/** The different years of these car rows, oldest first, each once, as year buttons' values ("2006-2012"; D167). */
+export function yearRanges(vehicles: readonly CatalogVehicle[]): string[] {
+  const ranges = vehicles
+    .filter(hasYears)
+    .map((vehicle) => ({ from: vehicle.yearFrom, to: vehicle.yearTo ?? null }))
+    .sort((a, b) => a.from - b.from || (a.to ?? Infinity) - (b.to ?? Infinity));
+  return [...new Set(ranges.map(yearRangeText))];
 }
 
 export const SEPARATING_SLOTS = ["year", "engine", "position", "quality", "brand"] as const;
@@ -164,7 +189,9 @@ export type SeparatingSlot = (typeof SEPARATING_SLOTS)[number];
 function slotValue(row: PartRow, slot: SeparatingSlot): string | null {
   switch (slot) {
     case "year":
-      return row.vehicle ? `${row.vehicle.yearFrom}-${row.vehicle.yearTo ?? ""}` : null;
+      return row.vehicle && row.vehicle.yearFrom > 0
+        ? yearRangeText({ from: row.vehicle.yearFrom, to: row.vehicle.yearTo })
+        : null;
     case "engine":
       return row.vehicle?.engineCode ?? null;
     case "position":
@@ -199,15 +226,18 @@ export interface SlotOption {
 
 /**
  * The slot that best separates the remaining parts: the most distinct values among year, engine, position, quality
- * and brand (ties in that order), with its options as chips. Null when the rows cannot be told apart by these.
+ * and brand (ties in that order), with its options as chips. Null when the rows cannot be told apart by these. A slot
+ * the request has already answered is not asked again (D167), so `answered` leaves it out.
  */
 export function separatingSlot(
   rows: readonly PartRow[],
   tier: PriceLevel = "retail",
+  answered: ReadonlySet<string> = new Set(),
 ): { slot: SeparatingSlot; options: SlotOption[] } | null {
   let chosen: SeparatingSlot | null = null;
   let most = 1;
   for (const slot of SEPARATING_SLOTS) {
+    if (answered.has(slot)) continue;
     const values = new Set(rows.map((row) => slotValue(row, slot)).filter((value) => value !== null));
     if (values.size > most) {
       most = values.size;

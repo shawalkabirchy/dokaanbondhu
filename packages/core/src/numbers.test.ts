@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { formatTaka, money, quantity, roundTaka, year } from "./format";
-import { expandYear, matchPartNumber, normalizePartNumber, parseEngineCode, parseYear } from "./numbers";
+import {
+  expandYear,
+  matchPartNumber,
+  normalizePartNumber,
+  parseEngineCode,
+  parseYear,
+  parseYearRange,
+  yearRangeText,
+} from "./numbers";
 import { checkQuantity, parseQuantity } from "./quantity";
 import { normalize } from "./text";
 
@@ -45,6 +53,18 @@ describe("years (spec 10.5)", () => {
   ])("reads a year said in words: $said ($style)", ({ said, year }) => {
     expect(parseYear(tokens(said), { now })).toBe(year);
     expect(parseYear(tokens(said), { now, bare: true })).toBe(year);
+  });
+
+  // D167: a year button's value is its car rows' years, read back as a range, never as one year.
+  it("reads a year button's car years, with its label in either digits", () => {
+    expect(parseYearRange("2012-2017")).toEqual({ from: 2012, to: 2017 });
+    expect(parseYearRange("২০১২–২০১৭")).toEqual({ from: 2012, to: 2017 });
+    expect(parseYearRange("2012-")).toEqual({ from: 2012, to: null });
+    expect(parseYearRange("2012")).toBeNull();
+    expect(parseYearRange("2017-2012")).toBeNull();
+    expect(parseYearRange("axio 2012-2017")).toBeNull();
+    expect(yearRangeText({ from: 2012, to: 2017 })).toBe("2012-2017");
+    expect(yearRangeText({ from: 2012, to: null })).toBe("2012-");
   });
 
   it("expands two digits to 2000 + n up to next year, else 1900 + n", () => {

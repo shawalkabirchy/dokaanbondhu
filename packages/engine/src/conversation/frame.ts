@@ -4,6 +4,7 @@ import {
   parseAmount,
   parseQuantity,
   parseYear,
+  parseYearRange,
   resolveCustomer,
   type AliasConcept,
   type CatalogCustomer,
@@ -95,6 +96,25 @@ export function asking(
   frame.asking = slot;
   frame.offers = offers;
   return { attempt, withChips: offers.length > 0 || attempt > 2 };
+}
+
+/**
+ * The slots this request asked and the user answered, by voice, typing or a tap: none is asked again in it (D167).
+ * When an answer still leaves several parts, the next question is about something else, or the parts are listed.
+ */
+export function answeredSlots(frame: RequestFrame): Set<string> {
+  return new Set(
+    Object.keys(frame.attempts).filter((slot) => slot !== frame.asking && frame.slots[slot] !== undefined),
+  );
+}
+
+/**
+ * A car changed by a correction ("না, প্রিমিও"): a year button's car years were the other car's rows, so the new
+ * car's year is asked; a year said stays (D167).
+ */
+export function carChanged(frame: RequestFrame, slot: string): void {
+  const year = frame.slots.year?.value;
+  if (slot === "vehicle" && typeof year === "string" && parseYearRange(year)) delete frame.slots.year;
 }
 
 const NO_WORDS = new Set(["না", "না না", "na", "naa", "no"]);

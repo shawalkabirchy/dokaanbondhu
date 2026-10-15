@@ -8,12 +8,15 @@ import {
   pairedType,
   parseEngineCode,
   parseYear,
+  parseYearRange,
   partsOfType,
   positionsOf,
   roundTaka,
+  yearRanges,
   type CatalogVehicle,
   type Dictionary,
   type PartRow,
+  type YearRange,
 } from "@dokaanbondhu/core";
 import { ourWord, type AppWords, type Catalog } from "./catalog";
 import type { Row, RunQuery } from "./pool";
@@ -70,6 +73,8 @@ export interface Resolved {
   partType: string | null;
   vehicle: string | null;
   year: number | null;
+  /** A year button's car years (D167): `year` is then their first year, and only the rows of these years count. */
+  years?: YearRange;
   engine: string | null;
   position: string | null;
   quality: string | null;
@@ -191,10 +196,6 @@ function sameValue(
   if (concept === "quality") return false;
   const match = matchConcept(concept, hostValue, [], dictionary);
   return match.candidates[0]?.exact === true && match.candidates[0].value === wanted;
-}
-
-function vehicleLabel(vehicle: CatalogVehicle): string {
-  return `${vehicle.yearFrom}-${vehicle.yearTo ?? ""}`;
 }
 
 /** A host list value: an array (PostgreSQL), or a JSON array as text (MySQL), without empty entries. */
@@ -365,14 +366,16 @@ async function extraRows(
   input: FindPartsInput,
   partIds: string[],
   model: string,
-  year: number | null,
-  engine: string | null,
+  resolved: Pick<Resolved, "year" | "years" | "engine">,
 ) {
+  const { year, years, engine } = resolved;
   const matching = input.fitmentExtra.filter(
     (extra) =>
       partIds.includes(extra.hostPartId) &&
       isModel(extra, model) &&
-      (year === null || ((extra.yearFrom ?? 0) <= year && year <= (extra.yearTo ?? 9999))) &&
+      (years
+        ? fitsYears(extra, years)
+        : year === null || ((extra.yearFrom ?? 0) <= year && year <= (extra.yearTo ?? 9999))) &&
       (!engine || !extra.engineCode || extra.engineCode.toUpperCase().startsWith(engine)),
   );
   if (!matching.length) return [];
@@ -388,15 +391,54 @@ async function extraRows(
 }
 
 /**
+ * Whether an owner-added or parsed fitment counts for the car years a year button picked (D167): its years cover the
+ * car's, lie within them, or share more than one year with them. One that only touches them at the end year is the
+ * other generation's (2006-2012 for a 2012-2017 car).
+ */
+function fitsYears(extra: FitmentExtra, years: YearRange): boolean {
+  const from = extra.yearFrom ?? 0;
+  const to = extra.yearTo ?? 9999;
+  const carTo = years.to ?? 9999;
+  const covers = from <= years.from && to >= carTo;
+  const within = from >= years.from && to <= carTo;
+  return covers || within || Math.min(to, carTo) - Math.max(from, years.from) >= 1;
+}
+
+/**
  * The model year: its own argument, or else said with the car ("এক্সিও ২০১৪", "axio dui hajar choddo"), as in the
  * answer to "কোন গাড়ির?" or a tool call that put both in the vehicle (D108). A year that is part of the model's own
  * name is not one.
  */
-function yearOf(query: PartQuery, model: string, now: Date | undefined): number | null {
+function yearOf(
+  query: PartQuery,
+  model: string,
+  now: Date | undefined,
+): { year: number | null; years?: YearRange } {
+  // A year button's car years (D167).
+  const years = query.year ? parseYearRange(query.year) : null;
+  if (years) return { year: years.from, years };
   const own = query.year ? parseYear(normalize(query.year).tokens, { now, bare: true }) : null;
-  if (own !== null || !query.vehicle) return own;
+  if (own !== null || !query.vehicle) return { year: own };
   const withCar = parseYear(normalize(query.vehicle).tokens, { now });
-  return withCar !== null && !model.includes(String(withCar)) ? withCar : null;
+  return { year: withCar !== null && !model.includes(String(withCar)) ? withCar : null };
+}
+
+/**
+ * The engine asked: one of the app's own codes as it writes them ("4D56", "K3-VE", an engine button's value), which
+ * the spelled reading does not know, else a code written or spelled (spec 10.5; D167).
+ */
+function engineOf(said: string | undefined, vehicles: readonly CatalogVehicle[]): string | null {
+  if (!said) return null;
+  const own = said.trim().toUpperCase();
+  if (vehicles.some((vehicle) => vehicle.engineCode?.toUpperCase() === own)) return own;
+  return parseEngineCode(normalize(said).tokens);
+}
+
+/** The year of the query into what is resolved: the year, and a year button's car years. */
+function resolveYear(resolved: Resolved, query: PartQuery, model: string, now: Date | undefined): void {
+  const { year, years } = yearOf(query, model, now);
+  resolved.year = year;
+  if (years) resolved.years = years;
 }
 
 export async function findParts(input: FindPartsInput): Promise<FindPartsResult> {
@@ -427,11 +469,17 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
     if (car?.value) {
       resolved.partType = match.exact;
       resolved.vehicle = car.value;
-      resolved.year = yearOf(query, car.value, input.now);
-      resolved.engine = query.engine ? parseEngineCode(normalize(query.engine).tokens) : null;
-      const vehicles = matchVehicles(car.value, resolved.year, resolved.engine, catalog.vehicles);
+      resolveYear(resolved, query, car.value, input.now);
+      resolved.engine = engineOf(query.engine, catalog.vehicles);
+      const vehicles = matchVehicles(
+        car.value,
+        resolved.year,
+        resolved.engine,
+        catalog.vehicles,
+        resolved.years ?? null,
+      );
       if (vehicles.needsYear) {
-        return { kind: "ask", slot: "year", options: vehicles.vehicles.map(vehicleLabel), resolved };
+        return { kind: "ask", slot: "year", options: yearRanges(vehicles.vehicles), resolved };
       }
       const recorded =
         vehicles.vehicles.length && fitted(input)
@@ -441,7 +489,7 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
               vehicles.vehicles.map((vehicle) => vehicle.hostId),
             )
           : [];
-      const extra = await extraRows(input, ids, car.value, resolved.year, resolved.engine);
+      const extra = await extraRows(input, ids, car.value, resolved);
       const seen = new Set(recorded.map((row) => row.hostPartId));
       const fitting = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
       if (fitting.length) {
@@ -461,16 +509,22 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
   if (model.unclear || !model.value)
     return { kind: "ask", slot: "vehicle", options: model.options, resolved };
   resolved.vehicle = model.value;
-  resolved.year = yearOf(query, model.value, input.now);
-  resolved.engine = query.engine ? parseEngineCode(normalize(query.engine).tokens) : null;
+  resolveYear(resolved, query, model.value, input.now);
+  resolved.engine = engineOf(query.engine, catalog.vehicles);
   for (const slot of ["position", "quality", "brand"] as const) {
     const value = understood(slot, query[slot], input, bold);
     resolved[slot] = value.value;
   }
 
-  const vehicles = matchVehicles(model.value, resolved.year, resolved.engine, catalog.vehicles);
+  const vehicles = matchVehicles(
+    model.value,
+    resolved.year,
+    resolved.engine,
+    catalog.vehicles,
+    resolved.years ?? null,
+  );
   if (vehicles.needsYear) {
-    return { kind: "ask", slot: "year", options: vehicles.vehicles.map(vehicleLabel), resolved };
+    return { kind: "ask", slot: "year", options: yearRanges(vehicles.vehicles), resolved };
   }
 
   const tryType = async (partType: string) => {
@@ -484,17 +538,22 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
             vehicles.vehicles.map((vehicle) => vehicle.hostId),
           )
         : [];
-    const extra = await extraRows(input, ids, model.value!, resolved.year, resolved.engine);
+    const extra = await extraRows(input, ids, model.value!, resolved);
     const seen = new Set(recorded.map((row) => row.hostPartId));
     const merged = [...recorded, ...extra.filter((row) => !seen.has(row.hostPartId))];
-    const placed = merged.filter(
-      (row) => !resolved.position || sameValue("position", row.position, resolved.position, dictionary),
-    );
-    const exact = placed.filter(
-      (row) =>
-        (!resolved.quality || sameValue("quality", row.quality, resolved.quality, dictionary)) &&
-        (!resolved.brand || sameValue("brand", row.brand, resolved.brand, dictionary)),
-    );
+    // The word it means, as before, when that finds parts ("front" is also "front left"). Else a value some of these
+    // parts have word for word is taken as it is: a button's value, or the app's own word that is none of ours
+    // ("Platinum", a brand the glossary does not know), so a tapped button always picks its parts (D167).
+    const wanted = (concept: "position" | "quality" | "brand") => {
+      const meant = resolved[concept];
+      const byMeaning = (row: PartRow) => !meant || sameValue(concept, row[concept], meant, dictionary);
+      if (meant && merged.some(byMeaning)) return byMeaning;
+      const said = query[concept]?.trim().toLowerCase();
+      const own = said && merged.some((row) => row[concept]?.toLowerCase() === said) ? said : null;
+      return own ? (row: PartRow) => row[concept]?.toLowerCase() === own : byMeaning;
+    };
+    const placed = merged.filter(wanted("position"));
+    const exact = placed.filter(wanted("quality")).filter(wanted("brand"));
     return { exact, placed };
   };
 

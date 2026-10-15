@@ -334,6 +334,68 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     },
   );
 
+  // D167, the owner's sale of 15 Oct: the car and its year tapped. Each tap on a year asked the year again, as a tap
+  // says no words, and the seed's Fielder 2006-2012 and 2012-2017 share 2012. Cancelled at the end, so nothing is saved.
+  it.each([
+    {
+      style: "Bangla",
+      text: "রহিম মোটরসকে দুই সেট ব্রেক প্যাড বাকিতে দাও",
+      args: {
+        customer: "রহিম মোটরস",
+        items: [{ part: { part_type: "ব্রেক প্যাড" }, quantity: "দুই সেট" }],
+        payment: { method_word: "বাকিতে" },
+      },
+      no: "না",
+    },
+    {
+      style: "Banglish",
+      text: "Rohim Motors ke dui set brake pad bakite dau",
+      args: {
+        customer: "Rohim Motors",
+        items: [{ part: { part_type: "brake pad" }, quantity: "dui set" }],
+        payment: { method_word: "bakite" },
+      },
+      no: "na",
+    },
+  ])(
+    "D167: a credit sale whose car and year are tapped asks each once ($style)",
+    async ({ text, args, no }) => {
+      calls.length = 0;
+      const tap = (reply: Awaited<ReturnType<typeof say>>, label: RegExp) => {
+        const choices = reply.events.find((event) => event.type === "choices");
+        const option =
+          choices?.type === "choices" ? choices.options.find((o) => label.test(o.label)) : undefined;
+        if (choices?.type !== "choices" || !option) throw new Error(`no ${label}: ${reply.reply}`);
+        return { choice: { slot: choices.slot, optionId: option.id } };
+      };
+      const start = () =>
+        say(fresh(), text, [scripted([{ calls: [{ name: "record_sale", arguments: args }] }])]);
+      const first = await start();
+      expect(first.reply).toMatch(/ব্রেক প্যাড — কোন গাড়ির\?$/);
+      const fielder = await say(first.state, tap(first, /ফিল্ডার/));
+      expect(fielder.reply).toBe("কোন বছরের ফিল্ডার?");
+      const years = fielder.events.find((event) => event.type === "choices");
+      expect(years?.type === "choices" && years.options.map((option) => option.label)).toEqual([
+        "2006–2012",
+        "2012–2017",
+      ]);
+      // The newer Fielder has one front pad: the sale is confirmed at once.
+      const newer = await say(fielder.state, tap(fielder, /^2012–2017$/));
+      expect(newer.reply).toMatch(
+        /^Rahim Motors — ফিল্ডার ২০১২, সামনের ব্রেক প্যাড, জেনুইন, ২ সেট, [০-৯,]+ টাকা, বাকিতে। ঠিক আছে\?$/,
+      );
+      const cancelled = await say(newer.state, no);
+      expect(cancelled.outcome.actions).toEqual([expect.objectContaining({ status: "cancelled" })]);
+      // The older one has a genuine and a non-genuine pad: the quality is asked next, never the year again.
+      const again = await start();
+      const older = await say((await say(again.state, tap(again, /ফিল্ডার/))).state, {
+        choice: { slot: "year", optionId: "opt-1" },
+      });
+      expect(older.reply).toBe("জেনুইন না নন-জেনুইন?");
+      expect(nothingSent()).toBe(true);
+    },
+  );
+
   it.each([
     {
       style: "Bangla",

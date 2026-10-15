@@ -7,6 +7,7 @@ import {
   partsOfType,
   resolveCustomer,
   separatingSlot,
+  yearRanges,
   type CatalogCustomer,
   type CatalogPart,
   type CatalogVehicle,
@@ -127,6 +128,65 @@ describe("part resolver (spec 10.7)", () => {
     expect(matchVehicles("Toyota Axio", null, null, noMake)).toMatchObject({ needsYear: true });
   });
 
+  // D167: a year button picks exactly its car rows; the year is asked only between different years, each once.
+  it("picks a year button's car rows exactly, also where two generations share a year", () => {
+    const fielders = [
+      vehicle({ hostId: "f1", model: "Fielder", yearFrom: 2006, yearTo: 2012 }),
+      vehicle({ hostId: "f2", model: "Fielder", yearFrom: 2012, yearTo: 2017 }),
+    ];
+    const ids = (match: { vehicles: { hostId: string }[] }) => match.vehicles.map((v) => v.hostId);
+    expect(ids(matchVehicles("Toyota Fielder", 2012, null, fielders))).toEqual(["f1", "f2"]);
+    expect(ids(matchVehicles("Toyota Fielder", 2012, null, fielders, { from: 2012, to: 2017 }))).toEqual([
+      "f2",
+    ]);
+    expect(ids(matchVehicles("Toyota Fielder", 2006, null, fielders, { from: 2006, to: 2012 }))).toEqual([
+      "f1",
+    ]);
+    expect(matchVehicles("Toyota Fielder", null, null, fielders)).toMatchObject({ needsYear: true });
+    expect(yearRanges(fielders)).toEqual(["2006-2012", "2012-2017"]);
+  });
+
+  it("asks the year only when the car rows have different years, offering each years once", () => {
+    // Shop B: two Axio chassis of the same years, and the older generation.
+    const axios = [
+      vehicle({ hostId: "a1", make: "", model: "Axio NZE141", yearFrom: 2012, yearTo: 2017 }),
+      vehicle({ hostId: "a2", make: "", model: "Axio", yearFrom: 2006, yearTo: 2011 }),
+      vehicle({ hostId: "a3", make: "", model: "Axio NZE144", yearFrom: 2012, yearTo: 2017 }),
+    ];
+    expect(yearRanges(axios)).toEqual(["2006-2011", "2012-2017"]);
+    expect(
+      matchVehicles("Toyota Axio", 2014, null, axios, { from: 2012, to: 2017 }).vehicles.map((v) => v.hostId),
+    ).toEqual(["a1", "a3"]);
+    // The same years twice, or no years at all (an app that keeps none): the parts tell them apart, not a year.
+    const sameYears = [axios[0]!, axios[2]!];
+    expect(matchVehicles("Toyota Axio", null, null, sameYears)).toMatchObject({ needsYear: false });
+    const noYears = [
+      vehicle({
+        hostId: "p1",
+        make: "Mitsubishi",
+        model: "Pajero",
+        yearFrom: 0,
+        yearTo: null,
+        engineCode: "4D56",
+      }),
+      vehicle({
+        hostId: "p2",
+        make: "Mitsubishi",
+        model: "Pajero",
+        yearFrom: 0,
+        yearTo: null,
+        engineCode: "4M40",
+      }),
+    ];
+    expect(matchVehicles("Mitsubishi Pajero", null, null, noYears)).toMatchObject({ needsYear: false });
+    expect(yearRanges(noYears)).toEqual([]);
+    // A car row without years fits any year asked, and any year button.
+    expect(matchVehicles("Mitsubishi Pajero", 2014, null, noYears).vehicles).toHaveLength(2);
+    expect(
+      matchVehicles("Mitsubishi Pajero", 2014, null, noYears, { from: 2012, to: 2017 }).vehicles,
+    ).toHaveLength(2);
+  });
+
   it("pairs brake pads with brake shoes", () => {
     expect(pairedType("Brake Pad")).toBe("Brake Shoe");
     expect(pairedType("Brake Shoe")).toBe("Brake Pad");
@@ -159,6 +219,29 @@ describe("part resolver (spec 10.7)", () => {
       { value: "aftermarket", priceTaka: 2600n, stock: 6 },
     ]);
     expect(separatingSlot([rows[0]!, row({ hostPartId: "c" })])).toBeNull();
+  });
+
+  // D167: an answered slot is never asked again in the request; a car without years is never a year button.
+  it("leaves out the slots the request has answered, and cars without years", () => {
+    const car = (yearFrom: number, yearTo: number | null) => ({
+      hostId: `v${yearFrom}`,
+      yearFrom,
+      yearTo,
+      engineCode: "1NZ",
+    });
+    const rows = [
+      row({ hostPartId: "a", quality: "genuine", vehicle: car(2006, 2012) }),
+      row({ hostPartId: "b", quality: "genuine", vehicle: car(2012, 2017) }),
+      row({ hostPartId: "c", quality: "aftermarket", vehicle: car(2006, 2012) }),
+    ];
+    expect(separatingSlot(rows)?.slot).toBe("year");
+    expect(separatingSlot(rows, "retail", new Set(["year"]))?.slot).toBe("quality");
+    expect(separatingSlot(rows, "retail", new Set(["year", "quality"]))).toBeNull();
+    const noYears = [
+      row({ hostPartId: "d", vehicle: car(0, null) }),
+      row({ hostPartId: "e", vehicle: { ...car(0, null), engineCode: "4M40" } }),
+    ];
+    expect(separatingSlot(noYears)?.slot).toBe("engine");
   });
 });
 

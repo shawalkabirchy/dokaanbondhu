@@ -67,6 +67,30 @@ function isYear(value: number, now: Date): boolean {
   return value >= 1980 && value <= now.getFullYear() + 1;
 }
 
+/** A car row's years: from, and to (null for a car still made). */
+export interface YearRange {
+  from: number;
+  to: number | null;
+}
+
+/** A car row's years as a year button's value: "2012-2017", or "2012-" for a car still made (D167). */
+export function yearRangeText(range: YearRange): string {
+  return `${range.from}-${range.to ?? ""}`;
+}
+
+/**
+ * A year button's value read back, or its label typed ("2012-2017", "২০১২–২০১৭", "2012-"): the car rows with exactly
+ * these years, so two generations that share a year (2006-2012 and 2012-2017) stay apart (D167). Null for anything
+ * else, a single year included.
+ */
+export function parseYearRange(text: string): YearRange | null {
+  const match = /^\s*(\d{4})\s*[-–—]\s*(\d{4})?\s*$/.exec(asciiDigits(text));
+  if (!match) return null;
+  const from = Number(match[1]);
+  const to = match[2] ? Number(match[2]) : null;
+  return to === null || to >= from ? { from, to } : null;
+}
+
 /**
  * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
  * হাজত (custody) is never a number by itself.
