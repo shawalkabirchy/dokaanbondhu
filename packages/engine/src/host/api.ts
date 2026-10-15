@@ -2,12 +2,17 @@ import { importOpenApi, OpenApiImportError } from "./openapi-import";
 
 // Calls to a host's own API through its auth adapter (spec 11.12): api_key (the secret in a named header) and bearer
 // now; session comes with the Laravel scanner in step 7. A call never follows a redirect, so the secret goes only to
-// the address the owner gave; it stops after 10 s and reads at most 5 MB (D134).
+// the address the owner gave; it stops after 10 s and reads at most 5 MB (D134). A host asleep on a free plan is woken
+// when a write starts, and its dry run waited for longer (D168).
 
 type Json = Record<string, unknown>;
 
 export const AUTH_ADAPTERS = ["api_key", "bearer"] as const;
 export const HOST_TIMEOUT_MS = 10_000;
+/** How long a dry run sent again to a sleeping host waits: a free host wakes in about a minute (D168). */
+export const WAKE_WAIT_MS = 80_000;
+/** A host woken this recently is not woken again. */
+const WAKE_EVERY_MS = 60_000;
 const MAX_BYTES = 5 * 1024 * 1024;
 const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -140,6 +145,31 @@ export async function callHost(
     }
   }
   return { status: response.status, headers: response.headers, body };
+}
+
+const woken = new Map<string, number>();
+
+/**
+ * Wakes a host that sleeps when quiet (D168): a GET of its base address without the secret, whose answer is not read,
+ * at most once a minute for a connection. It never fails; the caller need not wait for it.
+ */
+export async function wakeHost(
+  connection: Pick<ApiConnection, "id" | "baseUrl">,
+  now = Date.now(),
+): Promise<void> {
+  const last = woken.get(connection.id);
+  if (last !== undefined && now - last < WAKE_EVERY_MS) return;
+  woken.set(connection.id, now);
+  try {
+    const response = await fetch(hostUrl(connection.baseUrl, "/"), {
+      method: "GET",
+      redirect: "manual",
+      signal: AbortSignal.timeout(WAKE_WAIT_MS),
+    });
+    await response.body?.cancel();
+  } catch {
+    // a host that cannot be woken is said by the call that needs it
+  }
 }
 
 /** The document's path from the feature list, else the usual one. */

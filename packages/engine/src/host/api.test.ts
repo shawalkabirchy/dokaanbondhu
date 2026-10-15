@@ -10,6 +10,7 @@ import {
   HostCallFailed,
   hostUrl,
   keyProbeOf,
+  wakeHost,
   type ApiConnection,
 } from "./api";
 
@@ -68,6 +69,10 @@ function handler(request: IncomingMessage, response: ServerResponse) {
     return response.end();
   }
   if (path === "/shop/slow") return; // never answers
+  if (path === "/shop/late") {
+    setTimeout(() => json(200, { ok: true }), 500); // a host waking up
+    return;
+  }
   if (path === "/shop/huge") {
     response.writeHead(200, { "content-type": "application/json" });
     const block = "x".repeat(1024 * 1024);
@@ -160,6 +165,36 @@ describe("calls to the host", () => {
     await expect(
       callHost(connection({ baseUrl: "http://127.0.0.1:1" }), { method: "GET", path: "/x" }),
     ).rejects.toMatchObject({ reason: "network" });
+  });
+});
+
+describe("a host asleep (D168)", () => {
+  it("reads a late answer within the longer wait", async () => {
+    await expect(
+      callHost(connection(), { method: "GET", path: "/late" }, { timeoutMs: 200 }),
+    ).rejects.toMatchObject({ reason: "timeout" });
+    await expect(
+      callHost(connection(), { method: "GET", path: "/late" }, { timeoutMs: 3000 }),
+    ).resolves.toMatchObject({ status: 200, body: { ok: true } });
+  });
+
+  it("wakes the host at its address without the secret, at most once a minute", async () => {
+    const before = seen.length;
+    await wakeHost(connection({ id: "wake" }), 1_000);
+    expect(seen.slice(before)).toHaveLength(1);
+    expect(seen.at(-1)!.path).toBe("/shop/");
+    expect(seen.at(-1)!.headers.authorization).toBeUndefined();
+    await wakeHost(connection({ id: "wake" }), 31_000);
+    expect(seen.slice(before)).toHaveLength(1);
+    await wakeHost(connection({ id: "other" }), 31_000);
+    await wakeHost(connection({ id: "wake" }), 62_000);
+    expect(seen.slice(before)).toHaveLength(3);
+  });
+
+  it("never fails, also for a host that cannot be reached", async () => {
+    await expect(
+      wakeHost(connection({ id: "gone", baseUrl: "http://127.0.0.1:1" })),
+    ).resolves.toBeUndefined();
   });
 });
 

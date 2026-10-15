@@ -4,7 +4,7 @@ import { capabilities, capabilityParams, connections, type Tx } from "@dokaanbon
 import { and, asc, eq, inArray } from "drizzle-orm";
 import type { VerificationReport } from "../write/sandbox";
 import type { WriteCapability, WriteHost } from "../write/types";
-import { callHost } from "./api";
+import { callHost, wakeHost } from "./api";
 import {
   SAFETY_CRITICAL_SLOTS,
   type ImportedCapability,
@@ -536,7 +536,8 @@ export async function loadWriteHost(
         ]),
       ),
       features: connection.features,
-      call: (request) => callHost(connection, request),
+      call: (request, options) => callHost(connection, request, options),
+      wake: () => void wakeHost(connection),
     },
   };
 }

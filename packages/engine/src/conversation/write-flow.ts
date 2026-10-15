@@ -32,7 +32,7 @@ import {
   year as yearText,
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { HostCallFailed } from "../host/api";
+import { HostCallFailed, WAKE_WAIT_MS } from "../host/api";
 import type { FindPartsResult, PartQuery } from "../host/find-parts";
 import {
   answerFacts,
@@ -270,6 +270,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   const capability = turn.capabilities.find((item) => item.id === frame.capabilityId);
   if (!capability) return { kind: "answer", text: resultText("cancelled", "generic") };
   if (Number(frame.slots.lines?.value ?? 1) > 1) return { kind: "answer", text: ONE_LINE };
+  turn.host.wake?.(); // a sleeping app wakes while the questions are answered (D168)
   const slots = slotsOf(capability);
   const first = Object.keys(frame.attempts).length === 0;
   const askSlot = (slot: string, text: string, offers: Offer[] = []) => {
@@ -573,8 +574,18 @@ async function prepareWrite(
   const resolved = resolvedOf(frame, chosen);
   const template = capability.template;
   const dry = capability.dryRun ? dryRunQuery(turn.host.features) : null;
-  const send = (body: Record<string, unknown>, query: Record<string, string>) =>
-    turn.host.call({ method: capability.httpMethod, path: capability.path, query, body });
+  const send = async (body: Record<string, unknown>, query: Record<string, string>) => {
+    const request = { method: capability.httpMethod, path: capability.path, query, body };
+    try {
+      return await turn.host.call(request);
+    } catch (error) {
+      if (!(error instanceof HostCallFailed) || error.reason !== "timeout") throw error;
+      // An app asleep, as a free host is after quiet minutes: a dry run saves nothing, so it is sent once more and
+      // waited for longer, while the screen says "চালু হচ্ছে…" (D168).
+      turn.emit({ type: "status", state: "UNDERSTANDING", label_key: "status.starting" });
+      return turn.host.call(request, { timeoutMs: WAKE_WAIT_MS });
+    }
+  };
   let total: number | null = null;
   let warnings: string[] = [];
   try {

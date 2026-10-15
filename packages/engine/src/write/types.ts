@@ -51,8 +51,10 @@ export interface WriteHost {
   operations: Record<string, HostOperation>;
   /** The host feature list (spec 11.13). */
   features: Record<string, unknown>;
-  /** One call through the connection's auth adapter (spec 11.12). */
-  call: (request: HostRequest) => Promise<HostResponse>;
+  /** One call through the connection's auth adapter (spec 11.12); a longer wait for a sleeping host (D168). */
+  call: (request: HostRequest, options?: { timeoutMs?: number }) => Promise<HostResponse>;
+  /** Wakes a host that sleeps when quiet, without waiting for it (D168). */
+  wake?: () => void;
 }
 
 /** A host call as sent, kept in action_logs.request. */
