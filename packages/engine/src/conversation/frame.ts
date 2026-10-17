@@ -6,6 +6,8 @@ import {
   parseYear,
   parseYearRange,
   resolveCustomer,
+  saysWalkIn,
+  WALK_IN,
   type AliasConcept,
   type CatalogCustomer,
   type Dictionary,
@@ -164,8 +166,11 @@ function answeredYear(tokens: readonly string[], others: readonly string[], now:
   return year;
 }
 
-/** Write slots whose answer is kept as said and read by the write flow (an amount, a payment word, a field). */
-const AS_SAID = new Set(["payment", "trx_id", "note", "reason"]);
+/**
+ * Write slots whose answer is kept as said and read by the write flow (an amount, a payment word, a field, the day
+ * of a return's sale).
+ */
+const AS_SAID = new Set(["payment", "trx_id", "note", "reason", "sale_ref"]);
 
 /**
  * Tries the input as a value of the slot the frame is asking about (rule 3). A tap on a chip, or a spoken option,
@@ -211,6 +216,12 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
     if (amount !== null) value = amount;
   } else if (AS_SAID.has(slot) || slot.startsWith("extra.")) {
     value = text;
+  } else if (
+    slot === "customer" &&
+    frame.offers?.some((offer) => offer.value === WALK_IN) &&
+    saysWalkIn(text)
+  ) {
+    value = WALK_IN; // a return's buyer without a name (D169)
   } else if (slot === "customer" || slot === "supplier") {
     const people = slot === "supplier" ? (input.suppliers ?? []) : input.customers;
     const allowed = frame.offers?.length

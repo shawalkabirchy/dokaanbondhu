@@ -5,6 +5,7 @@ import {
   GLOSSARY,
   type ActionTemplate,
   type CatalogVehicle,
+  type Dictionary,
 } from "@dokaanbondhu/core";
 import { readFileSync } from "node:fs";
 import type { HostRequest, HostResponse } from "../src/host/api";
@@ -17,9 +18,9 @@ import { scripted, type Step } from "./scripted-llm";
 
 // Shop apps for conversation tests without a database (D167, D168): three apps shaped differently (GearGrid's two
 // Fielders that share 2012, shop B's two Axio chassis of the same years with its own grade words, and an app whose
-// cars have no years, with its own engine codes, grades and brands), each with GearGrid's sale as setup imports it.
-// The part search runs as on a host (spec 11.5); a fake runner answers its queries from the tables below, and the
-// sale's dry run a fake API.
+// cars have no years, with its own engine codes, grades and brands), each with GearGrid's sale and return as setup
+// imports them. The part search and the sale finder run as on a host (spec 11.5, 10.7); a fake runner answers their
+// queries from the tables below, and the dry runs a fake API.
 
 interface ShopPart {
   id: string;
@@ -31,11 +32,33 @@ interface ShopPart {
   fits: string[];
 }
 
+/** A sale line in the app's books, for returns (D169), so many days before the tests' now. */
+export interface ShopSale {
+  id: string;
+  lineId: string;
+  partId: string;
+  customerId: string | null;
+  quantity: number;
+  unitPrice: number;
+  /** What was still due on the sale. */
+  due: number;
+  daysAgo: number;
+  /** Units of the line returned already. */
+  returned?: number;
+}
+
 export interface Shop {
   name: string;
   vehicles: CatalogVehicle[];
   parts: ShopPart[];
+  sales?: ShopSale[];
+  /** Rahim Motors' due, when a test reads it. */
+  customerDue?: number;
 }
+
+/** The tests' now: 15 Oct 2026, noon in Dhaka. */
+export const NOW = new Date("2026-10-15T12:00:00+06:00");
+const DAY_MS = 86_400_000;
 
 const car = (
   hostId: string,
@@ -136,13 +159,39 @@ export interface Api {
   dryRun?: boolean;
 }
 
-/** GearGrid's sale as setup imports it, sent to a fake API; each call and each wake is counted. */
-function salesApi(calls: HostRequest[], wakes: { count: number }, api: Api): WriteHost {
+/** The app's return as GearGrid answers it: the total from the sold line, the customer's due after the refund. */
+function returnAnswer(shop: Shop): ApiAnswer {
+  return async (request) => {
+    const body = (request.body ?? {}) as {
+      items?: { sale_item_id?: string; quantity?: number }[];
+      refund_due_taka?: number;
+    };
+    const item = body.items?.[0];
+    const line = shop.sales?.find((sale) => sale.lineId === item?.sale_item_id);
+    const dry = request.query?.dry_run === "true";
+    const due = (shop.customerDue ?? 0) - (body.refund_due_taka ?? 0);
+    return {
+      status: dry ? 200 : 201,
+      headers: new Headers(),
+      body: {
+        return: { id: dry ? null : "return-1", total_taka: (line?.unitPrice ?? 0) * (item?.quantity ?? 0) },
+        customer: line?.customerId ? { id: line.customerId, due_balance_taka: due } : null,
+        warnings: [],
+        dry_run: dry,
+      },
+    };
+  };
+}
+
+const IDS: Record<string, string> = { record_sale: "sale", record_return: "return" };
+
+/** GearGrid's sale and return as setup imports them (dry runs as the API allows, unless `api` turns them off). */
+function appCapabilities(api: Api = {}): WriteCapability[] {
   const imported = importOpenApi(openapi);
-  const capabilities: WriteCapability[] = imported.capabilities
-    .filter((capability) => capability.kind === "write" && capability.name === "record_sale")
+  return imported.capabilities
+    .filter((capability) => capability.kind === "write" && IDS[capability.name])
     .map((capability) => ({
-      id: "sale",
+      id: IDS[capability.name]!,
       name: capability.name,
       description: capability.description || null,
       template: capability.template as ActionTemplate,
@@ -163,13 +212,23 @@ function salesApi(calls: HostRequest[], wakes: { count: number }, api: Api): Wri
       compensation: null,
       readBack: capability.readBack,
     }));
+}
+
+/** One of the fake apps' writes, by its operation's name (record_sale, record_return). */
+export function appCapability(name: string): WriteCapability {
+  return appCapabilities().find((capability) => capability.name === name)!;
+}
+
+/** The writes sent to a fake API; each call and each wake is counted. */
+function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, api: Api): WriteHost {
   return {
-    capabilities,
+    capabilities: appCapabilities(api),
     operations: {},
-    features: imported.features,
+    features: importOpenApi(openapi).features,
     call: async (request, options) => {
       calls.push(request);
-      return (api.answer ?? answered)(request, options);
+      const answer = api.answer ?? (request.path.includes("/returns") ? returnAnswer(shop) : answered);
+      return answer(request, options);
     },
     wake: () => {
       wakes.count += 1;
@@ -181,6 +240,35 @@ function salesApi(calls: HostRequest[], wakes: { count: number }, api: Api): Wri
 function runner(shop: Shop) {
   const lists = (values: unknown[]) => values.map((value) => (Array.isArray(value) ? value.map(String) : []));
   return async (query: { text: string; values: unknown[] }) => {
+    // The sale finder (D169): the sales of a part to a customer, or without one, newest first.
+    if (query.text.includes('"sale_items"')) {
+      const walkIn = query.text.includes('"customer_id" IS NULL');
+      return (shop.sales ?? [])
+        .filter(
+          (sale) =>
+            query.values.includes(sale.partId) &&
+            (walkIn
+              ? sale.customerId === null
+              : sale.customerId !== null && query.values.includes(sale.customerId)),
+        )
+        .sort((a, b) => a.daysAgo - b.daysAgo)
+        .map((sale) => ({
+          sale_id: sale.id,
+          line_id: sale.lineId,
+          time: new Date(NOW.getTime() - sale.daysAgo * DAY_MS),
+          quantity: String(sale.quantity),
+          unit_price: String(sale.unitPrice),
+          due: String(sale.due),
+        }));
+    }
+    if (query.text.includes('"return_items"')) {
+      const ids = lists(query.values).flat();
+      return (shop.sales ?? [])
+        .filter((sale) => sale.returned && ids.includes(sale.id))
+        .map((sale) => ({ sale_id: sale.id, quantity: String(sale.returned) }));
+    }
+    if (shop.customerDue !== undefined && query.text.includes('"due_balance"'))
+      return [{ due: String(shop.customerDue), balance: String(shop.customerDue) }];
     const [partIds = [], vehicleIds = []] = lists(query.values);
     const parts = shop.parts.filter((part) => partIds.includes(part.id));
     if (query.text.includes('"fitments"'))
@@ -228,15 +316,23 @@ export const fresh = (): TurnState => ({ state: "IDLE", context: {}, frame: null
 
 type Input = { text: string } | { choice: { slot: string; optionId: string } };
 
+/** Each app's dictionary, built once: building one is the slow part of a turn, and the apps never change. */
+const dictionaries = new WeakMap<ShopPart[], Dictionary>();
+
 /** One shop app connected, as the server builds its turn (the glossary with the app's own cars and parts). */
 export function connect(shop: Shop, api: Api = {}) {
   const catalog = catalogOf(shop);
   const calls: HostRequest[] = [];
   const wakes = { count: 0 };
   let id = 0;
+  let dictionary = dictionaries.get(shop.parts);
+  if (!dictionary) {
+    dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
+    dictionaries.set(shop.parts, dictionary);
+  }
   const deps = (steps: Step[]): TurnDeps => ({
     llm: [scripted(steps)],
-    dictionary: buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]),
+    dictionary: dictionary!,
     host: {
       map: geargridMap,
       run: runner(shop),
@@ -245,9 +341,9 @@ export function connect(shop: Shop, api: Api = {}) {
       rackExtra: new Map(),
       formulas: [],
       hostReports: [],
-      writes: salesApi(calls, wakes, api),
+      writes: salesApi(shop, calls, wakes, api),
     },
-    now: () => new Date("2026-10-15T12:00:00+06:00"),
+    now: () => NOW,
     newId: () => `id-${++id}`,
     evalMode: false,
     shopWords: [],
@@ -268,7 +364,8 @@ export function connect(shop: Shop, api: Api = {}) {
       reply,
       choices,
       asked,
-      confirm: events.find((event) => event.type === "confirm") as { text: string } | undefined,
+      confirm: events.find((event) => event.type === "confirm") as
+        { text: string; fields: { label: string; value: string }[] } | undefined,
       found: outcome.trace.lookups.at(-1)?.parts.flat() ?? [],
       statuses: events.flatMap((event) => (event.type === "status" ? [event.label_key] : [])),
       state: outcome.state,

@@ -75,7 +75,7 @@ export const CONCEPT_FIELDS: Record<Concept, Record<string, FieldKind>> = {
     due: "money",
     payment_type: "text",
   },
-  SaleItem: { sale_id: "ref", part_id: "ref", quantity: "quantity", unit_price: "money" },
+  SaleItem: { id: "id", sale_id: "ref", part_id: "ref", quantity: "quantity", unit_price: "money" },
   Return: {
     id: "id",
     sale_id: "ref",

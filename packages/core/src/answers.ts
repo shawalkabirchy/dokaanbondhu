@@ -262,6 +262,10 @@ export interface QuestionInput {
   unit?: string;
   names?: string[]; // for customer or supplier
   label?: string; // for other
+  /** A return's question: who gave it back, how many go back (D169). */
+  returning?: boolean;
+  /** What the sale's line has left to return, when a said quantity was more: "২ সেট". */
+  sold?: string;
 }
 
 /** The template question for one slot (spec 9.4). */
@@ -287,7 +291,12 @@ export function question(input: QuestionInput): string {
           ? `${input.names[0]} নাকি ${input.names[1]}?`
           : input.slot === "supplier"
             ? "কার কাছ থেকে?"
-            : "কার নামে?";
+            : input.returning
+              ? "কে ফেরত দিল?"
+              : "কার নামে?";
+      break;
+    case "sale_ref":
+      text = "কোন দিনের বিক্রি?";
       break;
     case "amount":
       text = "কত টাকা?";
@@ -296,7 +305,9 @@ export function question(input: QuestionInput): string {
       text = `প্রতি ${input.unit ? quantityUnit(input.unit) : "টা"} দাম কত?`;
       break;
     case "quantity":
-      text = `কয় ${input.unit ? quantityUnit(input.unit) : "টা"}?`;
+      text = input.returning
+        ? `${input.sold ? `ওই বিক্রিতে ${input.sold} ছিল — ` : ""}কয় ${input.unit ? quantityUnit(input.unit) : "টা"} ফেরত?`
+        : `কয় ${input.unit ? quantityUnit(input.unit) : "টা"}?`;
       break;
     case "unit_cost":
       text = `প্রতি ${input.unit ? quantityUnit(input.unit) : "টা"} কেনা দাম কত?`;

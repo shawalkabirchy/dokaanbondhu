@@ -169,6 +169,14 @@ export function repairProposal(proposal: Proposal, tables: IntrospectedTable[]):
       }
     }
 
+    // An entity's own ID, when the LLM left it out: its table's primary key (a sale line's, which a return by line
+    // sends, D169).
+    const ownKey = primaryKey(entity.hostTable);
+    if (kinds.id === "id" && !entity.fields.id && ownKey) {
+      entity.fields.id = field(entity.hostTable, ownKey, "id");
+      warnings.push(`${entity.concept}.id: ${entity.hostTable}.${ownKey.name} added`);
+    }
+
     // Fields the LLM left out, found by name in the host table, its parents, or (part numbers) a child table.
     for (const fill of FILL.filter((rule) => rule.concept === entity.concept && !entity.fields[rule.field])) {
       const host = byName.get(entity.hostTable);

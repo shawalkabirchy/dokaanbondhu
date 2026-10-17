@@ -138,10 +138,27 @@ export const geargridMap: SchemaMap = {
       joins: [{ table: "sales", on: [{ left: "sale_items.sale_id", right: "sales.id" }], kind: "parent" }],
       rowFilters: [deleted("sale_items"), { table: "sales", column: "status", op: "ne", value: "void" }],
       fields: fields("sale_items", {
+        id: "id",
         sale_id: "sale_id",
         part_id: "part_id",
         quantity: "quantity",
         unit_price: ["sale_items", "unit_price"],
+      }),
+    }),
+    Return: entity({
+      concept: "Return",
+      hostTable: "return_items",
+      joins: [
+        { table: "returns", on: [{ left: "return_items.return_id", right: "returns.id" }], kind: "parent" },
+      ],
+      rowFilters: [deleted("return_items"), deleted("returns")],
+      fields: fields("return_items", {
+        id: "id",
+        sale_id: ["returns", "sale_id"],
+        part_id: "part_id",
+        quantity: "quantity",
+        reason: ["returns", "reason"],
+        date_time: ["returns", "return_time"],
       }),
     }),
     Payment: entity({

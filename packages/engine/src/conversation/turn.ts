@@ -37,6 +37,7 @@ import {
   formatTaka,
   resultText,
   writeCueOf,
+  isWriteWord,
   type Dictionary,
   type PartRow,
   type PartsContext,
@@ -87,6 +88,7 @@ import { systemPrompt } from "./prompt";
 import type { ConversationState } from "./state";
 import { CANNOT_HELP, readTools } from "./tools";
 import { executeAction } from "../write/execute";
+import { findSales } from "../write/sale-finder";
 import { writeTool } from "../write/tool";
 import type { ActionRecord, PendingAction, WriteCapability, WriteHost } from "../write/types";
 import { advanceWrite, correctWrite, writeFrame, type WriteStep, type WriteTurn } from "./write-flow";
@@ -615,9 +617,13 @@ export async function runTurn(
   const candidates = (["part_type", "vehicle_model", "quality", "position"] as const)
     .map((concept) => {
       if (!hypotheses[0]) return null;
+      // A write's own words are no part detail: "ফেরত নাও" is not পুরাতন (D169).
       const near = (text: string, extra: readonly string[]) =>
         matchConcept(concept, text, extra, deps.dictionary).candidates.filter(
-          (candidate) => !inName(candidate.heard) && !(concept !== "part_type" && inPart(candidate.heard)),
+          (candidate) =>
+            !inName(candidate.heard) &&
+            !(concept !== "part_type" && inPart(candidate.heard)) &&
+            !normalize(candidate.heard).tokens.some(isWriteWord),
         );
       const found = near(hypotheses[0], others);
       let best = found[0];
@@ -941,6 +947,13 @@ export async function runTurn(
     request: said,
     offersFor: nearOffers,
     // The car a write names is remembered like a search's (D125).
+    // A return's sale, through the read path (D169).
+    ...(deps.host.map && deps.host.run
+      ? {
+          sales: (input: { customerId: string | null; partId: string }) =>
+            findSales({ map: deps.host.map!, run: deps.host.run! }, { ...input, now }),
+        }
+      : {}),
     find: async (query) => {
       const result = await lookup(query);
       if (result.kind !== "ask" && result.resolved.vehicle)

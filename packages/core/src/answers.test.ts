@@ -225,3 +225,15 @@ describe("paikari is the app's garage price, else its wholesale price (D142)", (
     );
   });
 });
+
+describe("a return's questions (D169)", () => {
+  it("asks who gave it back, which sale, and how many go back", () => {
+    expect(question({ slot: "customer", returning: true })).toBe("কে ফেরত দিল?");
+    expect(question({ slot: "sale_ref" })).toBe("কোন দিনের বিক্রি?");
+    expect(question({ slot: "quantity", unit: "set", returning: true })).toBe("কয় সেট ফেরত?");
+    expect(question({ slot: "quantity", unit: "set", returning: true, sold: "২ সেট" })).toBe(
+      "ওই বিক্রিতে ২ সেট ছিল — কয় সেট ফেরত?",
+    );
+    expect(question({ slot: "customer" })).toBe("কার নামে?");
+  });
+});

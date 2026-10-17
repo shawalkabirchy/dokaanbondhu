@@ -40,6 +40,11 @@ export function writeTool(capability: WriteCapability): ToolDef {
   const properties: Record<string, unknown> = {};
   if (slots.has("customer")) properties.customer = said("the customer as said, if one is named");
   if (slots.has("supplier")) properties.supplier = said("the supplier as said");
+  // A return's sale is found from who bought the part and when (D169); the part itself is in items.
+  if (slots.has("sale_ref")) {
+    properties.customer ??= said("the customer who bought it, as said, if one is named");
+    properties.when = said("when it was bought, as said, e.g. গতকাল, ৩ দিন আগে, gotokal");
+  }
   if (slots.has("items")) {
     properties.items = {
       type: "array",

@@ -2,6 +2,9 @@ import {
   banglaOf,
   checkQuantity,
   confirmationText,
+  dayText,
+  daysAgoSaid,
+  daysBefore,
   levelPrice,
   methodText,
   money,
@@ -12,11 +15,13 @@ import {
   possessive,
   question,
   quantity as quantityText,
+  refundText,
   resolveCustomer,
   resultText,
   saidMoney,
   saidNumbers,
   saysCredit,
+  saysDamaged,
   separatingSlot,
   slotChips,
   type ActionFields,
@@ -29,6 +34,7 @@ import {
   type QuestionSlot,
   type SaidQuantity,
   unitWord,
+  WALK_IN,
   year as yearText,
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
@@ -41,9 +47,12 @@ import {
   dryRunQuery,
   leafOf,
   methodParam,
+  refundOf,
   refusalOf,
+  takesDamaged,
   type ResolvedWrite,
 } from "../write/request";
+import type { FoundSales, SaleLine } from "../write/sale-finder";
 import type { ActionPreview, PendingAction, WriteCapability, WriteHost } from "../write/types";
 import {
   answeredSlots,
@@ -66,6 +75,8 @@ export const ONE_LINE = "একবারে একটা পার্ট বল�
 const NO_ANSWER = "অ্যাপ সাড়া দেয়নি।";
 /** A name this close to a customer or supplier is offered as a button when it is not clear enough to take (D148). */
 const NEAR_NAME = 0.5;
+/** A return's button for a buyer without a name (D169). */
+const WALK_IN_LABEL = "নাম ছাড়া কেনা";
 
 const PART_KEYS = [
   "part_type",
@@ -94,6 +105,8 @@ export interface WriteTurn {
   /** Buttons for a car or part question: the shop's values near what was said, else its common ones (D154). */
   offersFor?: (slot: string) => Offer[];
   find: (query: PartQuery) => Promise<FindPartsResult>;
+  /** A return's sale finder over the read path (D169); without it a return cannot find its sale. */
+  sales?: (input: { customerId: string | null; partId: string }) => Promise<FoundSales | null>;
   /** The query completed from the request and the memory; `answered` names the slots the user answered (D167). */
   complete: (
     query: PartQuery,
@@ -125,6 +138,13 @@ interface ChosenPart {
   year: number | null;
   partType: string | null;
 }
+
+/** A return's sale line as found, with the buyer's due then; kept in the frame, so plain JSON (D169). */
+type ChosenSale = SaleLine & { customerDue: number | null };
+/** A sale line's button value. */
+const saleKey = (line: SaleLine) => `${line.saleId}:${line.lineId ?? ""}`;
+/** A return on an app whose sales the read path cannot read. */
+const NO_SALES = "এই অ্যাপের আগের বিক্রি পড়তে পারছি না, তাই ফেরতটা অ্যাপেই করুন।";
 
 function chosenOf(
   row: PartRow,
@@ -200,6 +220,9 @@ export function writeFrame(
   putSaid("amount", args.amount, parseAmount);
   put("note", args.note);
   put("reason", args.reason);
+  put("when", args.when);
+  // A returned part said to be damaged stays out of stock (D169).
+  if (capability.template === "return" && saysDamaged(turn.request)) frame.slots.damaged = understood(true);
   for (const [key, value] of Object.entries(args))
     if (key.startsWith("extra_")) put(`extra.${key.slice(6)}`, value);
   return frame;
@@ -237,6 +260,17 @@ function partQueryOf(frame: RequestFrame): PartQuery {
 
 function partWords(chosen: ChosenPart): string {
   return chosen.partType ? banglaOf("part_type", chosen.partType) : (chosen.nameBn ?? chosen.name);
+}
+
+/** The part as a sentence names it: "ফিল্ডারের সামনের ব্রেক প্যাড". */
+function partPhrase(chosen: ChosenPart): string {
+  return [
+    chosen.vehicle ? possessive(banglaOf("vehicle_model", chosen.vehicle)) : null,
+    chosen.position ? banglaOf("position", chosen.position) : null,
+    partWords(chosen),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -372,12 +406,31 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     frame.slots.part = understood(chosen, { display: partWords(chosen), hostId: chosen.hostPartId });
   }
 
-  // 2. The customer or supplier: named ones are resolved; one the action needs is asked (or remembered).
+  // 2. The customer or supplier: named ones are resolved; one the action needs is asked (or remembered). A return
+  // finds its sale by who bought it, so it asks for its buyer, with a button for a walk-in (D169).
+  const returning = slots.has("sale_ref");
+  if (returning && frame.slots.customer?.value === WALK_IN) {
+    frame.slots.walk_in = understood(true, { display: WALK_IN_LABEL });
+    delete frame.slots.customer;
+  }
+  const walkIn: Offer = { id: "opt-walk-in", label: WALK_IN_LABEL, value: WALK_IN };
   for (const party of ["customer", "supplier"] as const) {
-    if (!slots.has(party)) continue;
+    const forReturn = party === "customer" && returning;
+    if ((!slots.has(party) && !forReturn) || (forReturn && frame.slots.walk_in)) continue;
     const list = party === "customer" ? turn.customers : turn.suppliers;
     const slot = frame.slots[party];
-    const required = capability.params.some((param) => param.semanticSlot === party && param.required);
+    const required =
+      forReturn || capability.params.some((param) => param.semanticSlot === party && param.required);
+    const askParty = (offers: Offer[]) =>
+      askSlot(
+        party,
+        question({
+          slot: party,
+          ...(forReturn ? { returning: true } : {}),
+          ...(first ? { understood: understoodSoFar(frame) } : {}),
+        }),
+        forReturn ? [...offers, walkIn] : offers,
+      );
     // A name picked from the chips carries its host ID as the slot's value.
     const picked = slot && !slot.hostId ? list.find((person) => person.hostId === slot.value) : undefined;
     if (picked) {
@@ -406,16 +459,13 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         frame.slots[`said_${party}`] = { value: String(slot.value), status: "unclear", source: "user" };
         delete frame.slots[party];
         const near = match.candidates.filter((candidate) => candidate.score >= NEAR_NAME).slice(0, 3);
-        if (!near.length) return ask(party);
-        const offers = near.map((candidate, index) => ({
-          id: `opt-${index + 1}`,
-          label: candidate.customer.name,
-          value: candidate.customer.hostId,
-        }));
-        return askSlot(
-          party,
-          question({ slot: party, ...(first ? { understood: understoodSoFar(frame) } : {}) }),
-          offers,
+        if (!near.length && !forReturn) return ask(party);
+        return askParty(
+          near.map((candidate, index) => ({
+            id: `opt-${index + 1}`,
+            label: candidate.customer.name,
+            value: candidate.customer.hostId,
+          })),
         );
       }
     } else if (!slot && required) {
@@ -427,16 +477,70 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
           status: "understood",
           source: "context",
         };
-      } else return ask(party);
+      } else return forReturn ? askParty([]) : ask(party);
     }
   }
 
-  // 3. The quantity, in the part's own unit (spec 10.6: a unit that differs is asked, never converted).
+  // 2b. A return's sale (D169): the buyer's sales of the part in the last 30 days, through the read path.
+  let sale = (frame.slots.sale?.value as ChosenSale | undefined) ?? null;
+  if (returning && chosen && !sale) {
+    const walkedIn = Boolean(frame.slots.walk_in);
+    const found = turn.sales
+      ? await turn.sales({
+          customerId: walkedIn ? null : (frame.slots.customer?.hostId ?? null),
+          partId: chosen.hostPartId,
+        })
+      : null;
+    if (!found) return { kind: "answer", text: NO_SALES };
+    let lines = found.lines;
+    const answer = frame.slots.sale_ref?.value;
+    const tapped = lines.find((line) => saleKey(line) === answer);
+    if (tapped) lines = [tapped];
+    else {
+      // A day said with the request or as the answer ("গতকাল", "৩ দিন আগে") picks among the sales; the confirmation
+      // says the day, so a wrong pick is one "না" away.
+      const said = str(answer) ?? str(frame.slots.when?.value) ?? frame.request ?? null;
+      const days = said ? daysAgoSaid(said) : null;
+      const that = lines.filter((line) => daysBefore(new Date(line.time), turn.now) === days);
+      if (that.length) lines = that;
+    }
+    if (!lines.length) {
+      const party = walkedIn
+        ? null
+        : String(frame.slots.customer?.display ?? frame.slots.customer?.value ?? "");
+      return {
+        kind: "answer",
+        text: party
+          ? `${possessive(party)} কাছে গত ৩০ দিনে ${partPhrase(chosen)} বিক্রি পাইনি।`
+          : `গত ৩০ দিনে নাম ছাড়া ${partPhrase(chosen)} বিক্রি পাইনি।`,
+      };
+    }
+    if (lines.length > 1) {
+      delete frame.slots.sale_ref;
+      const unit = chosen.unit ?? "piece";
+      return askSlot(
+        "sale_ref",
+        question({ slot: "sale_ref" }),
+        lines.slice(0, 5).map((line, index) => ({
+          id: `opt-${index + 1}`,
+          label: `${dayText(new Date(line.time), turn.now)}, ${quantityText(line.left, unit)}`,
+          value: saleKey(line),
+        })),
+      );
+    }
+    sale = { ...lines[0]!, customerDue: found.customerDue };
+    frame.slots.sale = understood(sale, { display: dayText(new Date(sale.time), turn.now) });
+  }
+
+  // 3. The quantity, in the part's own unit (spec 10.6: a unit that differs is asked, never converted); a return's
+  // never more than its sale's line has left, and a line of one is one (D169).
   if (slots.has("items") && chosen) {
     const unit = chosen.unit ?? "piece";
     const slot = frame.slots.quantity;
-    if (!slot) return ask("quantity", { unit });
-    if (typeof slot.value !== "number") {
+    const forReturn = sale ? { returning: true } : {};
+    if (!slot && sale?.left === 1) frame.slots.quantity = understood(1, { display: quantityText(1, unit) });
+    else if (!slot) return ask("quantity", { unit, ...forReturn });
+    else if (typeof slot.value !== "number") {
       const said =
         typeof slot.value === "string"
           ? parseQuantity(normalize(slot.value).tokens)
@@ -444,7 +548,11 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
       const check = said ? checkQuantity(said, { unit }) : null;
       if (!check?.ok) {
         delete frame.slots.quantity;
-        return ask("quantity", { unit });
+        return ask("quantity", { unit, ...forReturn });
+      }
+      if (sale && check.quantity > sale.left) {
+        delete frame.slots.quantity;
+        return ask("quantity", { unit, returning: true, sold: quantityText(sale.left, unit) });
       }
       frame.slots.quantity = understood(check.quantity, { display: quantityText(check.quantity, unit) });
     }
@@ -536,6 +644,7 @@ function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWri
         }
       : null;
   const payment = frame.slots.payment?.value as { credit?: true; method?: string } | undefined;
+  const sale = frame.slots.sale?.value as ChosenSale | undefined;
   const paid = str(frame.slots.paid_amount?.value)
     ? parseAmount(String(frame.slots.paid_amount!.value))
     : null;
@@ -556,6 +665,9 @@ function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWri
     amount: typeof frame.slots.amount?.value === "number" ? frame.slots.amount.value : null,
     note: str(frame.slots.note?.value),
     reason: str(frame.slots.reason?.value),
+    saleRef: sale ? { saleId: sale.saleId, lineId: sale.lineId } : null,
+    refund: null,
+    damaged: Boolean(frame.slots.damaged),
     extras: Object.fromEntries(
       Object.entries(frame.slots)
         .filter(([key]) => key.startsWith("extra."))
@@ -574,6 +686,8 @@ async function prepareWrite(
   const resolved = resolvedOf(frame, chosen);
   const template = capability.template;
   const dry = capability.dryRun ? dryRunQuery(turn.host.features) : null;
+  const sale = template === "return" ? ((frame.slots.sale?.value as ChosenSale | undefined) ?? null) : null;
+  const walkedIn = Boolean(frame.slots.walk_in);
   const send = async (body: Record<string, unknown>, query: Record<string, string>) => {
     const request = { method: capability.httpMethod, path: capability.path, query, body };
     try {
@@ -590,6 +704,24 @@ async function prepareWrite(
   let warnings: string[] = [];
   try {
     if (dry) {
+      if (sale) {
+        // A return's refund needs its total and the buyer's due: a first dry run without the refund reads them
+        // (spec 11.9 step 1).
+        const response = await send(buildBody(capability, { ...resolved, refund: null }).body, dry);
+        if (response.status >= 300)
+          return {
+            kind: "answer",
+            text: resultText("failed", template, { reason: refusalOf(response, turn.host.features) }),
+          };
+        const facts = answerFacts(response.body);
+        total = facts.total;
+        resolved.refund = refundOf(capability, {
+          total: total ?? 0,
+          customerDue: facts.customerDue ?? sale.customerDue,
+          saleDue: sale.saleDue,
+          walkIn: walkedIn,
+        });
+      }
       if (open(resolved) && template !== "payment") {
         // The amount of a "নগদে" payment is the total: a first dry run without payments reads it.
         const response = await send(buildBody(capability, { ...resolved, payments: [] }).body, dry);
@@ -623,7 +755,17 @@ async function prepareWrite(
     // No dry run: the total from mapped prices, read back as an estimate (architecture, host features).
     const line = resolved.line;
     if (template === "payment") total = resolved.amount ?? null;
-    else if (line && line.unitCost != null) total = line.unitCost * line.quantity;
+    else if (sale && line) {
+      // A return without a dry run: the line's sold price, and the buyer's due from the read path (D169).
+      const each = sale.unitPrice ?? chosen?.price ?? null;
+      total = each !== null ? each * line.quantity : null;
+      resolved.refund = refundOf(capability, {
+        total: total ?? 0,
+        customerDue: sale.customerDue,
+        saleDue: sale.saleDue,
+        walkIn: walkedIn,
+      });
+    } else if (line && line.unitCost != null) total = line.unitCost * line.quantity;
     else if (line && chosen) total = chosen.price !== null ? chosen.price * line.quantity : null;
     if (open(resolved) && total !== null)
       resolved.payments = resolved.payments!.map((payment) => ({
@@ -666,7 +808,18 @@ async function prepareWrite(
     payment:
       template === "payment"
         ? methodText(resolved.payments?.[0]?.method ?? "cash")
-        : paymentText(payments, total !== null ? BigInt(total) : null),
+        : sale
+          ? null
+          : paymentText(payments, total !== null ? BigInt(total) : null),
+    // A return says its sale's day and how the money goes back (spec 11.10; D169).
+    ...(sale
+      ? {
+          date: dayText(new Date(sale.time), turn.now, { of: true }),
+          refund: resolved.refund
+            ? refundText(BigInt(resolved.refund.due), BigInt(resolved.refund.cash))
+            : null,
+        }
+      : {}),
   };
   const text = confirmationText(template, fields);
   const highlight = (name: string) => (frame.slots[name]?.confidence ?? 1) < 0.85;
@@ -675,6 +828,11 @@ async function prepareWrite(
   const sheet: ActionPreview["fields"] = [
     ...(fields.customer
       ? [{ label: "কাস্টমার", value: fields.customer, highlight: highlight("customer") }]
+      : sale && walkedIn
+        ? [{ label: "কাস্টমার", value: WALK_IN_LABEL, highlight: false }]
+        : []),
+    ...(sale
+      ? [{ label: "বিক্রির দিন", value: dayText(new Date(sale.time), turn.now), highlight: false }]
       : []),
     ...(fields.supplier
       ? [{ label: "সাপ্লায়ার", value: fields.supplier, highlight: highlight("supplier") }]
@@ -697,16 +855,23 @@ async function prepareWrite(
       : []),
     ...(fields.amount != null ? [{ label: "টাকা", value: money(fields.amount), highlight: false }] : []),
     ...(fields.total != null && template !== "payment"
-      ? [{ label: "মোট", value: money(fields.total), highlight: false }]
+      ? [{ label: sale ? "ফেরত" : "মোট", value: money(fields.total), highlight: false }]
       : []),
     ...(fields.payment ? [{ label: "পেমেন্ট", value: fields.payment, highlight: false }] : []),
+    ...(fields.refund ? [{ label: "কীভাবে", value: fields.refund, highlight: false }] : []),
   ];
   const balanceChange =
     template === "payment"
       ? -paid
-      : total !== null && (resolved.customer || resolved.supplier)
-        ? total - paid
-        : null;
+      : sale
+        ? resolved.customer && resolved.refund
+          ? -resolved.refund.due
+          : null
+        : total !== null && (resolved.customer || resolved.supplier)
+          ? total - paid
+          : null;
+  /** A returned part goes back to stock, unless it is said damaged to a host that keeps it out (D169). */
+  const backToStock = resolved.damaged && takesDamaged(capability) ? 0 : quantity;
   const preview: ActionPreview = {
     template,
     text,
@@ -729,7 +894,10 @@ async function prepareWrite(
     supplier: resolved.supplier ?? null,
     expect: {
       stock: chosen
-        ? { [chosen.hostPartId]: template === "stock_in" ? quantity : template === "sale" ? -quantity : 0 }
+        ? {
+            [chosen.hostPartId]:
+              template === "stock_in" ? quantity : template === "sale" ? -quantity : sale ? backToStock : 0,
+          }
         : {},
       balance: balanceChange,
     },

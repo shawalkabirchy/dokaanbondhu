@@ -63,9 +63,25 @@ export interface ResolvedWrite {
   amount?: number | null;
   note?: string | null;
   reason?: string | null;
+  /** A return's sale and its line (D169). */
+  saleRef?: { saleId: string; lineId: string | null } | null;
+  /** A return's money back: off the customer's due and in cash, whole taka; null to leave both out (a dry run). */
+  refund?: { due: number; cash: number } | null;
+  /** A returned part said damaged: true sends the line's damaged value, when the host has one. */
+  damaged?: boolean;
   /** Required parameters without a slot, by their leaf name (spec 9.6 extra.<name>). */
   extras?: Record<string, string>;
 }
+
+/** A parameter's value for a returned part that is damaged (restock: "damaged"), or null when it has none. */
+function damagedOption(param: WriteParam): string | null {
+  if (param.semanticSlot || !/restock|damage|condition|state/.test(leafOf(param.path))) return null;
+  return param.enumValues?.find((option) => /damag|broken|scrap|defect|^no$/i.test(option)) ?? null;
+}
+
+/** Whether a return can say its part is damaged, so it stays out of stock (D169). */
+export const takesDamaged = (capability: WriteCapability) =>
+  capability.params.some((param) => damagedOption(param) !== null);
 
 const inList = (param: WriteParam) => param.path.includes("[]");
 
@@ -101,8 +117,23 @@ function valueFor(param: WriteParam, resolved: ResolvedWrite, index: number): un
       return resolved.note ?? undefined;
     case "reason":
       return resolved.reason ?? undefined;
-    default:
+    case "sale_ref": {
+      const ref = resolved.saleRef;
+      if (!ref || index > 0) return undefined;
+      return /item|line/.test(leaf) ? (ref.lineId ?? undefined) : ref.saleId;
+    }
+    case "refund": {
+      const refund = resolved.refund;
+      if (!refund) return undefined;
+      if (/due|credit|balance|baki/.test(leaf)) return refund.due;
+      if (/cash/.test(leaf)) return refund.cash;
+      return undefined;
+    }
+    default: {
+      const damaged = resolved.damaged && index === 0 ? damagedOption(param) : null;
+      if (damaged) return damaged;
       return param.required ? resolved.extras?.[leaf] : undefined;
+    }
   }
 }
 
@@ -136,6 +167,27 @@ function hasPath(body: Json, path: string): boolean {
   return (
     Array.isArray(value) && value.length > 0 && value.every((item) => hasPath(item as Json, rest.join("[].")))
   );
+}
+
+/**
+ * A return's money back by the rule of spec 11.9 step 1, in the refund fields the host has (D169): a sale with nothing
+ * left due, or a walk-in's, goes back in cash; otherwise off the customer's due as far as it goes, the rest in cash.
+ */
+export function refundOf(
+  capability: WriteCapability,
+  input: { total: number; customerDue: number | null; saleDue: number | null; walkIn: boolean },
+): { due: number; cash: number } {
+  const leaves = capability.params
+    .filter((param) => param.semanticSlot === "refund")
+    .map((param) => leafOf(param.path));
+  const takesDue = leaves.some((leaf) => /due|credit|balance|baki/.test(leaf));
+  const takesCash = leaves.some((leaf) => /cash/.test(leaf));
+  const { total } = input;
+  if (!takesDue) return { due: 0, cash: total };
+  if (!takesCash) return { due: total, cash: 0 };
+  if (input.walkIn || input.saleDue === 0) return { due: 0, cash: total };
+  const due = Math.min(total, Math.max(0, input.customerDue ?? 0));
+  return { due, cash: total - due };
 }
 
 /** The parameter that names how a payment is made. */

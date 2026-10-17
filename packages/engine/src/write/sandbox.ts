@@ -5,8 +5,9 @@ import type { ImportedDocument } from "../host/openapi-import";
 import { hasField } from "../host/schema-map";
 import { buildQuery } from "../host/sql";
 import { executeAction, undoAction } from "./execute";
-import { answerFacts, buildBody, cashMethod, dryRunQuery, type ResolvedWrite } from "./request";
+import { answerFacts, buildBody, cashMethod, dryRunQuery, refundOf, type ResolvedWrite } from "./request";
 import type { ActionPreview, HostRequest, HostResponse, WriteCapability, WriteHost } from "./types";
+import { findSales, type SaleLine } from "./sale-finder";
 import { snapshot, type ReadPath, type Snapshot } from "./verify";
 
 // The sandbox check (spec 11.11; D139): on a throw-away copy of the host, every write is run with sample values from
@@ -157,7 +158,61 @@ function sampleOf(capability: WriteCapability, samples: Samples): ResolvedWrite 
   }
   if (capability.template === "stock_in" && supplier && part)
     return { supplier, line: { hostPartId: part.hostId, quantity: 1, unitCost: part.cost }, payments: [] };
+  // A return takes back the one unit of its own sale, made just before it (D169); its sale is found then.
+  if (capability.template === "return" && customer && part)
+    return {
+      customer,
+      line: { hostPartId: part.hostId, quantity: 1 },
+      saleRef: null,
+      refund: null,
+      payments: [],
+    };
   return null;
+}
+
+/** Sells one unit of a return's part on credit with the host's sale, and finds the line through the read path. */
+async function sellOne(
+  host: WriteHost,
+  read: ReadPath,
+  resolved: ResolvedWrite,
+  input: { now: () => Date; newId: () => string },
+): Promise<SaleLine | null> {
+  const sale = host.capabilities.find((item) => item.template === "sale");
+  if (!sale || !resolved.customer || !resolved.line) return null;
+  const sample: ResolvedWrite = { customer: resolved.customer, line: resolved.line, payments: [] };
+  const done = await executeAction({
+    capability: sale,
+    action: {
+      id: input.newId(),
+      capabilityId: sale.id,
+      request: { method: sale.httpMethod, path: sale.path, query: {}, body: buildBody(sale, sample).body },
+      preview: {
+        template: "sale",
+        text: "",
+        fields: [],
+        warnings: [],
+        total: null,
+        paid: 0,
+        lines: [],
+        customer: resolved.customer,
+        supplier: null,
+        expect: { stock: {}, balance: null },
+      },
+      idempotencyKey: input.newId(),
+      expiresAt: input.now().toISOString(),
+    },
+    host,
+    actingUser: "Sandbox check",
+    read: null,
+    now: input.now,
+  });
+  if (done.status !== "done") return null;
+  const found = await findSales(read, {
+    customerId: resolved.customer.hostId,
+    partId: resolved.line.hostPartId,
+    now: input.now(),
+  });
+  return found?.lines.find((line) => line.left >= 1) ?? null;
 }
 
 const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b);
@@ -219,9 +274,39 @@ export async function verifyCapabilities(input: {
       ...payment,
       amount: payment.amount ?? resolved.amount ?? null,
     }));
-    const body = buildBody(capability, resolved).body;
-    const before = await snapshot(read, preview);
+    let before = await snapshot(read, preview);
     let total: number | null = null;
+    if (capability.template === "return") {
+      // A return needs a sale to take back: one unit sold on credit to the sample customer, found through the read
+      // path, so the sale and its return leave the copy's stock and dues as they were (D169).
+      const sold = await sellOne(host, read, resolved, input);
+      checks.push({ name: "own_sale_found", ok: sold !== null });
+      if (!sold) {
+        entries.push(entry("fail"));
+        continue;
+      }
+      resolved.saleRef = { saleId: sold.saleId, lineId: sold.lineId };
+      before = await snapshot(read, preview);
+      // The refund by the default rule, from a first dry run without it (spec 11.9 step 1).
+      const first =
+        capability.dryRun && dry
+          ? await host.call({
+              method: capability.httpMethod,
+              path: capability.path,
+              query: dry,
+              body: buildBody(capability, resolved).body,
+            })
+          : null;
+      const facts = first ? answerFacts(first.body) : null;
+      total = facts?.total ?? (sold.unitPrice !== null ? sold.unitPrice : null);
+      resolved.refund = refundOf(capability, {
+        total: total ?? 0,
+        customerDue: facts?.customerDue ?? before.balance,
+        saleDue: sold.saleDue,
+        walkIn: false,
+      });
+    }
+    const body = buildBody(capability, resolved).body;
     if (capability.dryRun && dry) {
       const answer = await host.call({
         method: capability.httpMethod,
@@ -229,7 +314,7 @@ export async function verifyCapabilities(input: {
         query: dry,
         body,
       });
-      total = answerFacts(answer.body).total;
+      total = answerFacts(answer.body).total ?? total;
       const unchanged = same(before, await snapshot(read, preview));
       checks.push({ name: "dry_run_changes_nothing", ok: answer.status < 300 && unchanged });
     }
@@ -240,10 +325,21 @@ export async function verifyCapabilities(input: {
       stock: resolved.line
         ? {
             [resolved.line.hostPartId]:
-              capability.template === "stock_in" ? 1 : capability.template === "sale" ? -1 : 0,
+              capability.template === "stock_in" || capability.template === "return"
+                ? 1
+                : capability.template === "sale"
+                  ? -1
+                  : 0,
           }
         : {},
-      balance: capability.template === "payment" ? -paid : total !== null ? total - paid : null,
+      balance:
+        capability.template === "payment"
+          ? -paid
+          : capability.template === "return"
+            ? -(resolved.refund?.due ?? 0)
+            : total !== null
+              ? total - paid
+              : null,
     };
     const execution = await executeAction({
       capability,

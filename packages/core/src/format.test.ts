@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { banglaNumbers, numberWords, spokenText } from "./format";
+import { banglaNumbers, dayText, daysBefore, numberWords, spokenText } from "./format";
 
 // The text sent to text-to-speech (spec 10.8, P7, D109): numbers as Bangla words, codes and labels as written. The
 // answers are always Bangla; the digits in them come from the templates (Bangla digits) or the LLM (either).
@@ -77,5 +77,26 @@ describe("numbers in the LLM's sentences (D118)", () => {
     ]) {
       expect(banglaNumbers(text)).toBe(text);
     }
+  });
+});
+
+describe("a sale's day (D169)", () => {
+  // 17 Oct 2026, 10:00 in Dhaka.
+  const now = new Date("2026-10-17T04:00:00Z");
+
+  it("says today and yesterday by the shop's calendar in Dhaka", () => {
+    // 01:00 on 17 Oct in Dhaka, still 16 Oct in UTC.
+    expect(dayText(new Date("2026-10-16T19:00:00Z"), now)).toBe("আজ");
+    expect(dayText(new Date("2026-10-16T17:00:00Z"), now)).toBe("গতকাল");
+    expect(daysBefore(new Date("2026-10-14T06:00:00Z"), now)).toBe(3);
+  });
+
+  it("says an older day as its date, and each form before a part", () => {
+    expect(dayText(new Date("2026-10-14T06:00:00Z"), now)).toBe("১৪ অক্টোবর");
+    expect(dayText(new Date("2026-10-14T06:00:00Z"), now, { of: true })).toBe("১৪ অক্টোবরের");
+    expect(dayText(new Date("2026-10-16T06:00:00Z"), now, { of: true })).toBe("গতকালের");
+    expect(dayText(now, now, { of: true })).toBe("আজকের");
+    expect(dayText(new Date("2026-05-02T06:00:00Z"), now, { of: true })).toBe("২ মের");
+    expect(dayText(new Date("2026-07-05T06:00:00Z"), now, { of: true })).toBe("৫ জুলাইয়ের");
   });
 });

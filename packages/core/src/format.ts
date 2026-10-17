@@ -41,6 +41,57 @@ export function year(value: number): string {
   return banglaDigits(String(value));
 }
 
+const MONTHS_BN = [
+  "জানুয়ারি",
+  "ফেব্রুয়ারি",
+  "মার্চ",
+  "এপ্রিল",
+  "মে",
+  "জুন",
+  "জুলাই",
+  "আগস্ট",
+  "সেপ্টেম্বর",
+  "অক্টোবর",
+  "নভেম্বর",
+  "ডিসেম্বর",
+];
+/** Each month's form before a noun: "১৪ অক্টোবরের", "২ মের", "৫ জুলাইয়ের". */
+const MONTHS_OF_BN = [
+  "জানুয়ারির",
+  "ফেব্রুয়ারির",
+  "মার্চের",
+  "এপ্রিলের",
+  "মের",
+  "জুনের",
+  "জুলাইয়ের",
+  "আগস্টের",
+  "সেপ্টেম্বরের",
+  "অক্টোবরের",
+  "নভেম্বরের",
+  "ডিসেম্বরের",
+];
+/** Bangladesh keeps one offset all year (UTC+6), so a shop's day is the UTC day of the time six hours on. */
+const DHAKA_MS = 6 * 60 * 60 * 1000;
+const dhakaDay = (time: Date) => Math.floor((time.getTime() + DHAKA_MS) / 86_400_000);
+
+/** How many days before `now` a time was, by the shop's calendar in Dhaka (0 for earlier today). */
+export function daysBefore(time: Date, now: Date): number {
+  return dhakaDay(now) - dhakaDay(time);
+}
+
+/**
+ * A sale's day as said (D169): "আজ", "গতকাল", else the date, "১৪ অক্টোবর", in Dhaka time. With `of`, the form
+ * before a part: "আজকের", "গতকালের", "১৪ অক্টোবরের".
+ */
+export function dayText(time: Date, now: Date, options: { of?: boolean } = {}): string {
+  const days = daysBefore(time, now);
+  if (days === 0) return options.of ? "আজকের" : "আজ";
+  if (days === 1) return options.of ? "গতকালের" : "গতকাল";
+  const local = new Date(time.getTime() + DHAKA_MS);
+  const month = (options.of ? MONTHS_OF_BN : MONTHS_BN)[local.getUTCMonth()];
+  return `${banglaDigits(String(local.getUTCDate()))} ${month}`;
+}
+
 const UNIT_BN: Record<string, string> = {
   piece: "টা",
   set: "সেট",

@@ -8,8 +8,9 @@ import { verifyCapabilities, writeHostOf } from "../src/write/sandbox";
 import { geargridMap } from "./geargrid-map";
 
 // The sandbox check (spec 11.11; D139) on the test host's API that the CI job starts on port 4000: the three writes of
-// step 5 pass with their compensations; the kinds without a sample yet are skipped, never passed; every record it
-// saves is undone, so the seed stays as the other test files expect it.
+// step 5 pass with their compensations, and the return (D169) with its own sale; the kinds without a sample yet are
+// skipped, never passed. Every record it saves is undone, and the return takes back its own sale in full, so the
+// seed's dues and stock stay as the other test files expect them.
 
 const apiUrl = process.env.GEARGRID_API_URL ?? "";
 const seedKey = process.env.SEED_API_KEY ?? "";
@@ -29,7 +30,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
   const pools = new HostPools();
   afterAll(() => pools.closeAll());
 
-  it("passes sale, payment and stock-in with their undo, and skips the kinds it has no sample for", async () => {
+  it("passes sale, payment, stock-in and return, and skips the kinds it has no sample for", async () => {
     const url = new URL(migrationUrl);
     const db: HostDb = {
       id: "sandbox-test",
@@ -55,6 +56,15 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
     const imported = importOpenApi(document, path);
     connection.features = imported.features;
     const run = (query: { text: string; values: unknown[] }) => pools.readOnly(db, (each) => each(query));
+    // Every customer's due and every part's stock, before and after.
+    const books = async () => [
+      await run({ text: "select id, due_balance from customers order by id", values: [] }),
+      await run({
+        text: "select part_id, sum(quantity)::text as quantity from stock_levels group by part_id order by part_id",
+        values: [],
+      }),
+    ];
+    const before = await books();
     const report = await verifyCapabilities({
       imported,
       host: writeHostOf(imported, (request) => callHost(connection, request), randomUUID),
@@ -73,7 +83,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       reverse_payment: "pass",
       stock_in: "pass",
       reverse_purchase: "pass",
-      record_return: "skipped",
+      record_return: "pass",
       update_price: "skipped",
       add_fitment: "skipped",
     });
@@ -87,5 +97,12 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       "read_back_stock_and_balance",
       "undo_puts_everything_back",
     ]);
+    expect(report.capabilities.find((entry) => entry.name === "record_return")!.checks).toEqual([
+      { name: "own_sale_found", ok: true },
+      { name: "dry_run_changes_nothing", ok: true },
+      expect.objectContaining({ name: "saved", ok: true }),
+      expect.objectContaining({ name: "read_back_stock_and_balance", ok: true }),
+    ]);
+    expect(await books()).toEqual(before);
   });
 });

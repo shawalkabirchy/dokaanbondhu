@@ -39,8 +39,8 @@ const ready = local(apiUrl) && local(migrationUrl) && seedKey.length > 0;
 if (process.env.CI === "true" && !ready)
   throw new Error("the write tests need the CI job's API and database");
 
-/** Enabled in these tests: the three of step 5, and the price change, which only the owner may use. */
-const ENABLED = new Set(["record_sale", "receive_payment", "stock_in", "update_price"]);
+/** Enabled in these tests: the three of step 5, the return (D169), and the price change, which only the owner may use. */
+const ENABLED = new Set(["record_sale", "receive_payment", "stock_in", "record_return", "update_price"]);
 
 /** The capability registry as setup leaves it: every proposal confirmed, the writes above enabled (spec 11.8). */
 function registryOf(document: unknown, calls: HostRequest[]): WriteHost {
@@ -193,6 +193,17 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     return BigInt(String(row!.taka));
   }
 
+  /** A part's stock as the host has it now, all its rows summed. */
+  async function stockOf(partId: string): Promise<number> {
+    const [row] = await pools.readOnly(db, (run) =>
+      run({
+        text: "select coalesce(sum(quantity), 0)::text as units from stock_levels where part_id = $1",
+        values: [partId],
+      }),
+    );
+    return Number(row!.units);
+  }
+
   /** Every call sent so far went as a dry run, or was a read: nothing was saved. */
   const nothingSent = () => calls.every((call) => call.method === "GET" || call.query?.dry_run === "true");
 
@@ -249,9 +260,15 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     await runTurn({ text: "hello" }, fresh(), deps([owner], "owner"), () => {});
     const writesOf = (names: string[]) =>
       names.filter((name) => ENABLED.has(name) || /void|reverse/.test(name));
-    expect(writesOf(staff.offered[0]!).sort()).toEqual(["receive_payment", "record_sale", "stock_in"]);
+    expect(writesOf(staff.offered[0]!).sort()).toEqual([
+      "receive_payment",
+      "record_return",
+      "record_sale",
+      "stock_in",
+    ]);
     expect(writesOf(owner.offered[0]!).sort()).toEqual([
       "receive_payment",
+      "record_return",
       "record_sale",
       "stock_in",
       "update_price",
@@ -393,6 +410,109 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       });
       expect(older.reply).toBe("জেনুইন না নন-জেনুইন?");
       expect(nothingSent()).toBe(true);
+    },
+  );
+
+  // D169, a return on the test host: a credit sale of two sets is saved, then each set comes back. The first is found
+  // among Rahim Motors' sales of that pad (today's is the newest) and refunded off the due; the second is the line's
+  // last, so its quantity is not asked. GearGrid has no undo for a return, and a sale with a return cannot be voided
+  // (D29), so both sets come back and the seed's due and stock end as they began.
+  it.each([
+    {
+      style: "Bangla",
+      sale: "রহিম মোটরসকে এক্সিওর সামনের ব্রেক প্যাড বাকিতে দাও",
+      saleArgs: {
+        customer: "রহিম মোটরস",
+        items: [{ part: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" } }],
+        payment: { method_word: "বাকিতে" },
+      },
+      back: "রহিম মোটরস এক্সিওর সামনের ব্রেক প্যাড এক সেট ফেরত দিয়েছে",
+      again: "রহিম মোটরস এক্সিওর সামনের ব্রেক প্যাড ফেরত দিয়েছে",
+      customer: "রহিম মোটরস",
+      part: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+      one: "এক সেট",
+      answers: ["২০১৪", "নন-জেনুইন", "দুই সেট", "হ্যাঁ"],
+    },
+    {
+      style: "Banglish",
+      sale: "Rahim Motors ke axior samner brake pad bakite dao",
+      saleArgs: {
+        customer: "Rahim Motors",
+        items: [{ part: { part_type: "brake pad", vehicle: "axio", position: "samner" } }],
+        payment: { method_word: "bakite" },
+      },
+      back: "Rahim Motors axio r samner brake pad ek set ferot dise",
+      again: "Rahim Motors axio r samner brake pad ferot dise",
+      customer: "Rahim Motors",
+      part: { part_type: "brake pad", vehicle: "axio", position: "samner" },
+      one: "ek set",
+      answers: ["2014", "non genuine", "dui set", "ha"],
+    },
+  ])(
+    "D169: a sale of two sets, then both come back, refunded off the due ($style)",
+    async ({ sale, saleArgs, back, again, customer, part, one, answers }) => {
+      const [year, quality, two, yes] = answers as [string, string, string, string];
+      const tap = (reply: Awaited<ReturnType<typeof say>>, label: RegExp) => {
+        const choices = reply.events.find((event) => event.type === "choices");
+        const option =
+          choices?.type === "choices" ? choices.options.find((o) => label.test(o.label)) : undefined;
+        if (choices?.type !== "choices" || !option) throw new Error(`no ${label}: ${reply.reply}`);
+        return { choice: { slot: choices.slot, optionId: option.id } };
+      };
+      /** Answers the part's questions, and picks today's sale when several are found. */
+      const toSheet = async (first: Awaited<ReturnType<typeof say>>) => {
+        let reply = await say((await say(first.state, year)).state, quality);
+        if (reply.reply.endsWith("কোন দিনের বিক্রি?")) reply = await say(reply.state, tap(reply, /^আজ, /));
+        return reply;
+      };
+      const due = await balance("customers", "Rahim Motors");
+
+      // The sale, as A.6 makes it.
+      const first = await say(fresh(), sale, [
+        scripted([{ calls: [{ name: "record_sale", arguments: saleArgs }] }]),
+      ]);
+      const quantity = await say((await say((await say(first.state, year)).state, quality)).state, two);
+      const partId = quantity.outcome.actions[0]!.preview!.lines[0]!.hostPartId;
+      const sold = await say(quantity.state, yes);
+      expect(sold.outcome.actions[0]).toMatchObject({ status: "done" });
+      expect(await balance("customers", "Rahim Motors")).toBe(due + 3200n);
+      const stock = await stockOf(partId);
+
+      // The first set back: today's sale, one set, off the due.
+      calls.length = 0;
+      const start = await say(fresh(), back, [
+        scripted([
+          { calls: [{ name: "record_return", arguments: { customer, items: [{ part, quantity: one }] } }] },
+        ]),
+      ]);
+      const sheet = await toSheet(start);
+      expect(sheet.reply).toBe(
+        "Rahim Motors — আজকের এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ১ সেট, ১,৬০০ টাকা ফেরত, বাকি থেকে কাটা হবে। ঠিক আছে?",
+      );
+      expect(nothingSent()).toBe(true);
+      const backed = await say(sheet.state, yes);
+      expect(backed.reply).toBe(`হয়ে গেছে। Rahim Motors-এর মোট বাকি এখন ${formatTaka(due + 1600n)} টাকা।`);
+      expect(backed.outcome.actions[0]).toMatchObject({ status: "done", verifyStatus: "ok" });
+      expect(backed.events.find((event) => event.type === "action_result")).toMatchObject({
+        status: "done",
+        undo_available: false,
+      });
+      expect(await stockOf(partId)).toBe(stock + 1);
+
+      // The second set: the line's last, so no quantity is asked.
+      const next = await say(fresh(), again, [
+        scripted([{ calls: [{ name: "record_return", arguments: { customer, items: [{ part }] } }] }]),
+      ]);
+      const last = await toSheet(next);
+      expect(last.reply).toMatch(
+        /^Rahim Motors — আজকের .*, ১ সেট, ১,৬০০ টাকা ফেরত, বাকি থেকে কাটা হবে। ঠিক আছে\?$/,
+      );
+      const done = await say(last.state, yes);
+      expect(done.outcome.actions[0]).toMatchObject({ status: "done", verifyStatus: "ok" });
+      // Both back: the seed's due and stock are as they were before the sale.
+      expect(await balance("customers", "Rahim Motors")).toBe(due);
+      expect(await stockOf(partId)).toBe(stock + 2);
+      saved.clear(); // the sale has its returns now, so it is never voided (D29)
     },
   );
 

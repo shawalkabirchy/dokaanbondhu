@@ -298,7 +298,9 @@ export function refusalText(status: number): string {
 
 // Words that ask for a write (D140): a sale, a received payment or a purchase said as an instruction. A sentence with
 // a question word ("দাম", "কত", "আছে?") asks something and is never taken as one. Matched on normalized words.
-const WRITE_CUES: Record<"sale" | "payment" | "stock_in", string[]> = {
+const WRITE_CUES: Record<"sale" | "payment" | "stock_in" | "return", string[]> = {
+  // A return (D169): its word alone, looked for before a sale's (ফেরত দাও holds দাও).
+  return: ["ফেরত", "ফেরৎ", "রিটার্ন", "ferot", "ferat", "feret", "return", "ritarn"],
   sale: [
     "দাও",
     "দিয়ে দাও",
@@ -371,6 +373,19 @@ const PAYMENT_WORDS = [
   "bikashe",
   "bkash e",
 ];
+/** The words that ask for a write, and how it is paid. */
+const WRITE_WORDS = new Set(
+  [...Object.values(WRITE_CUES).flat(), ...PAYMENT_WORDS].flatMap((phrase) => normalize(phrase).tokens),
+);
+
+/**
+ * Whether a word asks for a write or says how it is paid: such a word is never a part's detail, so "ফেরত নাও"
+ * (return it) is not heard as পুরাতন (used), nor "ferot nao" as puraton (D169).
+ */
+export function isWriteWord(token: string): boolean {
+  return WRITE_WORDS.has(token) || CREDIT_WORDS.has(token);
+}
+
 const QUESTION_WORDS = new Set(
   [
     "কত",
@@ -398,15 +413,17 @@ const said = (tokens: string[], phrase: string) =>
 
 /**
  * The kind of write a sentence asks for, or null: a sale ("দাও", "dao" with a payment word or a named customer), a
- * received payment ("জমা নাও", "joma nao") or a purchase ("কিনলাম", "kinlam"). A question is never one.
+ * received payment ("জমা নাও", "joma nao"), a purchase ("কিনলাম", "kinlam") or a return ("ফেরত", "ferot"). A
+ * question is never one.
  */
 export function writeCueOf(
   text: string,
   options: { partyNamed: boolean },
-): "sale" | "payment" | "stock_in" | null {
+): "sale" | "payment" | "stock_in" | "return" | null {
   const tokens = normalize(text).tokens;
   if (!tokens.length || text.trim().endsWith("?") || tokens.some((token) => QUESTION_WORDS.has(token)))
     return null;
+  if (WRITE_CUES.return.some((phrase) => said(tokens, phrase))) return "return";
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
   if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
   if (
@@ -415,6 +432,104 @@ export function writeCueOf(
   )
     return "sale";
   return null;
+}
+
+const DAMAGED_WORDS = new Set(
+  [
+    "নষ্ট",
+    "খারাপ",
+    "ভাঙা",
+    "ভাঙ্গা",
+    "ড্যামেজ",
+    "nosto",
+    "noshto",
+    "nshto",
+    "kharap",
+    "kharaf",
+    "vanga",
+    "bhanga",
+    "damaged",
+    "damage",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
+
+/** Whether a returned part is said to be damaged, so it does not go back to stock (D169). */
+export function saysDamaged(text: string): boolean {
+  return normalize(text).tokens.some((token) => DAMAGED_WORDS.has(token));
+}
+
+const DAYS_AGO: ReadonlyMap<string, number> = new Map(
+  (
+    [
+      [0, ["আজ", "আজকে", "আজকের", "aj", "ajke", "ajker", "today"]],
+      [
+        1,
+        [
+          "গতকাল",
+          "গতকালকে",
+          "গতকালের",
+          "কাল",
+          "কালকে",
+          "কালকের",
+          "gotokal",
+          "gotokalke",
+          "gotokaler",
+          "kal",
+          "kalke",
+          "kalker",
+          "yesterday",
+        ],
+      ],
+      [2, ["পরশু", "পরশুর", "porshu", "porshur", "poroshu", "porsu"]],
+    ] as const
+  ).flatMap(([days, words]) => words.map((word) => [normalize(word).tokens.join(" "), days] as const)),
+);
+const DAY_WORDS = new Set(["দিন", "din", "day", "days"].map((word) => normalize(word).tokens.join(" ")));
+const AGO_WORDS = new Set(["আগে", "age", "ago"].map((word) => normalize(word).tokens.join(" ")));
+
+/**
+ * When a sale was, as said with a return (D169): how many days ago, from আজ, গতকাল, পরশু or "[n] দিন আগে"
+ * ("aj", "gotokal", "3 din age"); null when nothing says it.
+ */
+export function daysAgoSaid(text: string): number | null {
+  const tokens = normalize(asciiDigits(text)).tokens;
+  for (let index = 0; index < tokens.length; index++) {
+    if (DAY_WORDS.has(tokens[index + 1] ?? "") && AGO_WORDS.has(tokens[index + 2] ?? "")) {
+      const count = parseAmount(tokens[index]!);
+      if (count !== null && count < 31) return count;
+    }
+  }
+  for (const token of tokens) {
+    const days = DAYS_AGO.get(token);
+    if (days !== undefined) return days;
+  }
+  return null;
+}
+
+/** A walk-in buyer, as the customer question of a return takes it (its button, or the words, D169). */
+export const WALK_IN = "walk-in";
+const WALK_IN_WORDS = [
+  "নাম ছাড়া",
+  "নাম ছাড়াই",
+  "ওয়াক ইন",
+  "ওয়াকইন",
+  "walk in",
+  "walkin",
+  "nam chara",
+  "nam chhara",
+];
+
+/** Whether an answer says the buyer was a walk-in, with no name. */
+export function saysWalkIn(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return WALK_IN_WORDS.some((phrase) => said(tokens, phrase));
+}
+
+/** How a return's money goes back (spec 11.10 [refund]): off the due, in cash, or both with their amounts. */
+export function refundText(due: bigint, cash: bigint): string {
+  if (cash === 0n) return "বাকি থেকে কাটা হবে";
+  if (due === 0n) return "নগদ ফেরত";
+  return `বাকি থেকে ${money(due)}, নগদ ${money(cash)}`;
 }
 
 /** Words that make the number before them money, and words that make the number after them a price (D157). */

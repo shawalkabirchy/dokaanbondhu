@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   confirmationText,
+  daysAgoSaid,
   decisionOf,
   methodText,
   parseAmount,
   paymentText,
+  refundText,
   refusalText,
   saidMoney,
   saidNumbers,
+  saysDamaged,
+  saysWalkIn,
   writeCueOf,
   resultText,
 } from "./actions";
@@ -219,5 +223,84 @@ describe("numbers said", () => {
     expect([...saidNumbers("১০,০০০ টাকা")]).toEqual(expect.arrayContaining([10_000]));
     expect([...saidNumbers("দুইটা প্লাগ দাও")]).toEqual(expect.arrayContaining([2]));
     expect(saidNumbers("রহিম মোটরসকে প্যাড বাকিতে দাও").size).toBe(0);
+  });
+});
+
+describe("a return said (D169)", () => {
+  it.each([
+    ["রহিম মোটরস এক্সিওর সামনের ব্রেক প্যাড এক সেট ফেরত দিয়েছে", true],
+    ["Rohim Motors axio r samner brake pad ek set ferot dise", true],
+    ["একটা প্লাগ ফেরত নাও", false],
+    ["ekta plug ferot nao", false],
+    ["রহিমকে ব্রেক প্যাড ফেরত দাও", true],
+    ["brake pad return nilam", false],
+  ] as const)("%s is a return, never a sale", (text, partyNamed) => {
+    expect(writeCueOf(text, { partyNamed })).toBe("return");
+  });
+
+  it.each(["ব্রেক প্যাড ফেরত দেওয়া যাবে?", "brake pad ferot deya jabe?"])(
+    "%s asks, and is no return",
+    (text) => {
+      expect(writeCueOf(text, { partyNamed: false })).toBeNull();
+    },
+  );
+
+  it.each([
+    ["আজ বিক্রি করা প্যাড", 0],
+    ["aj er pad", 0],
+    ["গতকাল নিয়েছিল", 1],
+    ["gotokal nise", 1],
+    ["পরশু কিনেছে", 2],
+    ["porshu kinse", 2],
+    ["৩ দিন আগে", 3],
+    ["3 din age", 3],
+    ["পাঁচ দিন আগে", 5],
+    ["panch din age", 5],
+  ] as const)("the sale's day in %s is %i days ago", (text, days) => {
+    expect(daysAgoSaid(text)).toBe(days);
+  });
+
+  it("says no day when none is said", () => {
+    expect(daysAgoSaid("রহিম মোটরস প্যাড ফেরত দিল")).toBeNull();
+    expect(daysAgoSaid("Rohim Motors pad ferot dilo")).toBeNull();
+  });
+
+  it("hears a damaged part and a walk-in buyer, in Bangla and Banglish", () => {
+    expect(saysDamaged("প্যাডটা নষ্ট, ফেরত নাও")).toBe(true);
+    expect(saysDamaged("padta kharap, ferot nao")).toBe(true);
+    expect(saysDamaged("প্যাড ফেরত নাও")).toBe(false);
+    expect(saysWalkIn("নাম ছাড়া")).toBe(true);
+    expect(saysWalkIn("walk in")).toBe(true);
+    expect(saysWalkIn("nam chara")).toBe(true);
+    expect(saysWalkIn("রহিম মোটরস")).toBe(false);
+  });
+
+  it("says how the money goes back", () => {
+    expect(refundText(1600n, 0n)).toBe("বাকি থেকে কাটা হবে");
+    expect(refundText(0n, 1600n)).toBe("নগদ ফেরত");
+    expect(refundText(1000n, 600n)).toBe("বাকি থেকে ১,০০০ টাকা, নগদ ৬০০ টাকা");
+  });
+
+  it("confirms with the sale's day before the part", () => {
+    expect(
+      confirmationText("return", {
+        customer: "Rahim Motors",
+        date: "১৪ অক্টোবরের",
+        lines: [
+          {
+            vehicle: "Toyota Axio",
+            year: 2014,
+            position: "front",
+            part: "ব্রেক প্যাড",
+            quality: "genuine",
+            quantity: "১ সেট",
+          },
+        ],
+        total: 4500n,
+        refund: refundText(4500n, 0n),
+      }),
+    ).toBe(
+      "Rahim Motors — ১৪ অক্টোবরের এক্সিও ২০১৪, সামনের ব্রেক প্যাড, জেনুইন, ১ সেট, ৪,৫০০ টাকা ফেরত, বাকি থেকে কাটা হবে। ঠিক আছে?",
+    );
   });
 });
