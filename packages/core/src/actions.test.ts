@@ -304,3 +304,14 @@ describe("a return said (D169)", () => {
     );
   });
 });
+
+describe("a quantity glued as speech-to-text writes it (D170)", () => {
+  it.each([
+    ["Rohim Motors brake pad exet ferot dise", 1],
+    ["রহিম মোটরস ব্রেক প্যাড এক্সেট ফেরত দিয়েছে", 1],
+    ["Rahim Motors ke duiset pad bakite dao", 2],
+    ["রহিম মোটরসকে দুইসেট প্যাড বাকিতে দাও", 2],
+  ] as const)("%s says %i", (text, value) => {
+    expect(saidNumbers(text).has(value)).toBe(true);
+  });
+});

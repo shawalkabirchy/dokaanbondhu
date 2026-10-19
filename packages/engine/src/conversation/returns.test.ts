@@ -60,6 +60,12 @@ const RETURN = [
     damaged: "রহিম মোটরস ব্রেক প্যাড এক সেট ফেরত দিয়েছে, নষ্ট",
     noQuantity: "রহিম মোটরস ব্রেক প্যাড ফেরত দিয়েছে",
     noQuantityArgs: { customer: "রহিম মোটরস", items: [{ part: { part_type: "ব্রেক প্যাড" } }] },
+    glued: "রহিম মোটরস ব্রেক প্যাড এক্সেট ফেরত দিয়েছে",
+    gluedArgs: {
+      customer: "রহিম মোটরস",
+      items: [{ part: { part_type: "ব্রেক প্যাড" }, quantity: "এক্সেট" }],
+    },
+    gluedAnswer: "এক্সেট",
   },
   {
     style: "Banglish",
@@ -77,6 +83,9 @@ const RETURN = [
     damaged: "Rohim Motors brake pad ek set ferot dise, kharap",
     noQuantity: "Rohim Motors brake pad ferot dise",
     noQuantityArgs: { customer: "Rohim Motors", items: [{ part: { part_type: "brake pad" } }] },
+    glued: "Rohim Motors brake pad exet ferot dise",
+    gluedArgs: { customer: "Rohim Motors", items: [{ part: { part_type: "brake pad" }, quantity: "exet" }] },
+    gluedAnswer: "exet",
   },
 ] as const;
 
@@ -197,6 +206,22 @@ describe("which sale, how much and how the money goes back (GearGrid, D169)", ()
     const asked = await toPart(shop, app, said.three, said.threeArgs);
     expect(asked.reply).toBe("ওই বিক্রিতে ২ সেট ছিল — কয় সেট ফেরত?");
     const reply = await shop.say(asked.state, { text: said.one });
+    expect(reply.confirm?.text).toMatch(/১ সেট, ১,৬০০ টাকা ফেরত/);
+  });
+
+  // D170: speech-to-text wrote "ek set" as "exet" on the owner's emulator, so the quantity was never understood.
+  it.each(RETURN)("a quantity glued as speech wrote it, in the request ($style)", async (said) => {
+    const shop = shopWith([sale({ partId: "pad-new", quantity: 2 })]);
+    const reply = await toPart(shop, app, said.glued, said.gluedArgs);
+    expect(reply.asked).toBeUndefined();
+    expect(reply.confirm?.text).toMatch(/১ সেট, ১,৬০০ টাকা ফেরত/);
+  });
+
+  it.each(RETURN)("a quantity glued as speech wrote it, as the answer ($style)", async (said) => {
+    const shop = shopWith([sale({ partId: "pad-new", quantity: 2 })]);
+    const asked = await toPart(shop, app, said.noQuantity, said.noQuantityArgs);
+    expect(asked.reply).toMatch(/কয় সেট ফেরত\?$/);
+    const reply = await shop.say(asked.state, { text: said.gluedAnswer });
     expect(reply.confirm?.text).toMatch(/১ সেট, ১,৬০০ টাকা ফেরত/);
   });
 

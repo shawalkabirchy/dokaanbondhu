@@ -47,6 +47,40 @@ function withClassifier(token: string): { value: number; unit: Unit } | null {
   return null;
 }
 
+/** Unit words long enough to be read glued to their number, longest first (টা and ta are classifiers, above). */
+const GLUED_UNITS = [...UNIT_WORDS.keys()]
+  .filter((word) => [...word].length >= 3)
+  .sort((a, b) => b.length - a.length);
+
+/**
+ * A number and its unit written as one word, as speech-to-text writes them: "দুইসেট", "duiset", "এক্সেট", and
+ * "exet" for "ek set" (x for ks). Only a head that reads as a number is taken, so "reset", "headset" or "চেইনসেট" are
+ * no quantity (D170).
+ */
+export function gluedQuantity(token: string): SaidQuantity | null {
+  const word = token.normalize("NFC");
+  const spelled = /^[a-z]+$/.test(word) ? word.replaceAll("x", "ks") : word;
+  for (const unitWord of GLUED_UNITS) {
+    if (spelled.length <= unitWord.length || !spelled.endsWith(unitWord)) continue;
+    const head = spelled.slice(0, -unitWord.length).replace(/্$/u, "");
+    const ascii = asciiDigits(head);
+    const value = /^\d+(\.\d+)?$/.test(ascii) ? Number(ascii) : wordNumber(head);
+    if (value !== null && value > 0) return { value, unit: UNIT_WORDS.get(unitWord)! };
+  }
+  return null;
+}
+
+/**
+ * A number and its unit joined by a hyphen: "ek-set", "dui-ta" (D170). Only with a unit after it, so a rack ("B-3") or
+ * a part number ("04465-12610") is no quantity.
+ */
+function hyphened(token: string): SaidQuantity | null {
+  const halves = token.split("-");
+  if (halves.length !== 2 || !halves[0] || !halves[1]) return null;
+  const split = parseQuantity(halves);
+  return split?.unit ? split : null;
+}
+
 /** The first quantity in normalized tokens: digits, number words, fractions and a unit word if one follows. */
 export function parseQuantity(tokens: readonly string[]): SaidQuantity | null {
   for (let index = 0; index < tokens.length; index += 1) {
@@ -64,7 +98,7 @@ export function parseQuantity(tokens: readonly string[]): SaidQuantity | null {
     } else if (whole !== undefined) {
       value = whole;
     } else {
-      const classified = withClassifier(token);
+      const classified = withClassifier(token) ?? gluedQuantity(token) ?? hyphened(token);
       if (classified) return classified;
       const ascii = asciiDigits(token);
       value = /^\d+(\.\d+)?$/.test(ascii) ? Number(ascii) : wordNumber(token);

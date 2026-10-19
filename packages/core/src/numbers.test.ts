@@ -104,6 +104,46 @@ describe("quantities (spec 10.6)", () => {
     expect(parseQuantity(tokens("2 tin mobil"))).toEqual({ value: 2, unit: "tin" });
   });
 
+  it.each([
+    ["exet", 1, "set"], // "ek set" as speech-to-text wrote it, x for ks (D170)
+    ["ekset", 1, "set"],
+    ["এক্সেট", 1, "set"],
+    ["একসেট", 1, "set"],
+    ["duiset", 2, "set"],
+    ["দুইসেট", 2, "set"],
+    ["2set", 2, "set"],
+    ["২সেট", 2, "set"],
+    ["tinpis", 3, "piece"],
+    ["তিনপিস", 3, "piece"],
+    ["teen set", 3, "set"], // Banglish spellings speech-to-text also writes
+    ["teenset", 3, "set"],
+    ["chaar set", 4, "set"],
+    ["paanch set", 5, "set"],
+    ["paach set", 5, "set"],
+    ["choi set", 6, "set"],
+    ["shat set", 7, "set"],
+    ["aath set", 8, "set"],
+    ["ek-set", 1, "set"], // joined by a hyphen
+    ["dui-ta", 2, "piece"],
+  ] as const)("reads %s, a number glued to its unit, as %i %s (D170)", (word, value, unit) => {
+    expect(parseQuantity(tokens(`brake pad ${word}`))).toEqual({ value, unit });
+  });
+
+  it.each([
+    "reset",
+    "headset",
+    "sunset",
+    "offset",
+    "চেইনসেট",
+    "হেডসেট",
+    "রিসেট",
+    "axio",
+    "B-3",
+    "04465-12610",
+  ])("%s is no quantity (D170)", (word) => {
+    expect(parseQuantity(tokens(word))).toBeNull();
+  });
+
   it("checks against how the part is sold", () => {
     expect(checkQuantity({ value: 2, unit: "set" }, { unit: "set" })).toEqual({ ok: true, quantity: 2 });
     expect(checkQuantity({ value: 1, unit: "hali" }, { unit: "piece" })).toEqual({ ok: true, quantity: 4 });

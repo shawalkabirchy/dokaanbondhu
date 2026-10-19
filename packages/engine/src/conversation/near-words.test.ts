@@ -73,6 +73,9 @@ describe("near-word hints", () => {
       text: "nawabpur autoparts theke axio 2014 samner non genuine brakepad patset kinlam",
       glued: "patset",
     },
+    // "ek set" as speech-to-text wrote it on the owner's emulator: x for ks (D170).
+    { style: "Bangla", text: "রহিম মোটরস এক্সিওর সামনের ব্রেক প্যাড এক্সেট ফেরত দিয়েছে", glued: "এক্সেট" },
+    { style: "Banglish", text: "rohim motors axio r samner brake pad exet ferot dise", glued: "exet" },
   ])(
     "takes a unit glued to its misheard number for a quantity, never a part (D158; $style)",
     ({ text, glued }) => {

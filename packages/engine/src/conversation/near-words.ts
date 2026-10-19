@@ -2,6 +2,7 @@ import {
   APP_WORD_CONCEPTS,
   appWord,
   banglaOf,
+  gluedQuantity as readGluedQuantity,
   EVERYDAY_WORDS,
   isNumberWord,
   knownWords,
@@ -258,9 +259,14 @@ function placedSpans(input: NearInput, tokens: readonly string[]): [number, numb
   return spans;
 }
 
-/** A number and its unit written as one word, the number perhaps misheard: পাঁচসেট, পাতসেট (D158). */
+/**
+ * A number and its unit written as one word, the number perhaps misheard: পাঁচসেট, পাতসেট (D158), and "exet" for "ek
+ * set", x for ks (D170).
+ */
 function gluedQuantity(token: string): boolean {
-  const number = GLUED_UNIT.exec(token)?.[1];
+  if (readGluedQuantity(token)) return true;
+  const spelled = /^[a-z]+$/.test(token) ? token.replaceAll("x", "ks") : token;
+  const number = GLUED_UNIT.exec(spelled)?.[1];
   if (!number) return false;
   return isNumberWord(number) || SMALL_NUMBERS.some((word) => soundSimilarity(number, word) >= NUMBER_SOUND);
 }
