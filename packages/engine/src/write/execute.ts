@@ -163,6 +163,14 @@ export async function executeAction(input: {
   };
 }
 
+/** The previous values a host's answer keeps for an undo ({ previous: { retail_price_taka, … } }, D132, D171). */
+function previousOf(response: unknown): Record<string, unknown> | undefined {
+  const previous = readPath(response, "previous");
+  return previous && typeof previous === "object" && !Array.isArray(previous)
+    ? (previous as Record<string, unknown>)
+    : undefined;
+}
+
 /** Fills {undo_reason} and {previous.<field>} placeholders of a compensation's body. */
 export function fillBody(
   body: Record<string, unknown>,
@@ -214,7 +222,8 @@ export async function undoAction(input: {
     method: operation.httpMethod,
     path: operation.path.replace(/\{[^}]+\}/, encodeURIComponent(String(id))),
     query: {},
-    body: fillBody(compensation.body, done.preview.previous),
+    // The previous values the confirmation kept, else the ones the host's own answer keeps (D171).
+    body: fillBody(compensation.body, done.preview.previous ?? previousOf(done.response)),
   };
   const response = await send(host, {
     ...request,

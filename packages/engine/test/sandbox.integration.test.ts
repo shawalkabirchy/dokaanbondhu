@@ -8,8 +8,8 @@ import { verifyCapabilities, writeHostOf } from "../src/write/sandbox";
 import { geargridMap } from "./geargrid-map";
 
 // The sandbox check (spec 11.11; D139) on the test host's API that the CI job starts on port 4000: the three writes of
-// step 5 pass with their compensations, and the return (D169) with its own sale; the kinds without a sample yet are
-// skipped, never passed. Every record it saves is undone, and the return takes back its own sale in full, so the
+// step 5 pass with their compensations, the return (D169) with its own sale, and the price change (D171) with its
+// undo; the kinds without a sample yet are skipped, never passed. Every record it saves is undone, and the return takes back its own sale in full, so the
 // seed's dues and stock stay as the other test files expect them.
 
 const apiUrl = process.env.GEARGRID_API_URL ?? "";
@@ -30,7 +30,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
   const pools = new HostPools();
   afterAll(() => pools.closeAll());
 
-  it("passes sale, payment, stock-in and return, and skips the kinds it has no sample for", async () => {
+  it("passes sale, payment, stock-in, return and price change, and skips the kinds it has no sample for", async () => {
     const url = new URL(migrationUrl);
     const db: HostDb = {
       id: "sandbox-test",
@@ -84,7 +84,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       stock_in: "pass",
       reverse_purchase: "pass",
       record_return: "pass",
-      update_price: "skipped",
+      update_price: "pass",
       add_fitment: "skipped",
     });
     const sale = report.capabilities.find((entry) => entry.name === "record_sale")!;
@@ -102,6 +102,14 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       { name: "dry_run_changes_nothing", ok: true },
       expect.objectContaining({ name: "saved", ok: true }),
       expect.objectContaining({ name: "read_back_stock_and_balance", ok: true }),
+    ]);
+    // The price change is its own undo: one entry, its undo among its checks, and the price back as it was.
+    const price = report.capabilities.filter((entry) => entry.name === "update_price");
+    expect(price).toHaveLength(1);
+    expect(price[0]!.checks.map((check) => [check.name, check.ok])).toEqual([
+      ["saved", true],
+      ["read_back_stock_and_balance", true],
+      ["undo_puts_everything_back", true],
     ]);
     expect(await books()).toEqual(before);
   });

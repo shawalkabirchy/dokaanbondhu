@@ -13,6 +13,7 @@ import {
   parseQuantity,
   paymentText,
   possessive,
+  priceLevelIn,
   question,
   quantity as quantityText,
   refundText,
@@ -49,7 +50,10 @@ import {
   methodParam,
   refundOf,
   refusalOf,
+  requestPath,
   takesDamaged,
+  takesPaikari,
+  writeSlots,
   type ResolvedWrite,
 } from "../write/request";
 import type { FoundSales, SaleLine } from "../write/sale-finder";
@@ -75,6 +79,8 @@ export const ONE_LINE = "একবারে একটা পার্ট বল�
 const NO_ANSWER = "অ্যাপ সাড়া দেয়নি।";
 /** A name this close to a customer or supplier is offered as a button when it is not clear enough to take (D148). */
 const NEAR_NAME = 0.5;
+/** A paikari price change on an app with no paikari price field (D171). */
+const NO_PAIKARI = "এই অ্যাপে পাইকারি দাম বদলানো যায় না।";
 /** A return's button for a buyer without a name (D169). */
 const WALK_IN_LABEL = "নাম ছাড়া কেনা";
 
@@ -96,6 +102,8 @@ export interface WriteTurn {
   customers: CatalogCustomer[];
   suppliers: CatalogCustomer[];
   tier: "retail" | "paikari";
+  /** Which trade price is the shop's paikari price (D146), for a price change (D171). */
+  paikari?: "garage_price" | "wholesale_price" | null;
   /** The remembered customer (spec 9.8): used only where the action needs one and none was named. */
   rememberedCustomer: { hostId: string; name: string } | null;
   now: Date;
@@ -134,6 +142,9 @@ interface ChosenPart {
   position: string | null;
   /** The price at the customer's tier (else retail), for the estimate of a host without a dry run. */
   price: number | null;
+  /** The part's retail and paikari prices, for a price change's "from" (D171). */
+  retail?: number | null;
+  paikari?: number | null;
   vehicle: string | null;
   year: number | null;
   partType: string | null;
@@ -161,6 +172,8 @@ function chosenOf(
     quality: row.quality,
     position: row.position,
     price: price === null ? null : Number(price),
+    retail: row.retailTaka === null ? null : Number(row.retailTaka),
+    paikari: levelPrice(row, "paikari") === null ? null : Number(levelPrice(row, "paikari")),
     vehicle: resolved.vehicle,
     year: resolved.year,
     partType: resolved.partType,
@@ -221,6 +234,13 @@ export function writeFrame(
   put("note", args.note);
   put("reason", args.reason);
   put("when", args.when);
+  // A price change's new price, said as money, of the kind it names (D171).
+  const prices = (args.prices ?? {}) as Record<string, unknown>;
+  for (const tier of ["paikari", "retail"] as const) {
+    if (frame.slots.new_price) break;
+    putSaid("new_price", prices[tier], parseAmount, money);
+    if (frame.slots.new_price) frame.slots.price_tier = understood(tier);
+  }
   // A returned part said to be damaged stays out of stock (D169).
   if (capability.template === "return" && saysDamaged(turn.request)) frame.slots.damaged = understood(true);
   for (const [key, value] of Object.entries(args))
@@ -228,8 +248,7 @@ export function writeFrame(
   return frame;
 }
 
-const slotsOf = (capability: WriteCapability) =>
-  new Set(capability.params.map((param) => param.semanticSlot));
+const slotsOf = writeSlots;
 
 /** A payment word: on credit, a method of the host, or null when it is not one. */
 export function paymentOf(
@@ -576,6 +595,27 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     frame.slots.unit_cost = understood(cost, { display: money(BigInt(cost)) });
   }
 
+  // 4b. A price change (D171): which price, by the request's words, and the new one, said as money.
+  if (slots.has("prices") && chosen) {
+    const tier =
+      priceLevelIn(turn.request) ??
+      (frame.slots.price_tier?.value as "retail" | "paikari" | undefined) ??
+      "retail";
+    if (tier === "paikari" && !takesPaikari(capability)) return { kind: "answer", text: NO_PAIKARI };
+    frame.slots.price_tier = understood(tier);
+    const slot = frame.slots.new_price;
+    const price = slot
+      ? typeof slot.value === "number"
+        ? slot.value
+        : parseAmount(String(slot.value))
+      : null;
+    if (price === null) {
+      delete frame.slots.new_price;
+      return ask("new_price", { tier });
+    }
+    frame.slots.new_price = understood(price, { display: money(BigInt(price)) });
+  }
+
   // 5. How it is paid: বাকিতে, নগদে or a method (a received payment with no word is cash, spec 9.6).
   if (slots.has("payment")) {
     const slot = frame.slots.payment;
@@ -668,6 +708,13 @@ function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWri
     saleRef: sale ? { saleId: sale.saleId, lineId: sale.lineId } : null,
     refund: null,
     damaged: Boolean(frame.slots.damaged),
+    part: chosen ? { hostId: chosen.hostPartId } : null,
+    prices:
+      typeof frame.slots.new_price?.value === "number"
+        ? {
+            [frame.slots.price_tier?.value === "paikari" ? "paikari" : "retail"]: frame.slots.new_price.value,
+          }
+        : null,
     extras: Object.fromEntries(
       Object.entries(frame.slots)
         .filter(([key]) => key.startsWith("extra."))
@@ -688,8 +735,12 @@ async function prepareWrite(
   const dry = capability.dryRun ? dryRunQuery(turn.host.features) : null;
   const sale = template === "return" ? ((frame.slots.sale?.value as ChosenSale | undefined) ?? null) : null;
   const walkedIn = Boolean(frame.slots.walk_in);
+  const slots = slotsOf(capability);
+  resolved.paikariField = turn.paikari ?? null;
+  // An action that names its part in the path gets the part's ID there (D171).
+  const path = requestPath(capability, resolved);
   const send = async (body: Record<string, unknown>, query: Record<string, string>) => {
-    const request = { method: capability.httpMethod, path: capability.path, query, body };
+    const request = { method: capability.httpMethod, path, query, body };
     try {
       return await turn.host.call(request);
     } catch (error) {
@@ -781,20 +832,32 @@ async function prepareWrite(
       : (resolved.payments ?? []).reduce((sum, payment) => sum + (payment.amount ?? 0), 0);
   const unit = chosen?.unit ?? "piece";
   const quantity = resolved.line?.quantity ?? 0;
-  const lines: ActionLine[] = chosen
-    ? [
-        {
-          vehicle: chosen.vehicle ?? undefined,
-          year: chosen.year,
-          position: chosen.position,
-          part: partWords(chosen),
-          quality: chosen.quality,
-          quantity: quantityText(quantity, unit),
-          unit: unitWord(unit),
-          unitCost: resolved.line?.unitCost != null ? BigInt(resolved.line.unitCost) : null,
-        },
-      ]
-    : [];
+  // A price change (D171): which price, from what, to what; its sentence names the part as the owner did.
+  const change =
+    slots.has("prices") && resolved.prices
+      ? {
+          tier: (resolved.prices.paikari != null ? "paikari" : "retail") as "retail" | "paikari",
+          price: resolved.prices.paikari ?? resolved.prices.retail ?? 0,
+        }
+      : null;
+  const before = change && chosen ? (change.tier === "paikari" ? chosen.paikari : chosen.retail) : null;
+  const lines: ActionLine[] =
+    change && chosen
+      ? [{ part: partPhrase(chosen) }]
+      : chosen
+        ? [
+            {
+              vehicle: chosen.vehicle ?? undefined,
+              year: chosen.year,
+              position: chosen.position,
+              part: partWords(chosen),
+              quality: chosen.quality,
+              quantity: quantityText(quantity, unit),
+              unit: unitWord(unit),
+              unitCost: resolved.line?.unitCost != null ? BigInt(resolved.line.unitCost) : null,
+            },
+          ]
+        : [];
   const payments = (resolved.payments ?? []).map((payment) => ({
     method: payment.method,
     amount: BigInt(payment.amount ?? 0),
@@ -808,9 +871,16 @@ async function prepareWrite(
     payment:
       template === "payment"
         ? methodText(resolved.payments?.[0]?.method ?? "cash")
-        : sale
+        : sale || !slots.has("payment")
           ? null
           : paymentText(payments, total !== null ? BigInt(total) : null),
+    ...(change
+      ? {
+          tier: change.tier,
+          oldPrice: before !== null && before !== undefined ? BigInt(before) : null,
+          newPrice: BigInt(change.price),
+        }
+      : {}),
     // A return says its sale's day and how the money goes back (spec 11.10; D169).
     ...(sale
       ? {
@@ -850,7 +920,18 @@ async function prepareWrite(
               .join(", "),
             highlight: partGuessed,
           },
-          { label: "পরিমাণ", value: quantityText(quantity, unit), highlight: false },
+          ...(slots.has("items")
+            ? [{ label: "পরিমাণ", value: quantityText(quantity, unit), highlight: false }]
+            : []),
+        ]
+      : []),
+    ...(change
+      ? [
+          { label: "দাম", value: change.tier === "paikari" ? "পাইকারি" : "খুচরা", highlight: false },
+          ...(before !== null && before !== undefined
+            ? [{ label: "আগে", value: money(BigInt(before)), highlight: false }]
+            : []),
+          { label: "নতুন", value: money(BigInt(change.price)), highlight: false },
         ]
       : []),
     ...(fields.amount != null ? [{ label: "টাকা", value: money(fields.amount), highlight: false }] : []),
@@ -905,7 +986,7 @@ async function prepareWrite(
   const action: PendingAction = {
     id: turn.newId(),
     capabilityId: capability.id,
-    request: { method: capability.httpMethod, path: capability.path, query: {}, body },
+    request: { method: capability.httpMethod, path, query: {}, body },
     preview,
     idempotencyKey: turn.newId(),
     expiresAt: new Date(turn.now.getTime() + CONFIRM_TTL_MS).toISOString(),

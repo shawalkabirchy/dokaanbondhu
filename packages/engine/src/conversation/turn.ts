@@ -38,6 +38,8 @@ import {
   resultText,
   writeCueOf,
   isWriteWord,
+  ownerOnlyText,
+  saidMoney,
   type Dictionary,
   type PartRow,
   type PartsContext,
@@ -939,6 +941,7 @@ export async function runTurn(
       nameBn: supplier.nameBn ?? null,
     })),
     tier: billTier,
+    paikari: deps.host.paikari ?? null,
     rememberedCustomer: state.context.customer
       ? { hostId: state.context.customer.hostId, name: state.context.customer.name }
       : null,
@@ -1061,33 +1064,50 @@ export async function runTurn(
     const unitCost = per >= 0 ? parseAmount(tokens.slice(per + 1).join(" ")) : null;
     const party = (kind: string) => named.find((name) => name.kind === kind)?.name;
     const who = customer ?? party("customer");
+    // A price change: the part, and the new price as said money, of the kind the request names (D171).
+    const price = [...saidMoney(text)].at(-1);
     const args: Record<string, unknown> =
-      capability.template === "payment"
+      capability.template === "price_update"
         ? {
-            ...(who ? { customer: who } : {}),
-            ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+            part: {
+              ...Object.fromEntries(
+                (["part_type", "vehicle_model", "position", "quality"] as const)
+                  .filter((concept) => heardSlots.has(concept))
+                  .map((concept) => [
+                    concept === "vehicle_model" ? "vehicle" : concept,
+                    heardSlots.get(concept),
+                  ]),
+              ),
+              ...part,
+            },
+            ...(price !== undefined ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } } : {}),
           }
-        : {
-            ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
-            ...(party("supplier") ? { supplier: party("supplier") } : {}),
-            items: [
-              {
-                part: {
-                  ...Object.fromEntries(
-                    (["part_type", "vehicle_model", "position", "quality"] as const)
-                      .filter((concept) => heardSlots.has(concept))
-                      .map((concept) => [
-                        concept === "vehicle_model" ? "vehicle" : concept,
-                        heardSlots.get(concept),
-                      ]),
-                  ),
-                  ...part,
+        : capability.template === "payment"
+          ? {
+              ...(who ? { customer: who } : {}),
+              ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+            }
+          : {
+              ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
+              ...(party("supplier") ? { supplier: party("supplier") } : {}),
+              items: [
+                {
+                  part: {
+                    ...Object.fromEntries(
+                      (["part_type", "vehicle_model", "position", "quality"] as const)
+                        .filter((concept) => heardSlots.has(concept))
+                        .map((concept) => [
+                          concept === "vehicle_model" ? "vehicle" : concept,
+                          heardSlots.get(concept),
+                        ]),
+                    ),
+                    ...part,
+                  },
+                  ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
+                  ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
                 },
-                ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
-                ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
-              },
-            ],
-          };
+              ],
+            };
     const frame = markGuessed(writeFrame(capability, args, writeTurn(text)));
     tookStep(frame, await advanceWrite(frame, writeTurn(text)));
     return "stop" as const;
@@ -1545,6 +1565,19 @@ export async function runTurn(
     });
   }
   mark("frame", since);
+
+  // A write only the owner may make, asked by staff (a price change, D171): refused at once, and nothing changes.
+  const ownersOnly =
+    cueKind && !cued && !final
+      ? deps.host.writes?.capabilities.find(
+          (capability) =>
+            capability.template === cueKind && capability.requiredRole === "owner" && role !== "owner",
+        )
+      : undefined;
+  if (ownersOnly) {
+    trace.tool_calls.push({ name: ownersOnly.name, arguments: {}, result: "owner_only" });
+    final = { kind: "answer", text: ownerOnlyText(ownersOnly.template) };
+  }
 
   // Stage 5: the LLM tool loop, unless the frame already has the reply or the facts.
   let llmText: string | null = null;

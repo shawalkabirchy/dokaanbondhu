@@ -237,3 +237,10 @@ describe("a return's questions (D169)", () => {
     expect(question({ slot: "customer" })).toBe("কার নামে?");
   });
 });
+
+describe("a price change's question (D171)", () => {
+  it("asks the new price of the kind that changes", () => {
+    expect(question({ slot: "new_price", tier: "retail" })).toBe("নতুন খুচরা দাম কত?");
+    expect(question({ slot: "new_price", tier: "paikari" })).toBe("নতুন পাইকারি দাম কত?");
+  });
+});

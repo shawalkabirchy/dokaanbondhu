@@ -373,6 +373,27 @@ const PAYMENT_WORDS = [
   "bikashe",
   "bkash e",
 ];
+/** A price change (D171): দাম or price, the new amount as money, and a word that sets it; never with বিক্রি. */
+const PRICE_WORDS = new Set(["দাম", "dam", "daam", "price"].map((word) => normalize(word).tokens.join(" ")));
+const SET_PRICE = [
+  "করো",
+  "করে দাও",
+  "করে দিন",
+  "করেন",
+  "করুন",
+  "রাখো",
+  "রাখেন",
+  "koro",
+  "kore dao",
+  "kore din",
+  "koren",
+  "korun",
+  "rakho",
+  "rakhen",
+  "set koro",
+];
+const SELLING = ["বিক্রি", "বেচো", "bikri", "becho", "sell"];
+
 /** The words that ask for a write, and how it is paid. */
 const WRITE_WORDS = new Set(
   [...Object.values(WRITE_CUES).flat(), ...PAYMENT_WORDS].flatMap((phrase) => normalize(phrase).tokens),
@@ -413,19 +434,26 @@ const said = (tokens: string[], phrase: string) =>
 
 /**
  * The kind of write a sentence asks for, or null: a sale ("দাও", "dao" with a payment word or a named customer), a
- * received payment ("জমা নাও", "joma nao"), a purchase ("কিনলাম", "kinlam") or a return ("ফেরত", "ferot"). A
- * question is never one.
+ * received payment ("জমা নাও", "joma nao"), a purchase ("কিনলাম", "kinlam"), a return ("ফেরত", "ferot") or a
+ * price change ("দাম ৮৫০০ করো", "dam 8500 koro"). A question is never one.
  */
 export function writeCueOf(
   text: string,
   options: { partyNamed: boolean },
-): "sale" | "payment" | "stock_in" | "return" | null {
+): "sale" | "payment" | "stock_in" | "return" | "price_update" | null {
   const tokens = normalize(text).tokens;
-  if (!tokens.length || text.trim().endsWith("?") || tokens.some((token) => QUESTION_WORDS.has(token)))
-    return null;
+  if (!tokens.length || text.trim().endsWith("?")) return null;
+  // A price change names the price it sets (D171); every other write is said without a question word.
+  const asks = tokens.some((token) => QUESTION_WORDS.has(token) && !PRICE_WORDS.has(token));
+  if (asks) return null;
   if (WRITE_CUES.return.some((phrase) => said(tokens, phrase))) return "return";
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
   if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
+  if (tokens.some((token) => PRICE_WORDS.has(token))) {
+    const sets = SET_PRICE.some((phrase) => said(tokens, phrase));
+    const selling = SELLING.some((phrase) => said(tokens, phrase));
+    return sets && !selling && saidMoney(text).size > 0 ? "price_update" : null;
+  }
   if (
     WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
     (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))
@@ -523,6 +551,13 @@ const WALK_IN_WORDS = [
 export function saysWalkIn(text: string): boolean {
   const tokens = normalize(text).tokens;
   return WALK_IN_WORDS.some((phrase) => said(tokens, phrase));
+}
+
+/** What staff are told when they ask for a write only the owner may make, and nothing changes (D171). */
+export function ownerOnlyText(kind: ActionTemplate): string {
+  return kind === "price_update"
+    ? "দাম বদলাতে পারেন শুধু দোকানের মালিক।"
+    : "এটা শুধু দোকানের মালিক করতে পারেন।";
 }
 
 /** How a return's money goes back (spec 11.10 [refund]): off the due, in cash, or both with their amounts. */

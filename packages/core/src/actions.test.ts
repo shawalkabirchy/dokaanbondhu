@@ -4,6 +4,7 @@ import {
   daysAgoSaid,
   decisionOf,
   methodText,
+  ownerOnlyText,
   parseAmount,
   paymentText,
   refundText,
@@ -313,5 +314,47 @@ describe("a quantity glued as speech-to-text writes it (D170)", () => {
     ["রহিম মোটরসকে দুইসেট প্যাড বাকিতে দাও", 2],
   ] as const)("%s says %i", (text, value) => {
     expect(saidNumbers(text).has(value)).toBe(true);
+  });
+});
+
+describe("a price change said (D171)", () => {
+  it.each([
+    "নোয়ার সেলফ মোটরের দাম ৮৫০০ টাকা করো",
+    "Noah er self er dam 8500 koro",
+    "এক্সিওর ব্রেক প্যাডের পাইকারি দাম ১৪০০ করে দাও",
+    "axio r brake pad er paikari dam 1400 kore dao",
+    "ব্রেক প্যাডের দাম আট হাজার পাঁচশো রাখো",
+    "brake pad er dam 8500 rakho",
+  ])("%s is a price change", (text) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBe("price_update");
+  });
+
+  it.each([
+    "নোয়ার সেলফ মোটরের দাম কত?",
+    "Noah er self er dam koto?",
+    "এক্সিওর প্যাডের দাম কত করো", // a question word
+    "axio pad er dam koto koro",
+    "রহিম মোটরসকে প্যাডের দাম দাও", // no amount, no word that sets it
+    "Rahim Motors ke pad er dam dao",
+    "প্যাড ৪৫০০ টাকা দামে বিক্রি করো", // a sale, never a price change
+    "pad 4500 taka dam e bikri koro",
+  ])("%s is no price change", (text) => {
+    expect(writeCueOf(text, { partyNamed: false })).not.toBe("price_update");
+  });
+
+  it("tells staff only the owner may", () => {
+    expect(ownerOnlyText("price_update")).toBe("দাম বদলাতে পারেন শুধু দোকানের মালিক।");
+    expect(ownerOnlyText("generic")).toBe("এটা শুধু দোকানের মালিক করতে পারেন।");
+  });
+
+  it("confirms the price from and to", () => {
+    expect(
+      confirmationText("price_update", {
+        lines: [{ part: "নোয়ার সেলফ মোটর" }],
+        tier: "retail",
+        oldPrice: 8200n,
+        newPrice: 8500n,
+      }),
+    ).toBe("নোয়ার সেলফ মোটরের খুচরা দাম ৮,২০০ টাকা থেকে ৮,৫০০ টাকা। ঠিক আছে?");
   });
 });

@@ -226,6 +226,7 @@ export type QuestionSlot =
   | "customer"
   | "supplier"
   | "sale_ref"
+  | "new_price"
   | "quantity"
   | "unit_cost"
   | "unit_price"
@@ -245,6 +246,7 @@ export const QUESTION_ORDER: QuestionSlot[] = [
   "customer",
   "supplier",
   "sale_ref",
+  "new_price",
   "quantity",
   "unit_cost",
   "unit_price",
@@ -266,6 +268,8 @@ export interface QuestionInput {
   returning?: boolean;
   /** What the sale's line has left to return, when a said quantity was more: "২ সেট". */
   sold?: string;
+  /** A price change's kind (D171). */
+  tier?: "retail" | "paikari";
 }
 
 /** The template question for one slot (spec 9.4). */
@@ -297,6 +301,9 @@ export function question(input: QuestionInput): string {
       break;
     case "sale_ref":
       text = "কোন দিনের বিক্রি?";
+      break;
+    case "new_price":
+      text = `নতুন ${input.tier === "paikari" ? "পাইকারি" : "খুচরা"} দাম কত?`;
       break;
     case "amount":
       text = "কত টাকা?";

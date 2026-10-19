@@ -157,7 +157,27 @@ export interface Api {
   answer?: ApiAnswer;
   /** False for an app whose sale has no dry run: the confirmation's total comes from the prices. */
   dryRun?: boolean;
+  /** Who is signed in: staff by default; a price change is the owner's (D171). */
+  role?: "owner" | "staff";
 }
+
+/** The app's price change as GearGrid answers it: the new prices, and the previous ones for an undo (D132). */
+const priceAnswer: ApiAnswer = async (request) => {
+  const body = (request.body ?? {}) as { retail_price_taka?: number; garage_price_taka?: number };
+  const id = decodeURIComponent(request.path.split("/").at(-2) ?? "");
+  return {
+    status: 200,
+    headers: new Headers(),
+    body: {
+      part: {
+        id,
+        retail_price_taka: body.retail_price_taka ?? 1600,
+        garage_price_taka: body.garage_price_taka ?? 1500,
+      },
+      previous: { retail_price_taka: 1600, garage_price_taka: 1500 },
+    },
+  };
+};
 
 /** The app's return as GearGrid answers it: the total from the sold line, the customer's due after the refund. */
 function returnAnswer(shop: Shop): ApiAnswer {
@@ -183,7 +203,7 @@ function returnAnswer(shop: Shop): ApiAnswer {
   };
 }
 
-const IDS: Record<string, string> = { record_sale: "sale", record_return: "return" };
+const IDS: Record<string, string> = { record_sale: "sale", record_return: "return", update_price: "price" };
 
 /** GearGrid's sale and return as setup imports them (dry runs as the API allows, unless `api` turns them off). */
 function appCapabilities(api: Api = {}): WriteCapability[] {
@@ -227,7 +247,13 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
     features: importOpenApi(openapi).features,
     call: async (request, options) => {
       calls.push(request);
-      const answer = api.answer ?? (request.path.includes("/returns") ? returnAnswer(shop) : answered);
+      const answer =
+        api.answer ??
+        (request.path.includes("/returns")
+          ? returnAnswer(shop)
+          : request.path.endsWith("/price")
+            ? priceAnswer
+            : answered);
       return answer(request, options);
     },
     wake: () => {
@@ -347,7 +373,7 @@ export function connect(shop: Shop, api: Api = {}) {
     newId: () => `id-${++id}`,
     evalMode: false,
     shopWords: [],
-    role: "staff",
+    role: api.role ?? "staff",
   });
   /** One turn; an answer needs no LLM, so a request brings the one tool call its script names. */
   async function say(state: TurnState, input: Input, steps: Step[] = []) {

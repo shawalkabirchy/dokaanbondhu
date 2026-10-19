@@ -1,5 +1,5 @@
 import type { ToolDef } from "../providers";
-import { leafOf } from "./request";
+import { leafOf, writeSlots } from "./request";
 import type { WriteCapability } from "./types";
 
 // A capability's tool (spec 9.6): built from its parameters' semantic slots, never from a host's names. Every argument
@@ -33,7 +33,7 @@ const PURPOSE: Record<string, string> = {
 const said = (description: string) => ({ type: "string", description });
 
 export function writeTool(capability: WriteCapability): ToolDef {
-  const slots = new Set(capability.params.map((param) => param.semanticSlot));
+  const slots = writeSlots(capability);
   const costInLines = capability.params.some(
     (param) => param.semanticSlot === "items" && /cost/.test(leafOf(param.path)),
   );
@@ -74,6 +74,17 @@ export function writeTool(capability: WriteCapability): ToolDef {
     };
   }
   if (slots.has("amount")) properties.amount = said("the amount of money, as said, e.g. ১০ হাজার, 10 hajar");
+  // A price change: the new price as said, of the kind it names; the owner's two kinds (D145, D171).
+  if (slots.has("prices")) {
+    properties.prices = {
+      type: "object",
+      properties: {
+        retail: said("the new normal (খুচরা) price, as said, e.g. ৮৫০০ টাকা, 8500"),
+        paikari: said("the new paikari (garage, wholesale) price, as said, when the request says paikari"),
+      },
+      additionalProperties: false,
+    };
+  }
   if (slots.has("note")) properties.note = said("a note, as said");
   if (slots.has("reason")) properties.reason = said("the reason, as said");
   for (const param of capability.params) {

@@ -5,7 +5,15 @@ import type { ImportedDocument } from "../host/openapi-import";
 import { hasField } from "../host/schema-map";
 import { buildQuery } from "../host/sql";
 import { executeAction, undoAction } from "./execute";
-import { answerFacts, buildBody, cashMethod, dryRunQuery, refundOf, type ResolvedWrite } from "./request";
+import {
+  answerFacts,
+  buildBody,
+  cashMethod,
+  dryRunQuery,
+  refundOf,
+  requestPath,
+  type ResolvedWrite,
+} from "./request";
 import type { ActionPreview, HostRequest, HostResponse, WriteCapability, WriteHost } from "./types";
 import { findSales, type SaleLine } from "./sale-finder";
 import { snapshot, type ReadPath, type Snapshot } from "./verify";
@@ -86,7 +94,23 @@ export function writeHostOf(
 interface Samples {
   customer: { hostId: string; name: string } | null;
   supplier: { hostId: string; name: string } | null;
-  part: { hostId: string; name: string; unit: string | null; cost: number } | null;
+  part: { hostId: string; name: string; unit: string | null; cost: number; retail: number | null } | null;
+}
+
+/** A part's retail price as the host has it now, whole taka; null when the map cannot tell (D171). */
+async function retailOf(read: ReadPath, partId: string): Promise<number | null> {
+  const { map, run } = read;
+  if (!hasField(map, "Price", "part_id") || !hasField(map, "Price", "retail_price")) return null;
+  const [row] = await run(
+    buildQuery(map, {
+      from: { concept: "Price", alias: "p" },
+      select: [{ ref: { alias: "p", field: "retail_price" }, as: "retail" }],
+      where: [{ ref: { alias: "p", field: "part_id" }, op: "eq", value: partId }],
+      limit: 1,
+    }),
+  );
+  const taka = toTaka(row?.retail);
+  return taka === null ? null : Number(taka);
 }
 
 /** Sample values from the host's own data: the customer with the largest due, a supplier, the part with most stock. */
@@ -142,7 +166,13 @@ async function samplesOf(read: ReadPath, catalog: Catalog): Promise<Samples> {
     customer: customer ? { hostId: customer.hostId, name: customer.name } : null,
     supplier: supplier ? { hostId: supplier.hostId, name: supplier.name } : null,
     part: part
-      ? { hostId: part.hostId, name: part.name, unit: (part.attrs.unit as string | undefined) ?? null, cost }
+      ? {
+          hostId: part.hostId,
+          name: part.name,
+          unit: (part.attrs.unit as string | undefined) ?? null,
+          cost,
+          retail: await retailOf(read, part.hostId),
+        }
       : null,
   };
 }
@@ -167,6 +197,9 @@ function sampleOf(capability: WriteCapability, samples: Samples): ResolvedWrite 
       refund: null,
       payments: [],
     };
+  // A price change raises the retail price by one taka, and its undo puts it back (D171).
+  if (capability.template === "price_update" && part && part.retail !== null)
+    return { part: { hostId: part.hostId }, prices: { retail: part.retail + 1 }, payments: [] };
   return null;
 }
 
@@ -307,13 +340,9 @@ export async function verifyCapabilities(input: {
       });
     }
     const body = buildBody(capability, resolved).body;
+    const path = requestPath(capability, resolved);
     if (capability.dryRun && dry) {
-      const answer = await host.call({
-        method: capability.httpMethod,
-        path: capability.path,
-        query: dry,
-        body,
-      });
+      const answer = await host.call({ method: capability.httpMethod, path, query: dry, body });
       total = answerFacts(answer.body).total ?? total;
       const unchanged = same(before, await snapshot(read, preview));
       checks.push({ name: "dry_run_changes_nothing", ok: answer.status < 300 && unchanged });
@@ -346,7 +375,7 @@ export async function verifyCapabilities(input: {
       action: {
         id: input.newId(),
         capabilityId: capability.id,
-        request: { method: capability.httpMethod, path: capability.path, query: {}, body },
+        request: { method: capability.httpMethod, path, query: {}, body },
         preview,
         idempotencyKey: input.newId(),
         expiresAt: input.now().toISOString(),
@@ -370,14 +399,21 @@ export async function verifyCapabilities(input: {
         actingUser: "Sandbox check",
         idempotencyKey: input.newId(),
       });
-      const undone = undo?.status === "undone" && same(before, await snapshot(read, preview));
+      // A price change's undo must also put the price back as it was (D171).
+      const priceBack =
+        capability.template === "price_update" && resolved.part
+          ? (await retailOf(read, resolved.part.hostId)) === samples.part?.retail
+          : true;
+      const undone = undo?.status === "undone" && same(before, await snapshot(read, preview)) && priceBack;
       checks.push({ name: "undo_puts_everything_back", ok: undone, detail: undo?.text });
-      entries.push({
-        name: capability.compensation.operation,
-        schema_hash: hashOf.get(capability.compensation.operation) ?? "",
-        result: undone ? "pass" : "fail",
-        checks: [{ name: `undoes ${capability.name}`, ok: undone }],
-      });
+      // An action that is its own undo (a price change sets the old prices again) is checked once, as itself.
+      if (capability.compensation.operation !== capability.name)
+        entries.push({
+          name: capability.compensation.operation,
+          schema_hash: hashOf.get(capability.compensation.operation) ?? "",
+          result: undone ? "pass" : "fail",
+          checks: [{ name: `undoes ${capability.name}`, ok: undone }],
+        });
     }
     entries.push(entry(checks.every((check) => check.ok) ? "pass" : "fail"));
   }

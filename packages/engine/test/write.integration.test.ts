@@ -164,12 +164,13 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     state: TurnState,
     input: string | { choice: { slot: string; optionId: string } },
     llm: LlmProvider[] = [scripted([])],
+    role: "owner" | "staff" = "staff",
   ) {
     const events: ReplyEvent[] = [];
     const outcome = await runTurn(
       typeof input === "string" ? { text: input } : input,
       state,
-      deps(llm),
+      deps(llm, role),
       (event) => events.push(event),
     );
     const reply = events
@@ -202,6 +203,14 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       }),
     );
     return Number(row!.units);
+  }
+
+  /** A part's retail price as the host has it now, whole taka. */
+  async function retailOf(partId: string): Promise<bigint> {
+    const [row] = await pools.readOnly(db, (run) =>
+      run({ text: "select retail_price from parts where id = $1", values: [partId] }),
+    );
+    return BigInt(String(row!.retail_price));
   }
 
   /** Every call sent so far went as a dry run, or was a read: nothing was saved. */
@@ -412,6 +421,72 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       expect(nothingSent()).toBe(true);
     },
   );
+
+  // D171, a price change on the test host, the owner's: the part asked as for a sale, the confirmation from and to,
+  // the new price saved and read back, then undone from the host's previous prices, so the seed ends as it began.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিওর সামনের ব্রেক প্যাডের দাম ১৯০০ টাকা করো",
+      args: {
+        part: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+        prices: { retail: "১৯০০ টাকা" },
+      },
+      answers: ["২০১৪", "নন-জেনুইন", "হ্যাঁ"],
+    },
+    {
+      style: "Banglish",
+      text: "axio r samner brake pad er dam 1900 koro",
+      args: {
+        part: { part_type: "brake pad", vehicle: "axio", position: "samner" },
+        prices: { retail: "1900" },
+      },
+      answers: ["2014", "non genuine", "ha"],
+    },
+  ])(
+    "D171: the owner changes a price; it is saved, read back and undone ($style)",
+    async ({ text, args, answers }) => {
+      const [year, quality, yes] = answers as [string, string, string];
+      calls.length = 0;
+      const owner = (state: TurnState, input: string, llm: LlmProvider[] = [scripted([])]) =>
+        say(state, input, llm, "owner");
+      const first = await owner(fresh(), text, [
+        scripted([{ calls: [{ name: "update_price", arguments: args }] }]),
+      ]);
+      expect(first.reply).toMatch(/কোন বছরের এক্সিও\?$/);
+      const sheet = await owner((await owner(first.state, year)).state, quality);
+      expect(sheet.reply).toMatch(
+        /^এক্সিওর সামনের ব্রেক প্যাডের খুচরা দাম [০-৯,]+ টাকা থেকে ১,৯০০ টাকা। ঠিক আছে\?$/,
+      );
+      const pending = sheet.outcome.actions[0]!;
+      const partId = pending.request!.path.split("/").at(-2)!;
+      const before = await retailOf(partId);
+      expect(pending.request).toMatchObject({ method: "PATCH", body: { retail_price_taka: 1900 } });
+      expect(calls).toHaveLength(0); // no dry run for prices: nothing is sent before yes
+      const done = await owner(sheet.state, yes);
+      expect(done.reply).toBe("হয়ে গেছে।");
+      expect(done.outcome.actions[0]).toMatchObject({ status: "done" });
+      expect(done.events.find((event) => event.type === "action_result")).toMatchObject({
+        status: "done",
+        undo_available: true,
+      });
+      expect(await retailOf(partId)).toBe(1900n);
+      const undone = await undo(done.outcome.actions[0]!, { preview: pending.preview! });
+      expect(undone).toMatchObject({ status: "undone" });
+      expect(await retailOf(partId)).toBe(before);
+    },
+  );
+
+  it.each([
+    { style: "Bangla", text: "এক্সিওর সামনের ব্রেক প্যাডের দাম ১৯০০ টাকা করো" },
+    { style: "Banglish", text: "axio r samner brake pad er dam 1900 koro" },
+  ])("D171: staff who ask for a price change are told only the owner may ($style)", async ({ text }) => {
+    calls.length = 0;
+    const reply = await say(fresh(), text, [scripted([])]);
+    expect(reply.reply).toBe("দাম বদলাতে পারেন শুধু দোকানের মালিক।");
+    expect(reply.outcome.actions).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
 
   // D169, a return on the test host: a credit sale of two sets is saved, then each set comes back. The first is found
   // among Rahim Motors' sales of that pad (today's is the newest) and refunded off the due; the second is the line's

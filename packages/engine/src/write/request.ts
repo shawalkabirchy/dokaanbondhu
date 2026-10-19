@@ -69,9 +69,62 @@ export interface ResolvedWrite {
   refund?: { due: number; cash: number } | null;
   /** A returned part said damaged: true sends the line's damaged value, when the host has one. */
   damaged?: boolean;
+  /** The part an action is about, without a line (a price change, D171). */
+  part?: { hostId: string } | null;
+  /** A price change's new prices, whole taka: only the kind that changes is set (D171). */
+  prices?: { retail?: number | null; paikari?: number | null } | null;
+  /** Which trade price is the shop's paikari price, as the owner chose (D146); null: garage, else wholesale. */
+  paikariField?: "garage_price" | "wholesale_price" | null;
   /** Required parameters without a slot, by their leaf name (spec 9.6 extra.<name>). */
   extras?: Record<string, string>;
 }
+
+/**
+ * The path parameter that is the part (D171): one whose slot or entity is the part, or that follows a parts segment
+ * ("/parts/{id}/price"). Read when the request is built, so an action imported before needs no new import.
+ */
+export function partPathParam(capability: WriteCapability): string | null {
+  for (const param of capability.params.filter((item) => item.location === "path")) {
+    const name = param.path;
+    const before = capability.path.split(`{${name}}`)[0]?.split("/").filter(Boolean).at(-1) ?? "";
+    if (param.semanticSlot === "part" || param.entityConcept === "Part" || /^parts?$/i.test(before))
+      return name;
+  }
+  return null;
+}
+
+/** The slots an action has: its parameters', and the part when its path names it (D171). */
+export function writeSlots(capability: WriteCapability): Set<string | null> {
+  const slots = new Set(capability.params.map((param) => param.semanticSlot));
+  if (partPathParam(capability)) slots.add("part");
+  return slots;
+}
+
+/** The action's path with the part's ID in it, when its path names the part (D171). */
+export function requestPath(capability: WriteCapability, resolved: ResolvedWrite): string {
+  const name = partPathParam(capability);
+  const id = resolved.part?.hostId ?? resolved.line?.hostPartId;
+  return name && id ? capability.path.replace(`{${name}}`, encodeURIComponent(id)) : capability.path;
+}
+
+/** The price parameter that holds the shop's paikari price: the one the owner chose, else garage, else wholesale. */
+function paikariParam(capability: WriteCapability, choice: ResolvedWrite["paikariField"]): WriteParam | null {
+  const trade = capability.params.filter(
+    (param) =>
+      param.semanticSlot === "prices" && /^(garage|wholesale|dealer|trade|paikari)/.test(leafOf(param.path)),
+  );
+  const named = (prefix: string) => trade.find((param) => leafOf(param.path).startsWith(prefix));
+  return (
+    (choice ? named(choice.replace(/_price$/, "")) : null) ??
+    named("garage") ??
+    named("wholesale") ??
+    trade[0] ??
+    null
+  );
+}
+
+/** Whether an action can change the paikari price (D171). */
+export const takesPaikari = (capability: WriteCapability) => paikariParam(capability, null) !== null;
 
 /** A parameter's value for a returned part that is damaged (restock: "damaged"), or null when it has none. */
 function damagedOption(param: WriteParam): string | null {
@@ -86,7 +139,12 @@ export const takesDamaged = (capability: WriteCapability) =>
 const inList = (param: WriteParam) => param.path.includes("[]");
 
 /** The value of one parameter, or undefined to leave it out. */
-function valueFor(param: WriteParam, resolved: ResolvedWrite, index: number): unknown {
+function valueFor(
+  capability: WriteCapability,
+  param: WriteParam,
+  resolved: ResolvedWrite,
+  index: number,
+): unknown {
   const leaf = leafOf(param.path);
   switch (param.semanticSlot) {
     case "customer":
@@ -117,6 +175,16 @@ function valueFor(param: WriteParam, resolved: ResolvedWrite, index: number): un
       return resolved.note ?? undefined;
     case "reason":
       return resolved.reason ?? undefined;
+    case "part":
+      return resolved.part?.hostId ?? resolved.line?.hostPartId;
+    case "prices": {
+      const prices = resolved.prices;
+      if (!prices) return undefined;
+      if (/^retail/.test(leaf)) return prices.retail ?? undefined;
+      return param.path === paikariParam(capability, resolved.paikariField ?? null)?.path
+        ? (prices.paikari ?? undefined)
+        : undefined;
+    }
     case "sale_ref": {
       const ref = resolved.saleRef;
       if (!ref || index > 0) return undefined;
@@ -150,7 +218,7 @@ export function buildBody(
   for (const param of capability.params.filter((item) => item.location === "body")) {
     const lines = inList(param) && param.semanticSlot === "payment" ? (resolved.payments?.length ?? 0) : 1;
     for (let index = 0; index < lines; index++) {
-      const value = valueFor(param, resolved, index);
+      const value = valueFor(capability, param, resolved, index);
       if (value !== undefined && value !== null && value !== "")
         setPath(body, param.path, coerce(param, value), index);
     }

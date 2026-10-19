@@ -211,7 +211,7 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   } else if (slot === "quantity") {
     const quantity = parseQuantity(tokens);
     if (quantity) value = quantity;
-  } else if (slot === "amount" || slot === "unit_cost") {
+  } else if (slot === "amount" || slot === "unit_cost" || slot === "new_price") {
     const amount = parseAmount(text);
     if (amount !== null) value = amount;
   } else if (AS_SAID.has(slot) || slot.startsWith("extra.")) {
