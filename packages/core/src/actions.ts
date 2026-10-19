@@ -394,6 +394,23 @@ const SET_PRICE = [
 ];
 const SELLING = ["বিক্রি", "বেচো", "bikri", "becho", "sell"];
 
+/**
+ * A fitment said (D172): লাগে with "also" on the car ("প্রিমিওতেও লাগে", "premio teo lage") or with a word that records
+ * it ("লাগে, লিখে রাখো", "lage jog koro"). লাগবে and কিনা ask, so they are never one.
+ */
+const FITS = new Set(["লাগে", "lage", "lagey"].map((word) => normalize(word).tokens.join(" ")));
+const FIT_ASKS = new Set(["লাগবে", "lagbe", "কিনা", "kina"].map((word) => normalize(word).tokens.join(" ")));
+const RECORD_FIT = ["লিখে রাখো", "লিখে রাখেন", "যোগ করো", "যোগ করেন", "likhe rakho", "jog koro", "add koro"];
+function saysFits(tokens: string[]): boolean {
+  const at = tokens.findIndex((token) => FITS.has(token));
+  if (at < 0 || tokens.some((token) => FIT_ASKS.has(token))) return false;
+  if (RECORD_FIT.some((phrase) => said(tokens, phrase))) return true;
+  // "also" on the car: প্রিমিওতেও, ফিল্ডারেও, প্রিমিওয়েও (a vowel sign ে, then ও), প্রিমিওএও; premioteo, premio-teo,
+  // "premio te o", "premio o".
+  const before = tokens.slice(Math.max(0, at - 3), at).join(" ");
+  return /(ে|এ)ও$|(^|\s)ও$|(te|e)-?o$|\s(te|e)\so$|(^|\s)o$/u.test(before);
+}
+
 /** The words that ask for a write, and how it is paid. */
 const WRITE_WORDS = new Set(
   [...Object.values(WRITE_CUES).flat(), ...PAYMENT_WORDS].flatMap((phrase) => normalize(phrase).tokens),
@@ -440,7 +457,7 @@ const said = (tokens: string[], phrase: string) =>
 export function writeCueOf(
   text: string,
   options: { partyNamed: boolean },
-): "sale" | "payment" | "stock_in" | "return" | "price_update" | null {
+): "sale" | "payment" | "stock_in" | "return" | "price_update" | "add_fitment" | null {
   const tokens = normalize(text).tokens;
   if (!tokens.length || text.trim().endsWith("?")) return null;
   // A price change names the price it sets (D171); every other write is said without a question word.
@@ -454,6 +471,7 @@ export function writeCueOf(
     const selling = SELLING.some((phrase) => said(tokens, phrase));
     return sets && !selling && saidMoney(text).size > 0 ? "price_update" : null;
   }
+  if (saysFits(tokens)) return "add_fitment";
   if (
     WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
     (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))

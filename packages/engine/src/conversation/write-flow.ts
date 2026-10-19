@@ -11,6 +11,7 @@ import {
   normalize,
   parseAmount,
   parseQuantity,
+  parseYear,
   paymentText,
   possessive,
   priceLevelIn,
@@ -27,6 +28,7 @@ import {
   slotChips,
   type ActionFields,
   type ActionLine,
+  type CatalogVehicle,
   type CatalogCustomer,
   type Dictionary,
   type PartRow,
@@ -40,7 +42,7 @@ import {
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { HostCallFailed, WAKE_WAIT_MS } from "../host/api";
-import type { FindPartsResult, PartQuery } from "../host/find-parts";
+import type { CarChoice, FindPartsResult, PartQuery } from "../host/find-parts";
 import {
   answerFacts,
   buildBody,
@@ -115,11 +117,20 @@ export interface WriteTurn {
   find: (query: PartQuery) => Promise<FindPartsResult>;
   /** A return's sale finder over the read path (D169); without it a return cannot find its sale. */
   sales?: (input: { customerId: string | null; partId: string }) => Promise<FoundSales | null>;
-  /** The query completed from the request and the memory; `answered` names the slots the user answered (D167). */
+  /**
+   * The query completed from the request and the memory; `answered` names the slots the user answered (D167). A
+   * fitment's request names a second car, so its part is completed without the request's car (D172).
+   */
   complete: (
     query: PartQuery,
     answered?: ReadonlySet<string>,
+    options?: { carFromRequest?: boolean },
   ) => { query: PartQuery; remembered: Set<string> };
+  /** A fitment's car among the app's vehicle rows (D172), and the rows themselves for a tapped one. */
+  cars?: (query: Pick<PartQuery, "vehicle" | "year" | "engine">) => CarChoice;
+  vehicles?: readonly CatalogVehicle[];
+  /** Whether the app already records that a part fits a car (D172); null when it cannot tell. */
+  fits?: (partId: string, vehicleId: string) => Promise<boolean | null>;
   emit: (event: ReplyEvent) => void;
   ask: (frame: RequestFrame, slot: string, text: string, offers: Offer[]) => void;
 }
@@ -234,6 +245,13 @@ export function writeFrame(
   put("note", args.note);
   put("reason", args.reason);
   put("when", args.when);
+  // A fitment's car, kept apart from the part's own car (D172); its year must have been said (D140).
+  const fitCar = (args.vehicle ?? {}) as Record<string, unknown>;
+  put("fit_vehicle", typeof fitCar === "string" ? fitCar : fitCar.model);
+  putSaid("fit_year", fitCar.year, (text) =>
+    parseYear(normalize(text).tokens, { now: turn.now, bare: true }),
+  );
+  put("fit_engine", fitCar.engine);
   // A price change's new price, said as money, of the kind it names (D171).
   const prices = (args.prices ?? {}) as Record<string, unknown>;
   for (const tier of ["paikari", "retail"] as const) {
@@ -341,7 +359,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     const query = partQueryOf(frame);
     if (!query.part_type && !query.part_number) return ask("part_type");
     const answered = answeredSlots(frame);
-    const full = turn.complete(query, answered);
+    const full = turn.complete(query, answered, slots.has("vehicle") ? { carFromRequest: false } : {});
     for (const [key, value] of Object.entries(full.query)) {
       if (!frame.slots[key])
         frame.slots[key] = {
@@ -424,6 +442,11 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     chosen = chosenOf(rows[0]!, result.resolved, turn.tier);
     frame.slots.part = understood(chosen, { display: partWords(chosen), hostId: chosen.hostPartId });
   }
+
+  // 1b. The car a fitment adds (D172): one of the app's vehicle rows, asked as a part's car is, then whether the app
+  // records the fit already.
+  const fit = chosen && slots.has("vehicle") ? await fitCarOf(frame, turn, askSlot) : null;
+  if (fit && "kind" in fit) return fit;
 
   // 2. The customer or supplier: named ones are resolved; one the action needs is asked (or remembered). A return
   // finds its sale by who bought it, so it asks for its buyer, with a button for a walk-in (D169).
@@ -674,6 +697,77 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   return prepareWrite(frame, capability, chosen, turn);
 }
 
+/** A fitment's car: the vehicle row and the model it is, or the step that asks or answers instead (D172). */
+async function fitCarOf(
+  frame: RequestFrame,
+  turn: WriteTurn,
+  askSlot: (slot: string, text: string, offers?: Offer[]) => { kind: "asked" },
+): Promise<WriteStep | { vehicle: CatalogVehicle; model: string } | null> {
+  const chosen = frame.slots.part?.value as ChosenPart;
+  let car = frame.slots.fit_car?.value as { vehicle: CatalogVehicle; model: string } | undefined;
+  if (!car) {
+    const picked = str(frame.slots.fit_row?.value);
+    const row = picked ? turn.vehicles?.find((vehicle) => vehicle.hostId === picked) : undefined;
+    if (row) car = { vehicle: row, model: str(frame.slots.fit_model?.value) ?? row.model };
+    else {
+      const choice = turn.cars?.({
+        vehicle: str(frame.slots.fit_vehicle?.value) ?? undefined,
+        year: str(frame.slots.fit_year?.value) ?? undefined,
+        engine: str(frame.slots.fit_engine?.value) ?? undefined,
+      });
+      if (!choice) return { kind: "answer", text: resultText("cancelled", "generic") };
+      if (choice.kind === "missing")
+        return {
+          kind: "answer",
+          text: `${banglaOf("vehicle_model", choice.model)} অ্যাপের গাড়ির তালিকায় নেই; আগে অ্যাপে গাড়িটা যোগ করুন।`,
+        };
+      if (choice.kind === "ask") {
+        if (choice.model) frame.slots.fit_model = understood(choice.model);
+        const offers = choice.options.map((option, index) => ({
+          id: `opt-${index + 1}`,
+          label: option.label,
+          value: option.value,
+        }));
+        switch (choice.slot) {
+          case "vehicle":
+            delete frame.slots.fit_vehicle;
+            return askSlot("fit_vehicle", "কোন গাড়িতে লাগে?", offers);
+          case "year":
+            delete frame.slots.fit_year;
+            return askSlot(
+              "fit_year",
+              question({ slot: "year", vehicle: choice.model ?? undefined }),
+              offers,
+            );
+          case "engine":
+            delete frame.slots.fit_engine;
+            return askSlot("fit_engine", question({ slot: "engine" }), offers);
+          default:
+            return askSlot("fit_row", `${offers.map((offer) => offer.label).join(" না ")}?`, offers);
+        }
+      }
+      car = { vehicle: choice.vehicle, model: choice.model };
+    }
+    frame.slots.fit_car = understood(car, { display: carYears(car) });
+  }
+  if (!frame.slots.fit_checked) {
+    if (await turn.fits?.(chosen.hostPartId, car.vehicle.hostId))
+      return { kind: "answer", text: "এটা আগে থেকেই রেকর্ডে আছে।" };
+    frame.slots.fit_checked = understood(true);
+  }
+  return car;
+}
+
+/** A fitment's car as the sentence says it: "প্রিমিও ২০০৭–২০১১", or with its engine when it has no years. */
+function carYears(car: { vehicle: CatalogVehicle; model: string }): string {
+  const { vehicle } = car;
+  const years =
+    vehicle.yearFrom > 0
+      ? `${yearText(vehicle.yearFrom)}–${vehicle.yearTo ? yearText(vehicle.yearTo) : ""}`
+      : (vehicle.engineCode ?? null);
+  return [banglaOf("vehicle_model", car.model), years].filter(Boolean).join(" ");
+}
+
 /** The values understood, in the host's terms. */
 function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWrite {
   const party = (name: "customer" | "supplier") =>
@@ -737,6 +831,14 @@ async function prepareWrite(
   const walkedIn = Boolean(frame.slots.walk_in);
   const slots = slotsOf(capability);
   resolved.paikariField = turn.paikari ?? null;
+  // A fitment: the car it adds, sent as verified, since the shop said it and confirms it (D172).
+  const fitCar = slots.has("vehicle")
+    ? ((frame.slots.fit_car?.value as { vehicle: CatalogVehicle; model: string } | undefined) ?? null)
+    : null;
+  if (fitCar) {
+    resolved.vehicle = { hostId: fitCar.vehicle.hostId };
+    resolved.verified = true;
+  }
   // An action that names its part in the path gets the part's ID there (D171).
   const path = requestPath(capability, resolved);
   const send = async (body: Record<string, unknown>, query: Record<string, string>) => {
@@ -842,22 +944,31 @@ async function prepareWrite(
       : null;
   const before = change && chosen ? (change.tier === "paikari" ? chosen.paikari : chosen.retail) : null;
   const lines: ActionLine[] =
-    change && chosen
-      ? [{ part: partPhrase(chosen) }]
-      : chosen
-        ? [
-            {
-              vehicle: chosen.vehicle ?? undefined,
-              year: chosen.year,
-              position: chosen.position,
-              part: partWords(chosen),
-              quality: chosen.quality,
-              quantity: quantityText(quantity, unit),
-              unit: unitWord(unit),
-              unitCost: resolved.line?.unitCost != null ? BigInt(resolved.line.unitCost) : null,
-            },
-          ]
-        : [];
+    fitCar && chosen
+      ? [
+          {
+            part: [partPhrase(chosen), chosen.quality ? banglaOf("quality", chosen.quality) : null]
+              .filter(Boolean)
+              .join(", "),
+            vehicle: fitCar.model,
+          },
+        ]
+      : change && chosen
+        ? [{ part: partPhrase(chosen) }]
+        : chosen
+          ? [
+              {
+                vehicle: chosen.vehicle ?? undefined,
+                year: chosen.year,
+                position: chosen.position,
+                part: partWords(chosen),
+                quality: chosen.quality,
+                quantity: quantityText(quantity, unit),
+                unit: unitWord(unit),
+                unitCost: resolved.line?.unitCost != null ? BigInt(resolved.line.unitCost) : null,
+              },
+            ]
+          : [];
   const payments = (resolved.payments ?? []).map((payment) => ({
     method: payment.method,
     amount: BigInt(payment.amount ?? 0),
@@ -874,6 +985,9 @@ async function prepareWrite(
         : sale || !slots.has("payment")
           ? null
           : paymentText(payments, total !== null ? BigInt(total) : null),
+    ...(fitCar
+      ? { years: carYears(fitCar).replace(banglaOf("vehicle_model", fitCar.model), "").trim() || null }
+      : {}),
     ...(change
       ? {
           tier: change.tier,
@@ -925,6 +1039,7 @@ async function prepareWrite(
             : []),
         ]
       : []),
+    ...(fitCar ? [{ label: "গাড়ি", value: carYears(fitCar), highlight: false }] : []),
     ...(change
       ? [
           { label: "দাম", value: change.tier === "paikari" ? "পাইকারি" : "খুচরা", highlight: false },

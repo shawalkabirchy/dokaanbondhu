@@ -27,7 +27,8 @@ const PURPOSE: Record<string, string> = {
   stock_in: "Record parts bought from a supplier (stock in).",
   return: "Take back parts a customer returns from an earlier sale.",
   price_update: "Change a part's price.",
-  add_fitment: "Record that a part fits a vehicle.",
+  add_fitment:
+    "Record that a part also fits another car, when the user says so (ei pad ta premio teo lage): part is the part as known, with its own car; vehicle is the other car.",
 };
 
 const said = (description: string) => ({ type: "string", description });
@@ -62,6 +63,18 @@ export function writeTool(capability: WriteCapability): ToolDef {
     };
   }
   if (slots.has("part")) properties.part = PART_QUERY;
+  // A fitment: the part as known (its own car, quality or number) and the car it also fits (D172).
+  if (slots.has("vehicle"))
+    properties.vehicle = {
+      type: "object",
+      description: "the car the part also fits, as said; never the part's own car",
+      properties: {
+        model: said("the car model as said, e.g. প্রিমিও, premio"),
+        year: said("its model year, as said, if one is named"),
+        engine: said("its engine code, as said, if one is named"),
+      },
+      additionalProperties: false,
+    };
   if (slots.has("payment")) {
     properties.payment = {
       type: "object",

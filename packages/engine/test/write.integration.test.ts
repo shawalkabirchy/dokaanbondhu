@@ -40,7 +40,14 @@ if (process.env.CI === "true" && !ready)
   throw new Error("the write tests need the CI job's API and database");
 
 /** Enabled in these tests: the three of step 5, the return (D169), and the price change, which only the owner may use. */
-const ENABLED = new Set(["record_sale", "receive_payment", "stock_in", "record_return", "update_price"]);
+const ENABLED = new Set([
+  "record_sale",
+  "receive_payment",
+  "stock_in",
+  "record_return",
+  "update_price",
+  "add_fitment",
+]);
 
 /** The capability registry as setup leaves it: every proposal confirmed, the writes above enabled (spec 11.8). */
 function registryOf(document: unknown, calls: HostRequest[]): WriteHost {
@@ -270,12 +277,14 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     const writesOf = (names: string[]) =>
       names.filter((name) => ENABLED.has(name) || /void|reverse/.test(name));
     expect(writesOf(staff.offered[0]!).sort()).toEqual([
+      "add_fitment",
       "receive_payment",
       "record_return",
       "record_sale",
       "stock_in",
     ]);
     expect(writesOf(owner.offered[0]!).sort()).toEqual([
+      "add_fitment",
       "receive_payment",
       "record_return",
       "record_sale",
@@ -421,6 +430,82 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       expect(nothingSent()).toBe(true);
     },
   );
+
+  // D172, a fitment on the test host: the seed's Axio 2014 front non-genuine pad fits the Axio and the Premio, not the
+  // Fielder. Said to fit the Fielder too, the Fielder's year is asked, the fit is saved verified, and undone, so the
+  // seed ends as it began.
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১৪-এর সামনের নন-জেনুইন ব্রেক প্যাড ফিল্ডারেও লাগে",
+      args: {
+        part: {
+          part_type: "সামনের ব্রেক প্যাড",
+          vehicle: "এক্সিও",
+          year: "২০১৪",
+          position: "সামনের",
+          quality: "নন-জেনুইন",
+        },
+        vehicle: { model: "ফিল্ডার" },
+      },
+      yes: "হ্যাঁ",
+    },
+    {
+      style: "Banglish",
+      text: "axio 2014 er samner non genuine brake pad fielder eo lage",
+      args: {
+        part: {
+          part_type: "brake pad",
+          vehicle: "axio",
+          year: "2014",
+          position: "samner",
+          quality: "non genuine",
+        },
+        vehicle: { model: "fielder" },
+      },
+      yes: "ha",
+    },
+  ])("D172: a fitment is added, saved verified, and undone ($style)", async ({ text, args, yes }) => {
+    calls.length = 0;
+    const tap = (reply: Awaited<ReturnType<typeof say>>, label: RegExp) => {
+      const choices = reply.events.find((event) => event.type === "choices");
+      const option =
+        choices?.type === "choices" ? choices.options.find((o) => label.test(o.label)) : undefined;
+      if (choices?.type !== "choices" || !option) throw new Error(`no ${label}: ${reply.reply}`);
+      return { choice: { slot: choices.slot, optionId: option.id } };
+    };
+    const first = await say(fresh(), text, [
+      scripted([{ calls: [{ name: "add_fitment", arguments: args }] }]),
+    ]);
+    expect(first.reply).toBe("কোন বছরের ফিল্ডার?");
+    const sheet = await say(first.state, tap(first, /^2012–2017$/));
+    expect(sheet.reply).toBe("এক্সিওর সামনের ব্রেক প্যাড, নন-জেনুইন — ফিল্ডার ২০১২–২০১৭-এ লাগে। যোগ করব?");
+    const pending = sheet.outcome.actions[0]!;
+    const body = pending.request!.body as { part_id: string; vehicle_id: string; verified: boolean };
+    expect(body.verified).toBe(true);
+    expect(calls).toHaveLength(0); // no dry run for a fitment: nothing is sent before yes
+    const fits = async () => {
+      const rows = await pools.readOnly(db, (run) =>
+        run({
+          text: "select verified from fitments where part_id = $1 and vehicle_id = $2 and deleted_at is null",
+          values: [body.part_id, body.vehicle_id],
+        }),
+      );
+      return rows.map((row) => row.verified);
+    };
+    expect(await fits()).toEqual([]);
+    const done = await say(sheet.state, yes);
+    expect(done.reply).toBe("হয়ে গেছে।");
+    expect(done.outcome.actions[0]).toMatchObject({ status: "done" });
+    expect(done.events.find((event) => event.type === "action_result")).toMatchObject({
+      status: "done",
+      undo_available: true,
+    });
+    expect(await fits()).toEqual([true]);
+    const undone = await undo(done.outcome.actions[0]!, { preview: pending.preview! });
+    expect(undone).toMatchObject({ status: "undone" });
+    expect(await fits()).toEqual([]);
+  });
 
   // D171, a price change on the test host, the owner's: the part asked as for a sale, the confirmation from and to,
   // the new price saved and read back, then undone from the host's previous prices, so the seed ends as it began.

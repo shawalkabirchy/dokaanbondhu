@@ -16,7 +16,7 @@ import {
 } from "./request";
 import type { ActionPreview, HostRequest, HostResponse, WriteCapability, WriteHost } from "./types";
 import { findSales, type SaleLine } from "./sale-finder";
-import { snapshot, type ReadPath, type Snapshot } from "./verify";
+import { fitRecorded, snapshot, type ReadPath, type Snapshot } from "./verify";
 
 // The sandbox check (spec 11.11; D139): on a throw-away copy of the host, every write is run with sample values from
 // the host's own data. Its dry run must change nothing; the real call must save, read back and move stock and balance
@@ -95,6 +95,8 @@ interface Samples {
   customer: { hostId: string; name: string } | null;
   supplier: { hostId: string; name: string } | null;
   part: { hostId: string; name: string; unit: string | null; cost: number; retail: number | null } | null;
+  /** A car of the app the sample part is not recorded for (D172). */
+  unfitted: string | null;
 }
 
 /** A part's retail price as the host has it now, whole taka; null when the map cannot tell (D171). */
@@ -174,7 +176,18 @@ async function samplesOf(read: ReadPath, catalog: Catalog): Promise<Samples> {
           retail: await retailOf(read, part.hostId),
         }
       : null,
+    unfitted: part ? await unfittedCar(read, catalog, part.hostId) : null,
   };
+}
+
+/** The first car of the app the part is not recorded for, through the read path (D172). */
+async function unfittedCar(read: ReadPath, catalog: Catalog, partId: string): Promise<string | null> {
+  for (const vehicle of catalog.vehicles) {
+    const recorded = await fitRecorded(read, partId, vehicle.hostId);
+    if (recorded === null) return null;
+    if (!recorded) return vehicle.hostId;
+  }
+  return null;
 }
 
 /** The sample request of each template step 5 enables, or null when the check has no sample for it yet. */
@@ -195,6 +208,14 @@ function sampleOf(capability: WriteCapability, samples: Samples): ResolvedWrite 
       line: { hostPartId: part.hostId, quantity: 1 },
       saleRef: null,
       refund: null,
+      payments: [],
+    };
+  // A fitment adds the part to a car it is not recorded for, and its undo takes it away (D172).
+  if (capability.template === "add_fitment" && part && samples.unfitted)
+    return {
+      part: { hostId: part.hostId },
+      vehicle: { hostId: samples.unfitted },
+      verified: true,
       payments: [],
     };
   // A price change raises the retail price by one taka, and its undo puts it back (D171).
@@ -399,12 +420,17 @@ export async function verifyCapabilities(input: {
         actingUser: "Sandbox check",
         idempotencyKey: input.newId(),
       });
-      // A price change's undo must also put the price back as it was (D171).
+      // A price change's undo must also put the price back as it was (D171), a fitment's take the fit away (D172).
       const priceBack =
         capability.template === "price_update" && resolved.part
           ? (await retailOf(read, resolved.part.hostId)) === samples.part?.retail
           : true;
-      const undone = undo?.status === "undone" && same(before, await snapshot(read, preview)) && priceBack;
+      const fitGone =
+        capability.template === "add_fitment" && resolved.part && resolved.vehicle
+          ? (await fitRecorded(read, resolved.part.hostId, resolved.vehicle.hostId)) === false
+          : true;
+      const undone =
+        undo?.status === "undone" && same(before, await snapshot(read, preview)) && priceBack && fitGone;
       checks.push({ name: "undo_puts_everything_back", ok: undone, detail: undo?.text });
       // An action that is its own undo (a price change sets the old prices again) is checked once, as itself.
       if (capability.compensation.operation !== capability.name)

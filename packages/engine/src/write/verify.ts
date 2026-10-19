@@ -114,3 +114,28 @@ export async function savedAnyway(
   );
   return rows.some((row) => Number(toTaka(row.value) ?? -1n) === value);
 }
+
+/**
+ * Whether the app already records that a part fits a car (D172): a Fitment row for both, through the read path. Null
+ * when the map has no Fitment to tell.
+ */
+export async function fitRecorded(
+  read: ReadPath,
+  partId: string,
+  vehicleId: string,
+): Promise<boolean | null> {
+  const { map, run } = read;
+  if (!hasField(map, "Fitment", "part_id") || !hasField(map, "Fitment", "vehicle_id")) return null;
+  const rows = await run(
+    buildQuery(map, {
+      from: { concept: "Fitment", alias: "f" },
+      select: [{ ref: { alias: "f", field: "part_id" }, as: "part_id" }],
+      where: [
+        { ref: { alias: "f", field: "part_id" }, op: "in", values: [partId] },
+        { ref: { alias: "f", field: "vehicle_id" }, op: "in", values: [vehicleId] },
+      ],
+      limit: 1,
+    }),
+  );
+  return rows.length > 0;
+}

@@ -71,6 +71,10 @@ export interface ResolvedWrite {
   damaged?: boolean;
   /** The part an action is about, without a line (a price change, D171). */
   part?: { hostId: string } | null;
+  /** The car a fitment adds (D172). */
+  vehicle?: { hostId: string } | null;
+  /** A fit the shop said and confirmed: sent as verified where the app has such a field (D172). */
+  verified?: boolean;
   /** A price change's new prices, whole taka: only the kind that changes is set (D171). */
   prices?: { retail?: number | null; paikari?: number | null } | null;
   /** Which trade price is the shop's paikari price, as the owner chose (D146); null: garage, else wholesale. */
@@ -177,6 +181,8 @@ function valueFor(
       return resolved.reason ?? undefined;
     case "part":
       return resolved.part?.hostId ?? resolved.line?.hostPartId;
+    case "vehicle":
+      return resolved.vehicle?.hostId;
     case "prices": {
       const prices = resolved.prices;
       if (!prices) return undefined;
@@ -200,6 +206,8 @@ function valueFor(
     default: {
       const damaged = resolved.damaged && index === 0 ? damagedOption(param) : null;
       if (damaged) return damaged;
+      if (resolved.verified && /^(is_)?verified$|^confirmed$/.test(leaf) && param.type.startsWith("boolean"))
+        return true;
       return param.required ? resolved.extras?.[leaf] : undefined;
     }
   }

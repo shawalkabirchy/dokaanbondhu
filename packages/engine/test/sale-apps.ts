@@ -161,6 +161,13 @@ export interface Api {
   role?: "owner" | "staff";
 }
 
+/** The app's new fitment as GearGrid answers it (D172). */
+const fitAnswer: ApiAnswer = async (request) => ({
+  status: 201,
+  headers: new Headers(),
+  body: { fitment: { id: "fit-1", ...(request.body as Record<string, unknown>) } },
+});
+
 /** The app's price change as GearGrid answers it: the new prices, and the previous ones for an undo (D132). */
 const priceAnswer: ApiAnswer = async (request) => {
   const body = (request.body ?? {}) as { retail_price_taka?: number; garage_price_taka?: number };
@@ -203,7 +210,12 @@ function returnAnswer(shop: Shop): ApiAnswer {
   };
 }
 
-const IDS: Record<string, string> = { record_sale: "sale", record_return: "return", update_price: "price" };
+const IDS: Record<string, string> = {
+  record_sale: "sale",
+  record_return: "return",
+  update_price: "price",
+  add_fitment: "fit",
+};
 
 /** GearGrid's sale and return as setup imports them (dry runs as the API allows, unless `api` turns them off). */
 function appCapabilities(api: Api = {}): WriteCapability[] {
@@ -253,7 +265,9 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
           ? returnAnswer(shop)
           : request.path.endsWith("/price")
             ? priceAnswer
-            : answered);
+            : request.path.endsWith("/fitments")
+              ? fitAnswer
+              : answered);
       return answer(request, options);
     },
     wake: () => {

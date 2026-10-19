@@ -358,3 +358,28 @@ describe("a price change said (D171)", () => {
     ).toBe("নোয়ার সেলফ মোটরের খুচরা দাম ৮,২০০ টাকা থেকে ৮,৫০০ টাকা। ঠিক আছে?");
   });
 });
+
+describe("a fitment said (D172)", () => {
+  it.each([
+    "এই প্যাডটা প্রিমিওতেও লাগে",
+    "ei pad ta premio teo lage",
+    "এক্সিওর সামনের ব্রেক প্যাড ফিল্ডারেও লাগে",
+    "axio r samner brake pad fielder eo lage",
+    "এই প্যাডটা প্রিমিও ২০০৯-এ লাগে, লিখে রাখো",
+    "ei pad ta premio 2009 e lage, likhe rakho",
+    "ei pad premio te o lage",
+  ])("%s adds a fitment", (text) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBe("add_fitment");
+  });
+
+  it.each([
+    "এই প্যাডটা প্রিমিওতে লাগবে?",
+    "ei pad ta premio te lagbe?",
+    "প্রিমিওতে লাগে কিনা",
+    "premio te lage kina",
+    "প্রিমিওর প্যাড লাগে", // no "also", nothing to record: a part asked for
+    "premio r pad lage",
+  ])("%s adds none", (text) => {
+    expect(writeCueOf(text, { partyNamed: false })).not.toBe("add_fitment");
+  });
+});

@@ -441,6 +441,81 @@ function resolveYear(resolved: Resolved, query: PartQuery, model: string, now: D
   if (years) resolved.years = years;
 }
 
+/** The car a fitment adds (D172): one of the app's own vehicle rows, the question that picks it, or none. */
+export type CarChoice =
+  | {
+      kind: "ask";
+      slot: "vehicle" | "year" | "engine" | "row";
+      model: string | null;
+      options: { label: string; value: string }[];
+    }
+  | { kind: "car"; vehicle: CatalogVehicle; model: string }
+  | { kind: "missing"; model: string };
+
+/**
+ * The app's vehicle row a said car is (D172), by the part search's own rules: the model, its years when the rows'
+ * differ (D167's buttons), then its engine, then the rows by their names when they still differ.
+ */
+export function resolveCar(input: {
+  query: Pick<PartQuery, "vehicle" | "year" | "engine">;
+  catalog: Catalog;
+  dictionary: Dictionary;
+  hypotheses?: string[];
+  now?: Date;
+}): CarChoice {
+  const { query, catalog } = input;
+  if (!query.vehicle) return { kind: "ask", slot: "vehicle", model: null, options: [] };
+  const match = matchConcept("vehicle_model", query.vehicle, input.hypotheses ?? [], input.dictionary);
+  const best = match.candidates[0];
+  if (!best || match.decision === "unclear")
+    return {
+      kind: "ask",
+      slot: "vehicle",
+      model: null,
+      options: match.candidates
+        .slice(0, 3)
+        .map((candidate) => ({ label: candidate.value, value: candidate.value })),
+    };
+  const model = best.value;
+  const { year, years } = yearOf(query, model, input.now);
+  const engine = engineOf(query.engine, catalog.vehicles);
+  const found = matchVehicles(model, year, engine, catalog.vehicles, years ?? null);
+  if (found.needsYear)
+    return {
+      kind: "ask",
+      slot: "year",
+      model,
+      options: yearRanges(found.vehicles).map((range) => ({ label: range.replace("-", "–"), value: range })),
+    };
+  if (!found.vehicles.length) return { kind: "missing", model };
+  if (found.vehicles.length === 1) return { kind: "car", vehicle: found.vehicles[0]!, model };
+  const engines = [
+    ...new Set(found.vehicles.map((vehicle) => vehicle.engineCode).filter(Boolean)),
+  ] as string[];
+  if (!engine && engines.length > 1)
+    return {
+      kind: "ask",
+      slot: "engine",
+      model,
+      options: engines.map((code) => ({ label: code, value: code })),
+    };
+  return {
+    kind: "ask",
+    slot: "row",
+    model,
+    options: found.vehicles.map((vehicle) => ({
+      label: [
+        vehicle.make,
+        vehicle.model,
+        vehicle.yearFrom > 0 ? `${vehicle.yearFrom}–${vehicle.yearTo ?? ""}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      value: vehicle.hostId,
+    })),
+  };
+}
+
 export async function findParts(input: FindPartsInput): Promise<FindPartsResult> {
   const { query, catalog, dictionary } = input;
   const bold: string[] = [];

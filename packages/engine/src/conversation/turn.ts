@@ -40,6 +40,7 @@ import {
   isWriteWord,
   ownerOnlyText,
   saidMoney,
+  saidNumbers,
   type Dictionary,
   type PartRow,
   type PartsContext,
@@ -54,6 +55,7 @@ import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
 import {
   findParts,
+  resolveCar,
   type FindPartsResult,
   type FitmentExtra,
   type PartQuery,
@@ -91,6 +93,7 @@ import type { ConversationState } from "./state";
 import { CANNOT_HELP, readTools } from "./tools";
 import { executeAction } from "../write/execute";
 import { findSales } from "../write/sale-finder";
+import { fitRecorded } from "../write/verify";
 import { writeTool } from "../write/tool";
 import type { ActionRecord, PendingAction, WriteCapability, WriteHost } from "../write/types";
 import { advanceWrite, correctWrite, writeFrame, type WriteStep, type WriteTurn } from "./write-flow";
@@ -846,16 +849,24 @@ export async function runTurn(
   const completed = (
     query: PartQuery,
     answered: ReadonlySet<string> = new Set(),
+    options: { carFromRequest?: boolean } = {},
   ): { query: PartQuery; remembered: Set<string> } => {
     const out = { ...query };
+    // A fitment names the part's car and a second car: its part takes neither the request's car nor a year it did not
+    // say (D172).
+    const ownCar = options.carFromRequest === false;
     // A year answered to the year question, said or tapped, is the user's own like one said now: a tap says no words,
     // so D127's rule below once dropped the year just chosen and asked it again (D167).
     const answeredYear = answered.has("year") && Boolean(out.year);
     // The year the user said: in this input, or in the request an answer has just finished ("২০১৬ সালের নোয়া",
     // then "সেলফ").
-    const said =
-      saidYear ??
-      (request === text ? null : parseYear(normalize(request, deps.dictionary.variants).tokens, { now }));
+    const ownYear = out.year ? parseYear(normalize(out.year).tokens, { now, bare: true }) : null;
+    const said = ownCar
+      ? ownYear !== null && saidNumbers(request).has(ownYear)
+        ? ownYear
+        : null
+      : (saidYear ??
+        (request === text ? null : parseYear(normalize(request, deps.dictionary.variants).tokens, { now })));
     if (
       out.year &&
       parseYear(normalize(out.year).tokens, { now, bare: true }) === null &&
@@ -869,7 +880,7 @@ export async function runTurn(
       ["position", "position"],
       ["quality", "quality"],
     ] as const) {
-      const heard = heardSlots.get(concept);
+      const heard = ownCar && slot === "vehicle" ? undefined : heardSlots.get(concept);
       if (!out[slot] && heard) out[slot] = heard;
       // "ইয়াল ফিল্ডার" ties the air, oil and fuel filters; the other guesses heard "ইয়ার ফিল্ডার", so the LLM's
       // "মবিল ফিল্টার" gives way to the air filter (D158).
@@ -942,6 +953,16 @@ export async function runTurn(
     })),
     tier: billTier,
     paikari: deps.host.paikari ?? null,
+    // A fitment's car among the app's vehicles, and whether the fit is recorded already (D172).
+    cars: (query) =>
+      resolveCar({ query, catalog: deps.host.catalog, dictionary: deps.dictionary, hypotheses: others, now }),
+    vehicles: deps.host.catalog.vehicles,
+    ...(deps.host.map && deps.host.run
+      ? {
+          fits: (partId: string, vehicleId: string) =>
+            fitRecorded({ map: deps.host.map!, run: deps.host.run! }, partId, vehicleId),
+        }
+      : {}),
     rememberedCustomer: state.context.customer
       ? { hostId: state.context.customer.hostId, name: state.context.customer.name }
       : null,
@@ -1145,7 +1166,8 @@ export async function runTurn(
           record("no_connection");
           return JSON.stringify({ error: "no shop database connected" });
         }
-        if (cued && cued.template !== "payment") {
+        // A fitment's search names two cars, so its part is never taken from a search (D172).
+        if (cued && cued.template !== "payment" && cued.template !== "add_fitment") {
           record(`write: ${cued.name}`);
           return startCued(cued, partQueryOf(args) as Record<string, unknown>);
         }

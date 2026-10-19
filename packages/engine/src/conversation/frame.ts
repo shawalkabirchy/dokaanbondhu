@@ -170,7 +170,7 @@ function answeredYear(tokens: readonly string[], others: readonly string[], now:
  * Write slots whose answer is kept as said and read by the write flow (an amount, a payment word, a field, the day
  * of a return's sale).
  */
-const AS_SAID = new Set(["payment", "trx_id", "note", "reason", "sale_ref"]);
+const AS_SAID = new Set(["payment", "trx_id", "note", "reason", "sale_ref", "fit_engine"]);
 
 /**
  * Tries the input as a value of the slot the frame is asking about (rule 3). A tap on a chip, or a spoken option,
@@ -205,7 +205,7 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   let value: unknown = null;
   let display: string | undefined;
   let confidence: number | undefined;
-  if (slot === "year") {
+  if (slot === "year" || slot === "fit_year") {
     const year = answeredYear(tokens, input.others ?? [], input.now);
     if (year !== null) value = String(year);
   } else if (slot === "quantity") {
