@@ -125,6 +125,16 @@ describe("which price, how much, and who may (GearGrid, D171)", () => {
     expect(asked.reply).toMatch(/নতুন খুচরা দাম কত\?$/);
   });
 
+  // The owner's G14 on the phone (20 Oct): the model's call left out the part type the request says plainly.
+  it.each(PRICE)("a part type the model leaves out is the request's own ($style)", async (said) => {
+    const shop = connect(geargrid, { role: "owner" });
+    const args = { ...said.fielderArgs, part: { vehicle: said.fielderArgs.part.vehicle } };
+    const first = await shop.say(fresh(), { text: said.fielder }, priceCall(args));
+    expect(first.reply).not.toMatch(/কোন পার্ট লাগবে\?/);
+    const reply = await shop.say(first.state, tap(first, /^2012–2017$/));
+    expect(reply.confirm?.text).toMatch(/খুচরা দাম ১,৬০০ টাকা থেকে ১,৭০০ টাকা। ঠিক আছে\?$/);
+  });
+
   it.each(PRICE)("started from the words when the model searches instead ($style)", async (said) => {
     const shop = connect(geargrid, { role: "owner" });
     const search: Step[] = [{ calls: [{ name: "find_parts", arguments: { ...said.fielderArgs.part } }] }];

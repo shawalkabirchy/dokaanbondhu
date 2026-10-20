@@ -259,6 +259,10 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
       delete frame.offers;
       return slot;
     }
+  } else if (slot === "fit_vehicle") {
+    // The car a fitment adds, answered (D174): a car the words know; the fitment finds it among the app's cars.
+    const match = matchConcept("vehicle_model", text, [], input.dictionary);
+    if (match.candidates[0] && match.decision !== "unclear") value = text;
   } else if (CONCEPT_OF[slot]) {
     const match = matchConcept(CONCEPT_OF[slot]!, text, [], input.dictionary);
     const best = match.candidates[0];

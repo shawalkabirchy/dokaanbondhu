@@ -51,6 +51,7 @@ import {
   type YearRange,
   yearRangeText,
   NEW_PARTY,
+  alsoCarWords,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
@@ -1078,16 +1079,56 @@ export async function runTurn(
   const withHeardPart = (args: Record<string, unknown>): Record<string, unknown> => {
     const items = Array.isArray(args.items) ? args.items : null;
     const item = items?.length === 1 && items[0] && typeof items[0] === "object" ? items[0] : null;
-    if (!item) return args;
-    const part = { ...((item as { part?: Record<string, unknown> }).part ?? {}) };
+    // A price change's or a fitment's one part, outside any items (D171, D172).
+    const single =
+      !items && args.part && typeof args.part === "object" ? (args.part as Record<string, unknown>) : null;
+    if (!item && !single) return args;
+    const part = { ...(single ?? (item as { part?: Record<string, unknown> }).part ?? {}) };
     const missing = (key: string) => part[key] === undefined || part[key] === null || part[key] === "";
+    // A fitment's request names two cars, so its part takes neither the car nor the year from it (D172).
+    const twoCars = Boolean(args.vehicle);
     for (const concept of ["part_type", "vehicle_model", "position", "quality"] as const) {
+      if (twoCars && concept === "vehicle_model") continue;
       const key = concept === "vehicle_model" ? "vehicle" : concept;
       const heard = heardSlots.get(concept);
       if (heard && missing(key)) part[key] = heard;
     }
-    if (saidYear && missing("year")) part.year = String(saidYear);
-    return { ...args, items: [{ ...item, part }] };
+    if (saidYear && missing("year") && !twoCars) part.year = String(saidYear);
+    return single ? { ...args, part } : { ...args, items: [{ ...item, part }] };
+  };
+
+  /**
+   * A fitment's two cars as the request says them (D174): the car said with "also" (প্রিমিওতেও, premio teo) is the new
+   * one, whether the model's call names it or not, and is never the part's own car, with the year said with it.
+   */
+  const withAlsoCar = (
+    capability: WriteCapability,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    if (capability.template !== "add_fitment") return args;
+    const words = alsoCarWords(said) ?? alsoCarWords(text);
+    const carOf = (value: unknown) => {
+      if (typeof value !== "string" || !value.trim()) return null;
+      const best = matchConcept("vehicle_model", value, [], deps.dictionary).candidates[0];
+      return best && best.score >= 0.7 ? best.value : null;
+    };
+    const also = words ? carOf(words) : null;
+    if (!words || !also) return args;
+    const year = parseYear(normalize(words).tokens, { now, bare: true });
+    const part = { ...((args.part as Record<string, unknown> | undefined) ?? {}) };
+    if (carOf(part.vehicle) === also) {
+      delete part.vehicle;
+      const partYear = parseYear(normalize(String(part.year ?? "")).tokens, { now, bare: true });
+      if (year !== null && partYear === year) delete part.year;
+    }
+    const vehicle = args.vehicle;
+    const model = typeof vehicle === "string" ? vehicle : (vehicle as { model?: unknown } | undefined)?.model;
+    return {
+      ...args,
+      part,
+      vehicle:
+        carOf(model) === also ? vehicle : { model: also, ...(year !== null ? { year: String(year) } : {}) },
+    };
   };
 
   const startCued = async (capability: WriteCapability, part: Record<string, unknown>, customer?: string) => {
@@ -1102,50 +1143,47 @@ export async function runTurn(
     const who = customer ?? party("customer");
     // A price change: the part, and the new price as said money, of the kind the request names (D171).
     const price = [...saidMoney(text)].at(-1);
+    const heardPart = (withCar: boolean) =>
+      Object.fromEntries(
+        (["part_type", "vehicle_model", "position", "quality"] as const)
+          .filter((concept) => heardSlots.has(concept) && (withCar || concept !== "vehicle_model"))
+          .map((concept) => [concept === "vehicle_model" ? "vehicle" : concept, heardSlots.get(concept)]),
+      );
     const args: Record<string, unknown> =
       capability.template === "add_customer" || capability.template === "add_supplier"
         ? { ...(customer ? { name: customer } : {}) }
-        : capability.template === "price_update"
-          ? {
-              part: {
-                ...Object.fromEntries(
-                  (["part_type", "vehicle_model", "position", "quality"] as const)
-                    .filter((concept) => heardSlots.has(concept))
-                    .map((concept) => [
-                      concept === "vehicle_model" ? "vehicle" : concept,
-                      heardSlots.get(concept),
-                    ]),
-                ),
-                ...part,
-              },
-              ...(price !== undefined ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } } : {}),
-            }
-          : capability.template === "payment"
+        : // A fitment names two cars: its part takes none of them from the words (D172, D174).
+          capability.template === "add_fitment"
+          ? withAlsoCar(capability, { part: heardPart(false) })
+          : capability.template === "price_update"
             ? {
-                ...(who ? { customer: who } : {}),
-                ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+                part: {
+                  ...heardPart(true),
+                  ...part,
+                },
+                ...(price !== undefined
+                  ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } }
+                  : {}),
               }
-            : {
-                ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
-                ...(party("supplier") ? { supplier: party("supplier") } : {}),
-                items: [
-                  {
-                    part: {
-                      ...Object.fromEntries(
-                        (["part_type", "vehicle_model", "position", "quality"] as const)
-                          .filter((concept) => heardSlots.has(concept))
-                          .map((concept) => [
-                            concept === "vehicle_model" ? "vehicle" : concept,
-                            heardSlots.get(concept),
-                          ]),
-                      ),
-                      ...part,
+            : capability.template === "payment"
+              ? {
+                  ...(who ? { customer: who } : {}),
+                  ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+                }
+              : {
+                  ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
+                  ...(party("supplier") ? { supplier: party("supplier") } : {}),
+                  items: [
+                    {
+                      part: {
+                        ...heardPart(true),
+                        ...part,
+                      },
+                      ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
+                      ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
                     },
-                    ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
-                    ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
-                  },
-                ],
-              };
+                  ],
+                };
     const frame = markGuessed(writeFrame(capability, args, writeTurn(text)));
     tookStep(frame, await advanceWrite(frame, writeTurn(text)));
     return "stop" as const;
@@ -1373,7 +1411,9 @@ export async function runTurn(
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
         if (capability && deps.host.writes) {
-          const frame = markGuessed(writeFrame(capability, withHeardPart(args), writeTurn(text)));
+          const frame = markGuessed(
+            writeFrame(capability, withHeardPart(withAlsoCar(capability, args)), writeTurn(text)),
+          );
           record("write");
           tookStep(frame, await advanceWrite(frame, writeTurn(text)));
           return "stop";
@@ -1505,6 +1545,7 @@ export async function runTurn(
     frameOpen &&
     state.frame &&
     state.frame.asking !== "vehicle" &&
+    state.frame.asking !== "fit_vehicle" && // the car a fitment adds is answered with a car (D174)
     !splitCorrection(text).correction
   ) {
     // The transcript the turn works with, which the server may have chosen over the service's first guess.

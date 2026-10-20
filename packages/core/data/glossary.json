@@ -44,8 +44,8 @@
   {
     "target_concept": "part_type",
     "target_value": "Brake Pad",
-    "bn": ["ব্রেক প্যাড", "প্যাড"],
-    "latin": ["brake pad", "break pad", "pad"]
+    "bn": ["ব্রেক প্যাড", "প্যাড", "প্যাট"],
+    "latin": ["brake pad", "break pad", "pad", "pat"]
   },
   {
     "target_concept": "part_type",

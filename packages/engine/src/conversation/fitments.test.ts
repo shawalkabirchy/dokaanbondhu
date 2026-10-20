@@ -194,6 +194,23 @@ describe("which car, and a fit the app has already (GearGrid, D172)", () => {
     expect(reply.state.action?.request.body).toMatchObject({ part_id: "pad-new", vehicle_id: "premio-2007" });
   });
 
+  // The owner's G14 on the phone (20 Oct): by voice, the model's call left out the part type the request says plainly,
+  // and "কোন পার্ট লাগবে?" was asked. The request's own words complete the part, never with the new car.
+  it.each(GG)("a part type the model leaves out is the request's own ($style)", async (said) => {
+    const shop = connect(geargrid);
+    const part = { vehicle: said.fielder.vehicle, year: said.fielder.year };
+    const first = await shop.say(
+      fresh(),
+      { text: said.premio },
+      fitCall({ part, vehicle: { model: said.model.premio } }),
+    );
+    expect(first.reply).toBe("কোন বছরের প্রিমিও?");
+    const reply = await shop.say(first.state, tap(first, /^2007–2011$/));
+    expect(reply.confirm?.text).toMatch(
+      /^ফিল্ডারের সামনের ব্রেক প্যাড, জেনুইন — প্রিমিও ২০০৭–২০১১-এ লাগে। যোগ করব\?$/,
+    );
+  });
+
   it.each(GG)("a year the model adds to the new car is not taken: it is asked ($style)", async (said) => {
     const shop = connect(geargrid);
     const reply = await shop.say(
@@ -203,6 +220,74 @@ describe("which car, and a fit the app has already (GearGrid, D172)", () => {
     );
     expect(reply.reply).toBe("কোন বছরের প্রিমিও?");
     expect(reply.choices?.options.map((option) => option.label)).toEqual(["2007–2011", "2012–2017"]);
+  });
+});
+
+// The owner's G15 on the phone (20 Oct, D174): "এই প্যাটটা প্রিমিওতেও লাগে", pad heard as pat; the model then left the
+// part out, or put the new car into it, and "কোন গাড়িতে লাগে?" did not take a car for its answer.
+const G15 = [
+  {
+    style: "Bangla",
+    ask: "এক্সিও ২০১৪-এর ব্রেক প্যাড আছে?",
+    axio: { part_type: "ব্রেক প্যাড", vehicle: "এক্সিও", year: "২০১৪" },
+    pat: "এই প্যাটটা প্রিমিওতেও লাগে",
+    premio: "প্রিমিও",
+    unknownCar: "এক্সিও ২০১৪-এর ব্রেক প্যাড ল্যান্ড ক্রুজারেও লাগে",
+  },
+  {
+    style: "Banglish",
+    ask: "axio 2014 er brake pad ache?",
+    axio: { part_type: "brake pad", vehicle: "axio", year: "2014" },
+    pat: "ei pat ta premio teo lage",
+    premio: "premio",
+    unknownCar: "axio 2014 er brake pad land cruiser eo lage",
+  },
+] as const;
+
+describe("the owner's G15: pat, the new car, and the car asked (GearGrid, D174)", () => {
+  const axioAsked = async (shop: ReturnType<typeof connect>, said: (typeof G15)[number]) =>
+    shop.say(fresh(), { text: said.ask }, [
+      { calls: [{ name: "find_parts", arguments: { ...said.axio } }] },
+      { text: "" },
+    ]);
+  const sheet = /^এক্সিওর সামনের ব্রেক প্যাড, জেনুইন — প্রিমিও ২০০৭–২০১১-এ লাগে। যোগ করব\?$/;
+
+  it.each(G15)("pad heard as pat, left out of the call: the remembered Axio's pad ($style)", async (said) => {
+    const shop = connect(geargrid);
+    const asked = await axioAsked(shop, said);
+    const first = await shop.say(
+      asked.state,
+      { text: said.pat },
+      fitCall({ part: {}, vehicle: { model: said.premio } }),
+    );
+    expect(first.reply).toBe("কোন বছরের প্রিমিও?");
+    const reply = await shop.say(first.state, tap(first, /^2007–2011$/));
+    expect(reply.confirm?.text).toMatch(sheet);
+    expect(reply.state.action?.request.body).toMatchObject({ part_id: "pad-new", vehicle_id: "premio-2007" });
+  });
+
+  it.each(G15)(
+    "the new car put into the part, none as the car it fits: the words decide ($style)",
+    async (said) => {
+      const shop = connect(geargrid);
+      const asked = await axioAsked(shop, said);
+      const first = await shop.say(
+        asked.state,
+        { text: said.pat },
+        fitCall({ part: { part_type: "প্যাড", vehicle: said.premio } }),
+      );
+      expect(first.reply).toBe("কোন বছরের প্রিমিও?");
+      const reply = await shop.say(first.state, tap(first, /^2007–2011$/));
+      expect(reply.confirm?.text).toMatch(sheet);
+    },
+  );
+
+  it.each(G15)("“কোন গাড়িতে লাগে?” takes a car for its answer ($style)", async (said) => {
+    const shop = connect(geargrid);
+    const first = await shop.say(fresh(), { text: said.unknownCar }, fitCall({ part: { ...said.axio } }));
+    expect(first.reply).toBe("কোন গাড়িতে লাগে?");
+    const reply = await shop.say(first.state, { text: said.premio });
+    expect(reply.reply).toBe("কোন বছরের প্রিমিও?");
   });
 });
 

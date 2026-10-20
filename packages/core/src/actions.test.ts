@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alsoCarWords,
   confirmationText,
   customerKindOf,
   daysAgoSaid,
@@ -472,5 +473,24 @@ describe("a new customer or supplier said (D173)", () => {
     );
     expect(resultText("done", "add_customer", { name: "রহিম গ্যারেজ" })).toBe("রহিম গ্যারেজ যোগ হয়েছে।");
     expect(resultText("done", "add_supplier", { name: "Dhaka Auto" })).toBe("Dhaka Auto যোগ হয়েছে।");
+  });
+});
+
+describe("the car a fitment adds, said with “also” (D174)", () => {
+  it.each([
+    ["এই প্যাটটা প্রিমিওতেও লাগে", /প্রিমিও$/],
+    ["ei pat ta premio teo lage", /premio$/],
+    ["এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ফিল্ডারেও লাগে", /ফিল্ডার$/],
+    ["axio 2014 er samner brake pad fielder eo lage", /fielder$/],
+    ["ei pad premio te o lage", /premio$/],
+    ["ei pad ta premioteo lage", /premio$/],
+    ["এই প্যাডটা প্রিমিও ২০০৯-তেও লাগে", /প্রিমিও 2009$/],
+    ["ei pad ta premio 2009 teo lage", /premio 2009$/],
+  ] as const)("%s names it", (text, car) => {
+    expect(alsoCarWords(text)).toMatch(car);
+  });
+
+  it.each(["প্রিমিওর প্যাড লাগে", "premio r pad lage", "এই প্যাডটা আছে?"])("%s names none", (text) => {
+    expect(alsoCarWords(text)).toBeNull();
   });
 });

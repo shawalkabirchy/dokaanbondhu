@@ -99,3 +99,6 @@
 {"heard":"দুই হাজার ফর্টিন","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
 {"heard":"দুই হাজার ফোর টিন","meant":"দুই হাজার চৌদ্দ","concept":"number","value":"2014","style":"bangla","layer":"matcher"}
 {"heard":"dui hajar forteen","meant":"dui hajar choddo","concept":"number","value":"2014","style":"banglish","layer":"matcher"}
+{"heard":"এই প্যাটটা","meant":"এই প্যাডটা","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"এই প্যাট তা","meant":"এই প্যাড টা","concept":"part_type","value":"Brake Pad","style":"bangla","layer":"matcher"}
+{"heard":"ei pat ta","meant":"ei pad ta","concept":"part_type","value":"Brake Pad","style":"banglish","layer":"matcher"}
