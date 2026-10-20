@@ -29,6 +29,10 @@ const PURPOSE: Record<string, string> = {
   price_update: "Change a part's price.",
   add_fitment:
     "Record that a part also fits another car, when the user says so (ei pad ta premio teo lage): part is the part as known, with its own car; vehicle is the other car.",
+  add_customer:
+    "Add a new customer (a garage or a buyer) to the shop's list, when the user asks to add one (notun customer jog koro).",
+  add_supplier:
+    "Add a new supplier to the shop's list, when the user asks to add one (notun supplier jog koro).",
 };
 
 const said = (description: string) => ({ type: "string", description });
@@ -98,6 +102,13 @@ export function writeTool(capability: WriteCapability): ToolDef {
       additionalProperties: false,
     };
   }
+  // A new customer or supplier (D173): the name exactly as said, and only what the user says of the rest.
+  if (slots.has("name"))
+    properties.name = said("the new name exactly as said, e.g. রহিম গ্যারেজ, Rahim Garage");
+  if (slots.has("party_type"))
+    properties.type = said("খুচরা (retail) or পাইকারি (paikari), only if the user says which");
+  if (slots.has("phone")) properties.phone = said("the phone number as said, if one is said");
+  if (slots.has("address")) properties.address = said("the address as said, if one is said");
   if (slots.has("note")) properties.note = said("a note, as said");
   if (slots.has("reason")) properties.reason = said("the reason, as said");
   for (const param of capability.params) {

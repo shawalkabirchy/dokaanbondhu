@@ -50,6 +50,7 @@ import {
   type PriceTier,
   type YearRange,
   yearRangeText,
+  NEW_PARTY,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
@@ -96,7 +97,16 @@ import { findSales } from "../write/sale-finder";
 import { fitRecorded } from "../write/verify";
 import { writeTool } from "../write/tool";
 import type { ActionRecord, PendingAction, WriteCapability, WriteHost } from "../write/types";
-import { advanceWrite, correctWrite, writeFrame, type WriteStep, type WriteTurn } from "./write-flow";
+import {
+  addedRecord,
+  advanceWrite,
+  clearAdding,
+  correctWrite,
+  writeFrame,
+  type AddedRecord,
+  type WriteStep,
+  type WriteTurn,
+} from "./write-flow";
 
 // One chat turn (spec 9.1): normalize, candidates, frame answer, the LLM tool loop (at most 4 calls, D15),
 // resolution, decide, respond sentence by sentence with the grounding check (spec 12), and what to persist.
@@ -251,6 +261,8 @@ export interface TurnOutcome {
   }[];
   /** Changes to action_logs the server saves with the turn: a new pending action, or a decided one (spec 9.9). */
   actions: ActionRecord[];
+  /** Customers and suppliers the app saved in this turn: the server puts them in the catalog cache at once (D173). */
+  added: AddedRecord[];
 }
 
 /** Tool names the read path already uses: a capability named like one is not offered. */
@@ -683,6 +695,7 @@ export async function runTurn(
   const role = deps.role ?? "staff";
   const offered = offeredWrites(deps.host.writes, role);
   const actions: ActionRecord[] = [];
+  const added: AddedRecord[] = [];
   // A write said as an instruction ("…বাকিতে দাও", "joma nao", "kinlam"): the matching capability, which the turn
   // starts even when the model reaches for a search or a lookup first (D140).
   const cueKind = text
@@ -950,7 +963,9 @@ export async function runTurn(
       hostId: supplier.hostId,
       name: supplier.name,
       nameBn: supplier.nameBn ?? null,
+      attrs: supplier.attrs ?? {},
     })),
+    appWords: deps.host.appWords ?? {},
     tier: billTier,
     paikari: deps.host.paikari ?? null,
     // A fitment's car among the app's vehicles, and whether the fit is recorded already (D172).
@@ -1088,47 +1103,49 @@ export async function runTurn(
     // A price change: the part, and the new price as said money, of the kind the request names (D171).
     const price = [...saidMoney(text)].at(-1);
     const args: Record<string, unknown> =
-      capability.template === "price_update"
-        ? {
-            part: {
-              ...Object.fromEntries(
-                (["part_type", "vehicle_model", "position", "quality"] as const)
-                  .filter((concept) => heardSlots.has(concept))
-                  .map((concept) => [
-                    concept === "vehicle_model" ? "vehicle" : concept,
-                    heardSlots.get(concept),
-                  ]),
-              ),
-              ...part,
-            },
-            ...(price !== undefined ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } } : {}),
-          }
-        : capability.template === "payment"
+      capability.template === "add_customer" || capability.template === "add_supplier"
+        ? { ...(customer ? { name: customer } : {}) }
+        : capability.template === "price_update"
           ? {
-              ...(who ? { customer: who } : {}),
-              ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+              part: {
+                ...Object.fromEntries(
+                  (["part_type", "vehicle_model", "position", "quality"] as const)
+                    .filter((concept) => heardSlots.has(concept))
+                    .map((concept) => [
+                      concept === "vehicle_model" ? "vehicle" : concept,
+                      heardSlots.get(concept),
+                    ]),
+                ),
+                ...part,
+              },
+              ...(price !== undefined ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } } : {}),
             }
-          : {
-              ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
-              ...(party("supplier") ? { supplier: party("supplier") } : {}),
-              items: [
-                {
-                  part: {
-                    ...Object.fromEntries(
-                      (["part_type", "vehicle_model", "position", "quality"] as const)
-                        .filter((concept) => heardSlots.has(concept))
-                        .map((concept) => [
-                          concept === "vehicle_model" ? "vehicle" : concept,
-                          heardSlots.get(concept),
-                        ]),
-                    ),
-                    ...part,
+          : capability.template === "payment"
+            ? {
+                ...(who ? { customer: who } : {}),
+                ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+              }
+            : {
+                ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
+                ...(party("supplier") ? { supplier: party("supplier") } : {}),
+                items: [
+                  {
+                    part: {
+                      ...Object.fromEntries(
+                        (["part_type", "vehicle_model", "position", "quality"] as const)
+                          .filter((concept) => heardSlots.has(concept))
+                          .map((concept) => [
+                            concept === "vehicle_model" ? "vehicle" : concept,
+                            heardSlots.get(concept),
+                          ]),
+                      ),
+                      ...part,
+                    },
+                    ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
+                    ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
                   },
-                  ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
-                  ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
-                },
-              ],
-            };
+                ],
+              };
     const frame = markGuessed(writeFrame(capability, args, writeTurn(text)));
     tookStep(frame, await advanceWrite(frame, writeTurn(text)));
     return "stop" as const;
@@ -1167,7 +1184,7 @@ export async function runTurn(
           return JSON.stringify({ error: "no shop database connected" });
         }
         // A fitment's search names two cars, so its part is never taken from a search (D172).
-        if (cued && cued.template !== "payment" && cued.template !== "add_fitment") {
+        if (cued && !["payment", "add_fitment", "add_customer", "add_supplier"].includes(cued.template)) {
           record(`write: ${cued.name}`);
           return startCued(cued, partQueryOf(args) as Record<string, unknown>);
         }
@@ -1411,9 +1428,50 @@ export async function runTurn(
         status: result.status,
         undo_available: result.undoAvailable,
       });
-      frame.status = "done";
-      state.frame = frame;
-      final = { kind: "answer", text: result.text };
+      // A new customer or supplier is known at once (D173); a sale or a stock-in that added it goes on with it.
+      const record =
+        result.status === "done" ? addedRecord(capability, pending.preview, result.response) : null;
+      if (record) {
+        added.push(record);
+        const list =
+          record.concept === "customer" ? deps.host.catalog.customers : deps.host.catalog.suppliers;
+        list.push({ hostId: record.hostId, name: record.name, nameBn: null, attrs: record.attrs });
+      }
+      if (record && frame.slots.adding && frame.capabilityId !== capability.id) {
+        clearAdding(frame);
+        frame.slots[record.concept] = {
+          value: record.name,
+          display: record.name,
+          hostId: record.hostId,
+          status: "understood",
+          source: "user",
+        };
+        frame.status = "active";
+        renew(frame, now);
+        tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
+        const next = final as { text: string } | null;
+        if (next) next.text = `${result.text} ${next.text}`;
+        else final = { kind: "answer", text: result.text };
+      } else {
+        frame.status = "done";
+        state.frame = frame;
+        final = { kind: "answer", text: result.text };
+      }
+    } else if (decision === "no" && frame.slots.adding && frame.capabilityId !== capability.id) {
+      // No to a new name inside a sale or a stock-in: nothing is added, and its customer or supplier is asked again,
+      // with the close names and the new-name button as before.
+      cancel();
+      const party = frame.slots.adding.value === "supplier" ? "supplier" : "customer";
+      const heard = frame.slots.new_name?.value;
+      clearAdding(frame);
+      if (typeof heard === "string") frame.slots[party] = { value: heard, status: "unclear", source: "user" };
+      frame.status = "active";
+      renew(frame, now);
+      tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
+      const next = final as { text: string } | null;
+      const cancelled = resultText("cancelled", pending.preview.template);
+      if (next) next.text = `${cancelled} ${next.text}`;
+      else final = { kind: "answer", text: cancelled };
     } else if (decision === "no") {
       cancel();
       frame.status = "cancelled";
@@ -1493,7 +1551,8 @@ export async function runTurn(
       );
       const words = typeof said === "string" ? learnableWords(said, deps.dictionary) : null;
       if (person && words) learned.push({ heard: words, concept: filled, value: person.name });
-      delete frame.slots[`said_${filled}`];
+      // The new-name button adds the name as heard (D173).
+      if (answer?.value !== NEW_PARTY) delete frame.slots[`said_${filled}`];
     }
     if ((filled || correction) && frame.capabilityId && deps.host.writes) {
       // A write's answer, or "না, X" for a part detail: the write goes on from where it was (spec 9.3 rule 3).
@@ -1789,6 +1848,7 @@ export async function runTurn(
     trace,
     learned,
     actions,
+    added,
   };
 }
 

@@ -20,7 +20,12 @@ import {
   type TurnInput,
   type TurnState,
 } from "@dokaanbondhu/engine/conversation";
-import { HostConnectionError, ReadQueryRejected, SchemaMapError } from "@dokaanbondhu/engine/host";
+import {
+  addToCatalog,
+  HostConnectionError,
+  ReadQueryRejected,
+  SchemaMapError,
+} from "@dokaanbondhu/engine/host";
 import { SpeechError, type AsrResult } from "@dokaanbondhu/engine/providers";
 import type { ActionPreview, ActionRecord, HostCall, PendingAction } from "@dokaanbondhu/engine/write";
 import {
@@ -396,6 +401,10 @@ async function answer(
     }
     if (next) await saveFrame(tx, caller.shopId, conversation.id, next);
     await saveActions(tx, caller, conversation.id, outcome.turnId, outcome.actions);
+    // A customer or supplier the app saved is in the catalog cache at once, before the next sync (D173).
+    const connectionId = shopHostValue.connectionId;
+    if (connectionId)
+      for (const record of outcome.added) await addToCatalog(tx, caller.shopId, connectionId, record);
     // Words learned from an answered question (D102 B): counted, and shown to the owner once seen twice.
     for (const word of outcome.learned) {
       await tx

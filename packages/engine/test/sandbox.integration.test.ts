@@ -30,7 +30,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
   const pools = new HostPools();
   afterAll(() => pools.closeAll());
 
-  it("passes sale, payment, stock-in, return, price change and fitment, each with its undo", async () => {
+  it("passes sale, payment, stock-in, return, price change, fitment, new customer and supplier, each with its undo", async () => {
     const url = new URL(migrationUrl);
     const db: HostDb = {
       id: "sandbox-test",
@@ -56,9 +56,13 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
     const imported = importOpenApi(document, path);
     connection.features = imported.features;
     const run = (query: { text: string; values: unknown[] }) => pools.readOnly(db, (each) => each(query));
-    // Every customer's due and every part's stock, before and after.
+    // Every customer's due and every part's stock, before and after; a new record undone is no longer among them (D173).
     const books = async () => [
-      await run({ text: "select id, due_balance from customers order by id", values: [] }),
+      await run({
+        text: "select id, due_balance from customers where deleted_at is null order by id",
+        values: [],
+      }),
+      await run({ text: "select id from suppliers where deleted_at is null order by id", values: [] }),
       await run({
         text: "select part_id, sum(quantity)::text as quantity from stock_levels group by part_id order by part_id",
         values: [],
@@ -87,6 +91,10 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       update_price: "pass",
       add_fitment: "pass",
       update_fitment: "pass",
+      add_customer: "pass",
+      update_customer: "pass",
+      add_supplier: "pass",
+      update_supplier: "pass",
     });
     const sale = report.capabilities.find((entry) => entry.name === "record_sale")!;
     expect(sale.schema_hash).toBe(
@@ -108,6 +116,17 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
     const price = report.capabilities.filter((entry) => entry.name === "update_price");
     expect(price).toHaveLength(1);
     expect(price[0]!.checks.map((check) => [check.name, check.ok])).toEqual([
+      ["saved", true],
+      ["read_back_stock_and_balance", true],
+      ["undo_puts_everything_back", true],
+    ]);
+    // A new customer: its dry run adds nothing, it reads back, and its undo removes it (D173).
+    expect(
+      report.capabilities
+        .find((entry) => entry.name === "add_customer")!
+        .checks.map((check) => [check.name, check.ok]),
+    ).toEqual([
+      ["dry_run_changes_nothing", true],
       ["saved", true],
       ["read_back_stock_and_balance", true],
       ["undo_puts_everything_back", true],

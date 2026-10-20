@@ -89,6 +89,8 @@ export interface ActionPreview {
   expect: { stock: Record<string, number>; balance: number | null };
   /** The values an undo may put back ({previous.<field>}). */
   previous?: Record<string, unknown>;
+  /** A new customer or supplier (D173): who, as said, and the app's own type value. */
+  newParty?: { party: "customer" | "supplier"; name: string; type: string | null; phone: string | null };
 }
 
 /** An action waiting for yes or no (spec 9.9): its row in action_logs. */

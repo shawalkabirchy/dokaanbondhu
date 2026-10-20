@@ -246,6 +246,13 @@ function slotOf(path: string, linesWithParts: Set<string>): string | null {
   if (/^amount/i.test(leaf)) return "amount";
   if (/^reason$/i.test(leaf)) return "reason";
   if (/^note$/i.test(leaf)) return "note";
+  // A new customer or supplier (D173): its name, phone, kind and address, at the top of the body.
+  if (!parent) {
+    if (/^((customer|supplier|party|full|display)_)?name$/i.test(leaf)) return "name";
+    if (/^(phone|mobile|contact|cell)(_?(no|number))?$/i.test(leaf)) return "phone";
+    if (/^((customer|party)_)?(type|kind|category)$|^(price_)?tier$/i.test(leaf)) return "party_type";
+    if (/^address$/i.test(leaf)) return "address";
+  }
   return null;
 }
 
@@ -259,10 +266,23 @@ export const SAFETY_CRITICAL_SLOTS: ReadonlySet<string> = new Set([
   "refund",
   "part",
   "payment",
+  "name",
 ]);
 
+/** The party a new record is, from the operation's path and ID: a customer (client, buyer) or a supplier (vendor). */
+function partyOf(path: string, operationId: string): "add_customer" | "add_supplier" | null {
+  const words = `${path} ${snakeCase(operationId)}`.toLowerCase();
+  if (/supplier|vendor/.test(words)) return "add_supplier";
+  if (/customer|client|buyer/.test(words)) return "add_customer";
+  return null;
+}
+
 /** The confirmation template kind proposed from the slots a write uses (spec 11.10). */
-function templateOf(kind: "read" | "write", slots: Set<string | null>): string {
+function templateOf(
+  kind: "read" | "write",
+  slots: Set<string | null>,
+  operation: { method: string; path: string; operationId: string },
+): string {
   if (kind === "read") return "generic";
   if (slots.has("sale_ref") && slots.has("refund")) return "return";
   if (slots.has("customer") && slots.has("items")) return "sale";
@@ -270,6 +290,9 @@ function templateOf(kind: "read" | "write", slots: Set<string | null>): string {
   if (slots.has("customer") && slots.has("amount")) return "payment";
   if (slots.has("prices")) return "price_update";
   if (slots.has("part") && slots.has("vehicle")) return "add_fitment";
+  // A new record is a POST with a name and nothing it is about (D173); its edit or removal is not one.
+  if (operation.method === "post" && slots.has("name") && !slots.has("part") && !slots.has("items"))
+    return partyOf(operation.path, operation.operationId) ?? "generic";
   return "generic";
 }
 
@@ -343,6 +366,8 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
         param.entityConcept = param.type.endsWith(":uuid") || /_id$/.test(leaf) ? conceptOf(leaf) : null;
         param.semanticSlot =
           param.location === "body" || param.location === "query" ? slotOf(path, linesWithParts) : null;
+        // A kind is a slot only with the values to choose from (D173).
+        if (param.semanticSlot === "party_type" && !param.enumValues?.length) param.semanticSlot = null;
         param.safetyCritical = SAFETY_CRITICAL_SLOTS.has(param.semanticSlot ?? "");
         param.spokenMap = spokenMapOf(param.enumValues);
       }
@@ -353,7 +378,11 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
       anyDryRun ||= supportsDryRun;
       const compensationHint = operation["x-compensating-operation"] as Json | undefined;
       const compensation = operationRef(compensationHint);
-      const template = templateOf(kind, new Set(params.map((param) => param.semanticSlot)));
+      const template = templateOf(kind, new Set(params.map((param) => param.semanticSlot)), {
+        method,
+        path,
+        operationId: operation.operationId,
+      });
       capabilities.push({
         name: snakeCase(operation.operationId),
         description: [operation.summary, operation.description].filter(Boolean).join(". "),

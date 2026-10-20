@@ -276,6 +276,8 @@ export const TEMPLATE_KINDS = [
   "return",
   "price_update",
   "add_fitment",
+  "add_customer",
+  "add_supplier",
   "generic",
 ] as const;
 export type TemplateKind = (typeof TEMPLATE_KINDS)[number];
@@ -294,6 +296,10 @@ export const SEMANTIC_SLOTS = [
   "refund",
   "reason",
   "note",
+  "name",
+  "phone",
+  "party_type",
+  "address",
 ] as const;
 export type SemanticSlot = (typeof SEMANTIC_SLOTS)[number];
 

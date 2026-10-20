@@ -1,4 +1,5 @@
 export {
+  addToCatalog,
   appWordsOf,
   catalogVersion,
   customerTier,
@@ -7,6 +8,7 @@ export {
   rackLabels,
   readAppWord,
   readCatalog,
+  removeFromCatalog,
   toCatalog,
   writeCatalog,
   type Catalog,

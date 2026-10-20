@@ -21,7 +21,7 @@ describe("OpenAPI importer", () => {
   it("makes every operation a capability, named by its operationId in snake_case, reads and writes apart", () => {
     expect(snakeCase("recordSale")).toBe("record_sale");
     expect(snakeCase("getHealth")).toBe("get_health");
-    expect(imported.capabilities).toHaveLength(19);
+    expect(imported.capabilities).toHaveLength(23);
     const writes = imported.capabilities.filter((item) => item.kind === "write").map((item) => item.name);
     expect(writes.sort()).toEqual(
       [
@@ -35,6 +35,10 @@ describe("OpenAPI importer", () => {
         "update_price",
         "add_fitment",
         "update_fitment",
+        "add_customer",
+        "update_customer",
+        "add_supplier",
+        "update_supplier",
       ].sort(),
     );
   });
@@ -133,6 +137,92 @@ describe("OpenAPI importer", () => {
     expect(byName(imported.capabilities, "add_fitment")).toMatchObject({
       template: "add_fitment",
       compensation: { operation: "update_fitment", body: { deleted: true } },
+    });
+  });
+
+  it("proposes a new customer's and supplier's slots and kinds, and not for their edit (D173)", () => {
+    const customer = byName(imported.capabilities, "add_customer");
+    expect(customer).toMatchObject({
+      template: "add_customer",
+      requiredRole: "staff",
+      supportsDryRun: true,
+      compensation: { operation: "update_customer", body: { deleted: true } },
+      readBack: { operation: "get_customer", idFrom: "customer.id" },
+    });
+    expect(slots(customer)).toEqual({
+      name: "name",
+      type: "party_type",
+      phone: "phone",
+      address: "address",
+      credit_limit_taka: null,
+    });
+    expect(customer.params.find((param) => param.path === "type")?.enumValues).toEqual(["retail", "garage"]);
+    const supplier = byName(imported.capabilities, "add_supplier");
+    expect(supplier).toMatchObject({
+      template: "add_supplier",
+      compensation: { operation: "update_supplier" },
+    });
+    expect(slots(supplier)).toEqual({ name: "name", phone: "phone", address: "address" });
+    expect(byName(imported.capabilities, "update_customer").template).toBe("generic");
+  });
+
+  it("finds a new customer and supplier in another app's words: clients, vendors, its own kinds (D173)", () => {
+    const body = (properties: Record<string, unknown>) => ({
+      required: true,
+      content: { "application/json": { schema: { type: "object", required: ["fullName"], properties } } },
+    });
+    const ok = {
+      "201": { description: "ok", content: { "application/json": { schema: { type: "object" } } } },
+    };
+    const other = {
+      openapi: "3.0.3",
+      paths: {
+        "/clients": {
+          post: {
+            operationId: "createClient",
+            requestBody: body({
+              fullName: { type: "string" },
+              mobileNo: { type: "string" },
+              category: { type: "string", enum: ["Walk-in", "Mechanic"] },
+            }),
+            responses: ok,
+          },
+        },
+        "/clients/{clientId}": {
+          patch: {
+            operationId: "editClient",
+            parameters: [{ name: "clientId", in: "path", required: true, schema: { type: "integer" } }],
+            requestBody: body({ fullName: { type: "string" } }),
+            responses: ok,
+          },
+        },
+        "/vendors": {
+          post: {
+            operationId: "newVendor",
+            requestBody: body({
+              fullName: { type: "string" },
+              contactNumber: { type: "string" },
+              kind: { type: "string" },
+            }),
+            responses: ok,
+          },
+        },
+      },
+    };
+    const { capabilities } = importOpenApi(other);
+    expect(byName(capabilities, "create_client")).toMatchObject({ template: "add_customer" });
+    expect(slots(byName(capabilities, "create_client"))).toEqual({
+      fullName: "name",
+      mobileNo: "phone",
+      category: "party_type",
+    });
+    expect(byName(capabilities, "edit_client").template).toBe("generic");
+    expect(byName(capabilities, "new_vendor")).toMatchObject({ template: "add_supplier" });
+    // A kind without values to choose from is no slot.
+    expect(slots(byName(capabilities, "new_vendor"))).toEqual({
+      fullName: "name",
+      contactNumber: "phone",
+      kind: null,
     });
   });
 

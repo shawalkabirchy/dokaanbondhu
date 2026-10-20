@@ -52,6 +52,7 @@ function resultFields(preview: ActionPreview, facts: AnswerFacts | null): Result
     payable: facts?.supplierPayable != null ? BigInt(facts.supplierPayable) : null,
     part: line?.name ?? null,
     rack: line?.rack ?? null,
+    name: preview.newParty?.name ?? null,
   };
 }
 

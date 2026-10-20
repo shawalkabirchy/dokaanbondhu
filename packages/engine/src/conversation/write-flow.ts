@@ -2,6 +2,7 @@ import {
   banglaOf,
   checkQuantity,
   confirmationText,
+  customerKindOf,
   dayText,
   daysAgoSaid,
   daysBefore,
@@ -13,6 +14,8 @@ import {
   parseQuantity,
   parseYear,
   paymentText,
+  phoneOf,
+  phoneText,
   possessive,
   priceLevelIn,
   question,
@@ -37,11 +40,13 @@ import {
   type QuestionSlot,
   type SaidQuantity,
   unitWord,
+  NEW_PARTY,
   WALK_IN,
   year as yearText,
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { HostCallFailed, WAKE_WAIT_MS } from "../host/api";
+import { HostCallFailed, WAKE_WAIT_MS, type HostRequest, type HostResponse } from "../host/api";
+import { readAppWord, type AppWords } from "../host/catalog";
 import type { CarChoice, FindPartsResult, PartQuery } from "../host/find-parts";
 import {
   answerFacts,
@@ -50,6 +55,7 @@ import {
   dryRunQuery,
   leafOf,
   methodParam,
+  readPath,
   refundOf,
   refusalOf,
   requestPath,
@@ -85,6 +91,22 @@ const NEAR_NAME = 0.5;
 const NO_PAIKARI = "এই অ্যাপে পাইকারি দাম বদলানো যায় না।";
 /** A return's button for a buyer without a name (D169). */
 const WALK_IN_LABEL = "নাম ছাড়া কেনা";
+/** The button that adds a name the app does not have (D173). */
+const NEW_PARTY_LABEL = "নতুন হিসেবে যোগ করুন";
+const NO_PHONE_LABEL = "নেই";
+/** A new customer on an app whose types the word list and the owner's choices do not place (D173). */
+const NO_KINDS = "এই অ্যাপের কাস্টমারের ধরন চিনতে পারছি না; সেটআপে কাস্টমারের দাম ঠিক করে নিন।";
+
+/** A customer or supplier as the write path sees it; the catalog keeps its phone among the attributes (D173). */
+type Party = CatalogCustomer & { attrs?: Record<string, unknown> };
+
+/** A record the app saved that the catalog takes at once, before the next sync (D173). */
+export interface AddedRecord {
+  concept: "customer" | "supplier";
+  hostId: string;
+  name: string;
+  attrs: Record<string, unknown>;
+}
 
 const PART_KEYS = [
   "part_type",
@@ -101,8 +123,10 @@ export interface WriteTurn {
   capabilities: WriteCapability[];
   host: WriteHost;
   dictionary: Dictionary;
-  customers: CatalogCustomer[];
-  suppliers: CatalogCustomer[];
+  customers: Party[];
+  suppliers: Party[];
+  /** The owner's choices for the app's own words: a new customer's type is read through them (D145, D173). */
+  appWords?: AppWords;
   tier: "retail" | "paikari";
   /** Which trade price is the shop's paikari price (D146), for a price change (D171). */
   paikari?: "garage_price" | "wholesale_price" | null;
@@ -230,6 +254,17 @@ export function writeFrame(
     const name = str(args[party]);
     if (name) frame.slots[party] = { value: name, status: "unclear", source: "user" }; // resolved below
   }
+  // A new customer or supplier (D173): the name as said; a type and a phone only as the request says them.
+  if (capability.template === "add_customer" || capability.template === "add_supplier") {
+    frame.slots.adding = understood(capability.template === "add_customer" ? "customer" : "supplier");
+    put("new_name", args.name);
+    const kind = customerKindOf(turn.request, { inRequest: true });
+    if (kind) frame.slots.new_type = understood(kind);
+    const phone = str(args.phone) ? phoneOf(String(args.phone)) : null;
+    if (phone && phone !== "none" && asciiOnly(turn.request).includes(phone))
+      frame.slots.new_phone = understood(phone);
+    put("new_address", args.address);
+  }
   const items = Array.isArray(args.items) ? (args.items as Record<string, unknown>[]) : [];
   if (items.length > 1) frame.slots.lines = understood(items.length);
   const item = items[0] ?? {};
@@ -267,6 +302,10 @@ export function writeFrame(
 }
 
 const slotsOf = writeSlots;
+
+/** A text's digits alone, Bangla ones as ASCII: a phone the model passes must be in what was said (D140, D173). */
+const asciiOnly = (text: string) =>
+  text.replace(/[০-৯]/g, (digit) => String("০১২৩৪৫৬৭৮৯".indexOf(digit))).replace(/\D/g, "");
 
 /** A payment word: on credit, a method of the host, or null when it is not one. */
 export function paymentOf(
@@ -352,6 +391,14 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   };
   const ask = (slot: QuestionSlot, extra: Partial<QuestionInput> = {}) =>
     askSlot(slot, question({ slot, ...(first ? { understood: understoodSoFar(frame) } : {}), ...extra }));
+
+  // 0. A new customer or supplier (D173): its own action, or one a sale or a stock-in adds before it goes on.
+  const adding = frame.slots.adding?.value;
+  if (adding === "customer" || adding === "supplier") {
+    const adder = capability.template === `add_${adding}` ? capability : adderFor(turn, capability, adding);
+    if (adder) return addParty(frame, adder, turn, adding, askSlot);
+    clearAdding(frame);
+  }
 
   // 1. The part: vehicle, year, engine, position, quality, part type (asked by the part search).
   let chosen = (frame.slots.part?.value as ChosenPart | undefined) ?? null;
@@ -473,6 +520,17 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         }),
         forReturn ? [...offers, walkIn] : offers,
       );
+    // The button that adds the name as heard, the close names being the other buttons (D173).
+    const adder = adderFor(turn, capability, party);
+    if (slot?.value === NEW_PARTY && adder) {
+      const heard = str(frame.slots[`said_${party}`]?.value);
+      delete frame.slots[party];
+      delete frame.slots[`said_${party}`];
+      frame.slots.adding = understood(party);
+      if (heard) frame.slots.new_name = understood(heard);
+      frame.slots.new_name_ok = understood(true);
+      return addParty(frame, adder, turn, party, askSlot);
+    }
     // A name picked from the chips carries its host ID as the slot's value.
     const picked = slot && !slot.hostId ? list.find((person) => person.hostId === slot.value) : undefined;
     if (picked) {
@@ -501,14 +559,15 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         frame.slots[`said_${party}`] = { value: String(slot.value), status: "unclear", source: "user" };
         delete frame.slots[party];
         const near = match.candidates.filter((candidate) => candidate.score >= NEAR_NAME).slice(0, 3);
-        if (!near.length && !forReturn) return ask(party);
-        return askParty(
-          near.map((candidate, index) => ({
+        if (!near.length && !forReturn && !adder) return ask(party);
+        return askParty([
+          ...near.map((candidate, index) => ({
             id: `opt-${index + 1}`,
             label: candidate.customer.name,
             value: candidate.customer.hostId,
           })),
-        );
+          ...(adder ? [newButton] : []),
+        ]);
       }
     } else if (!slot && required) {
       if (party === "customer" && turn.rememberedCustomer) {
@@ -768,6 +827,258 @@ function carYears(car: { vehicle: CatalogVehicle; model: string }): string {
   return [banglaOf("vehicle_model", car.model), years].filter(Boolean).join(" ");
 }
 
+/** A new customer or supplier being added (D173): the frame's slots that belong to it. */
+const ADDING_SLOTS = [
+  "adding",
+  "new_name",
+  "new_name_ok",
+  "new_check",
+  "new_type",
+  "new_phone",
+  "new_phone_ok",
+  "new_same_phone",
+  "new_address",
+];
+
+/** Ends an add inside a sale or a stock-in, so the request goes on (D173). */
+export function clearAdding(frame: RequestFrame): void {
+  for (const slot of ADDING_SLOTS) delete frame.slots[slot];
+}
+
+/** The action that adds a new customer or supplier inside a sale or a stock-in, when the user may use it (D173). */
+function adderFor(turn: WriteTurn, capability: WriteCapability, party: "customer" | "supplier") {
+  const inside = party === "customer" ? capability.template === "sale" : capability.template === "stock_in";
+  return inside ? (turn.capabilities.find((item) => item.template === `add_${party}`) ?? null) : null;
+}
+
+const newButton: Offer = { id: "opt-new", label: NEW_PARTY_LABEL, value: NEW_PARTY };
+
+/** The app's type value of each price kind (D121, D145): the first of that kind; a kind it has none of is left out. */
+function typeChoices(adder: WriteCapability, turn: WriteTurn): Partial<Record<"retail" | "paikari", string>> {
+  const values = adder.params.find((param) => param.semanticSlot === "party_type")?.enumValues ?? [];
+  const choices: Partial<Record<"retail" | "paikari", string>> = {};
+  for (const value of values) {
+    const our = readAppWord("price_tier", value, turn.appWords ?? {}).our;
+    const kind = our === "retail" ? "retail" : our ? "paikari" : null;
+    if (kind && !choices[kind]) choices[kind] = value;
+  }
+  return choices;
+}
+
+/**
+ * A new customer or supplier (D173): its name, the records close to it shown first, a customer's type, the phone,
+ * then the confirmation after the dry run. The frame is the add's own, or a sale's or a stock-in's that goes on after
+ * it; a close record chosen instead is used as it is.
+ */
+async function addParty(
+  frame: RequestFrame,
+  adder: WriteCapability,
+  turn: WriteTurn,
+  party: "customer" | "supplier",
+  askSlot: (slot: string, text: string, offers?: Offer[]) => WriteStep,
+): Promise<WriteStep> {
+  const slots = slotsOf(adder);
+  const people = party === "customer" ? turn.customers : turn.suppliers;
+  const own = adder.id === frame.capabilityId;
+
+  // A close record chosen instead of a new one: nothing is added.
+  for (const check of ["new_check", "new_same_phone"] as const) {
+    const answer = frame.slots[check]?.value;
+    delete frame.slots[check];
+    if (answer === NEW_PARTY)
+      frame.slots[check === "new_check" ? "new_name_ok" : "new_phone_ok"] = understood(true);
+    const person = typeof answer === "string" ? people.find((item) => item.hostId === answer) : undefined;
+    if (!person) continue;
+    if (own) {
+      frame.status = "done";
+      return { kind: "answer", text: `${person.name} আগে থেকেই আছে।` };
+    }
+    clearAdding(frame);
+    frame.slots[party] = understood(person.name, { display: person.name, hostId: person.hostId });
+    return advanceWrite(frame, turn);
+  }
+
+  const name = str(frame.slots.new_name?.value);
+  if (!name) return askSlot("new_name", question({ slot: "new_name", party }));
+  if (!frame.slots.new_name_ok) {
+    const close = resolveCustomer(name, [], people, turn.dictionary)
+      .candidates.filter((candidate) => candidate.score >= NEAR_NAME)
+      .slice(0, 3);
+    if (close.length)
+      return askSlot(
+        "new_check",
+        question({ slot: "new_check", names: close.map((candidate) => candidate.customer.name) }),
+        [
+          ...close.map((candidate, index) => ({
+            id: `opt-${index + 1}`,
+            label: candidate.customer.name,
+            value: candidate.customer.hostId,
+          })),
+          newButton,
+        ],
+      );
+    frame.slots.new_name_ok = understood(true);
+  }
+
+  // A customer's type: খুচরা or পাইকারি, each the app's own value (D145).
+  let type: string | null = null;
+  let kind: "retail" | "paikari" | null = null;
+  if (party === "customer" && slots.has("party_type")) {
+    const choices = typeChoices(adder, turn);
+    const kinds = (["retail", "paikari"] as const).filter((item) => choices[item]);
+    const said = frame.slots.new_type?.value;
+    const saidKind =
+      said === "retail" || said === "paikari" ? said : str(said) ? customerKindOf(String(said)) : null;
+    kind = saidKind && choices[saidKind] ? saidKind : kinds.length === 1 ? kinds[0]! : null;
+    if (!kind) {
+      delete frame.slots.new_type;
+      if (!kinds.length) return { kind: "answer", text: NO_KINDS };
+      return askSlot("new_type", question({ slot: "party_type" }), [
+        { id: "opt-1", label: "খুচরা", value: "retail" },
+        { id: "opt-2", label: "পাইকারি", value: "paikari" },
+      ]);
+    }
+    type = choices[kind]!;
+    frame.slots.new_type = understood(kind, { display: kind === "retail" ? "খুচরা" : "পাইকারি" });
+  }
+
+  // The phone, or নেই; a number another record has is shown first.
+  let phone: string | null = null;
+  if (slots.has("phone")) {
+    const said = frame.slots.new_phone?.value;
+    const read = typeof said === "string" ? phoneOf(said) : null;
+    if (!read) {
+      delete frame.slots.new_phone;
+      return askSlot("new_phone", question({ slot: "phone" }), [
+        { id: "opt-none", label: NO_PHONE_LABEL, value: "none" },
+      ]);
+    }
+    phone = read === "none" ? null : read;
+    const same = phone
+      ? people.find((person) => phoneOf(String(person.attrs?.phone ?? "")) === phone)
+      : undefined;
+    if (same && !frame.slots.new_phone_ok)
+      return askSlot("new_same_phone", question({ slot: "new_check", names: [same.name], byPhone: true }), [
+        { id: "opt-1", label: same.name, value: same.hostId },
+        newButton,
+      ]);
+  }
+
+  return prepareAdd(frame, adder, turn, party, {
+    name,
+    type,
+    phone,
+    address: slots.has("address") ? str(frame.slots.new_address?.value) : null,
+    kind,
+  });
+}
+
+/** A new record's dry run and confirmation (D173). */
+async function prepareAdd(
+  frame: RequestFrame,
+  adder: WriteCapability,
+  turn: WriteTurn,
+  party: "customer" | "supplier",
+  said: {
+    name: string;
+    type: string | null;
+    phone: string | null;
+    address: string | null;
+    kind: "retail" | "paikari" | null;
+  },
+): Promise<WriteStep> {
+  const resolved: ResolvedWrite = {
+    newParty: { name: said.name, type: said.type, phone: said.phone, address: said.address },
+    payments: [],
+  };
+  const { body } = buildBody(adder, resolved);
+  const dry = adder.dryRun ? dryRunQuery(turn.host.features) : null;
+  let warnings: string[] = [];
+  if (dry) {
+    try {
+      const response = await dryCall(turn, { method: adder.httpMethod, path: adder.path, query: dry, body });
+      if (response.status >= 300)
+        return {
+          kind: "answer",
+          text: resultText("failed", adder.template, { reason: refusalOf(response, turn.host.features) }),
+        };
+      warnings = answerFacts(response.body).warnings;
+    } catch (error) {
+      if (error instanceof HostCallFailed)
+        return { kind: "answer", text: resultText("failed", adder.template, { reason: NO_ANSWER }) };
+      throw error;
+    }
+  }
+  const text = confirmationText(adder.template, { name: said.name, kind: said.kind, phone: said.phone });
+  const sheet: ActionPreview["fields"] = [
+    {
+      label: party === "customer" ? "নতুন কাস্টমার" : "নতুন সাপ্লায়ার",
+      value: said.name,
+      highlight: (frame.slots.new_name?.confidence ?? 1) < 0.85,
+    },
+    ...(said.kind
+      ? [{ label: "ধরন", value: said.kind === "retail" ? "খুচরা" : "পাইকারি", highlight: false }]
+      : []),
+    ...(slotsOf(adder).has("phone")
+      ? [{ label: "ফোন", value: said.phone ? phoneText(said.phone) : NO_PHONE_LABEL, highlight: false }]
+      : []),
+    ...(said.address ? [{ label: "ঠিকানা", value: said.address, highlight: false }] : []),
+  ];
+  const preview: ActionPreview = {
+    template: adder.template,
+    text,
+    fields: sheet,
+    warnings,
+    total: null,
+    paid: 0,
+    lines: [],
+    customer: null,
+    supplier: null,
+    expect: { stock: {}, balance: null },
+    newParty: { party, name: said.name, type: said.type, phone: said.phone },
+  };
+  const action: PendingAction = {
+    id: turn.newId(),
+    capabilityId: adder.id,
+    request: { method: adder.httpMethod, path: adder.path, query: {}, body },
+    preview,
+    idempotencyKey: turn.newId(),
+    expiresAt: new Date(turn.now.getTime() + CONFIRM_TTL_MS).toISOString(),
+  };
+  turn.emit({
+    type: "confirm",
+    action_id: action.id,
+    text,
+    fields: sheet,
+    warnings,
+    expires_at: action.expiresAt,
+  });
+  return { kind: "confirm", action, text: [...warnings, text].join(" ") };
+}
+
+/** A new customer or supplier as the app saved it, for the catalog at once (D173); null for any other action. */
+export function addedRecord(
+  capability: WriteCapability,
+  preview: ActionPreview,
+  response: unknown,
+): AddedRecord | null {
+  const added = preview.newParty;
+  if (!added || (capability.template !== "add_customer" && capability.template !== "add_supplier"))
+    return null;
+  const idFrom = capability.readBack?.idFrom ?? capability.compensation?.idFrom ?? `${added.party}.id`;
+  const id = readPath(response, idFrom) ?? readPath(response, "id");
+  if (id === undefined || id === null || id === "") return null;
+  return {
+    concept: added.party,
+    hostId: String(id),
+    name: added.name,
+    attrs: {
+      ...(added.type ? { type: added.type } : {}),
+      ...(added.phone ? { phone: added.phone } : {}),
+    },
+  };
+}
+
 /** The values understood, in the host's terms. */
 function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWrite {
   const party = (name: "customer" | "supplier") =>
@@ -841,18 +1152,8 @@ async function prepareWrite(
   }
   // An action that names its part in the path gets the part's ID there (D171).
   const path = requestPath(capability, resolved);
-  const send = async (body: Record<string, unknown>, query: Record<string, string>) => {
-    const request = { method: capability.httpMethod, path, query, body };
-    try {
-      return await turn.host.call(request);
-    } catch (error) {
-      if (!(error instanceof HostCallFailed) || error.reason !== "timeout") throw error;
-      // An app asleep, as a free host is after quiet minutes: a dry run saves nothing, so it is sent once more and
-      // waited for longer, while the screen says "চালু হচ্ছে…" (D168).
-      turn.emit({ type: "status", state: "UNDERSTANDING", label_key: "status.starting" });
-      return turn.host.call(request, { timeoutMs: WAKE_WAIT_MS });
-    }
-  };
+  const send = (body: Record<string, unknown>, query: Record<string, string>) =>
+    dryCall(turn, { method: capability.httpMethod, path, query, body });
   let total: number | null = null;
   let warnings: string[] = [];
   try {
@@ -1118,6 +1419,20 @@ async function prepareWrite(
   return { kind: "confirm", action, text: [...warnings, text].join(" ") };
 }
 
+/**
+ * A dry run sent to the app. An app asleep, as a free host is after quiet minutes, is sent it once more and waited
+ * for longer, while the screen says "চালু হচ্ছে…": a dry run saves nothing (D168).
+ */
+async function dryCall(turn: WriteTurn, request: HostRequest): Promise<HostResponse> {
+  try {
+    return await turn.host.call(request);
+  } catch (error) {
+    if (!(error instanceof HostCallFailed) || error.reason !== "timeout") throw error;
+    turn.emit({ type: "status", state: "UNDERSTANDING", label_key: "status.starting" });
+    return turn.host.call(request, { timeoutMs: WAKE_WAIT_MS });
+  }
+}
+
 const open = (resolved: ResolvedWrite) =>
   resolved.payments?.some((payment) => payment.amount === null) ?? false;
 
@@ -1132,9 +1447,33 @@ export function correctWrite(
   capability: WriteCapability,
   turn: Pick<WriteTurn, "dictionary" | "customers" | "suppliers" | "now">,
 ): string | null {
-  const { rest } = splitCorrection(text);
+  const { correction, rest } = splitCorrection(text);
   const tokens = normalize(rest).tokens;
   if (!tokens.length) return null;
+  // A new customer or supplier (D173): a phone, a type, or with "না, …" the name as it should be.
+  if (capability.template === "add_customer" || capability.template === "add_supplier") {
+    const phone = phoneOf(rest);
+    if (phone && phone !== "none") {
+      frame.slots.new_phone = understood(phone);
+      delete frame.slots.new_phone_ok;
+      return "new_phone";
+    }
+    const kind = capability.template === "add_customer" && tokens.length <= 2 ? customerKindOf(rest) : null;
+    if (kind) {
+      frame.slots.new_type = understood(kind);
+      return "new_type";
+    }
+    if (!correction) return null;
+    // The name as written, without "না," before it: the normalized words would lose its letters' case.
+    frame.slots.new_name = understood(
+      text
+        .trim()
+        .replace(/^\S+[\s,،]+/u, "")
+        .trim() || rest.trim(),
+    );
+    delete frame.slots.new_name_ok;
+    return "new_name";
+  }
   const slots = slotsOf(capability);
   const forPart = slots.has("items") || slots.has("part");
   const said = parseQuantity(tokens);

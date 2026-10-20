@@ -3,7 +3,7 @@ import { banglaOf, carLabel, possessive } from "./answers";
 import { money } from "./format";
 import { MISHEARD_THOUSAND, wordNumber } from "./numbers";
 import { parseQuantity } from "./quantity";
-import { asciiDigits, normalize } from "./text";
+import { asciiDigits, banglaDigits, normalize } from "./text";
 
 // The write path's words (spec 9.9, 11.10; D135): amounts as said, the yes and no of a confirmation, and the
 // confirmation and result templates. Deterministic Bangla, never LLM text; a field the host did not give is left out.
@@ -121,7 +121,15 @@ export function decisionOf(text: string): "yes" | "no" | null {
 
 /** Template kinds of spec 11.10. */
 export type ActionTemplate =
-  "sale" | "payment" | "stock_in" | "return" | "price_update" | "add_fitment" | "generic";
+  | "sale"
+  | "payment"
+  | "stock_in"
+  | "return"
+  | "price_update"
+  | "add_fitment"
+  | "add_customer"
+  | "add_supplier"
+  | "generic";
 
 /** One part line of an action, as understood (display text, never IDs). */
 export interface ActionLine {
@@ -150,6 +158,10 @@ export interface ActionFields {
   oldPrice?: bigint | null;
   newPrice?: bigint | null;
   years?: string | null;
+  /** A new customer or supplier (D173): the name as said, a customer's price kind, the phone (11 digits). */
+  name?: string | null;
+  kind?: "retail" | "paikari" | null;
+  phone?: string | null;
   /** generic: the action's label and its fields. */
   label?: string;
   pairs?: { label: string; value: string }[];
@@ -235,6 +247,15 @@ export function confirmationText(kind: ActionTemplate, fields: ActionFields): st
       const car = line?.vehicle ? banglaOf("vehicle_model", line.vehicle) : "";
       return `${line?.part ?? ""} — ${car}${fields.years ? ` ${fields.years}` : ""}-এ লাগে। যোগ করব?`;
     }
+    case "add_customer":
+    case "add_supplier": {
+      const said = [
+        fields.name,
+        fields.kind ? TIER_BN[fields.kind] : null,
+        fields.phone ? phoneText(fields.phone) : null,
+      ];
+      return `নতুন ${kind === "add_customer" ? "কাস্টমার" : "সাপ্লায়ার"}: ${said.filter(Boolean).join(", ")}। যোগ করব?`;
+    }
     default: {
       const pairs = (fields.pairs ?? []).map((pair) => `${pair.label}: ${pair.value}`);
       return `${[fields.label, ...pairs].filter(Boolean).join(", ")}। ঠিক আছে?`;
@@ -253,6 +274,8 @@ export interface ResultFields {
   rack?: string | null;
   /** failed: the host's Bangla reason, or the template for its error. */
   reason?: string | null;
+  /** A new customer's or supplier's name (D173). */
+  name?: string | null;
 }
 
 export type ResultStatus = "done" | "failed" | "review" | "cancelled" | "expired" | "undone";
@@ -271,7 +294,8 @@ function balanceSentence(kind: ActionTemplate, fields: ResultFields): string | n
 export function resultText(status: ResultStatus, kind: ActionTemplate, fields: ResultFields = {}): string {
   switch (status) {
     case "done": {
-      const first = kind === "payment" ? "জমা হয়েছে।" : "হয়ে গেছে।";
+      const added = (kind === "add_customer" || kind === "add_supplier") && fields.name;
+      const first = added ? `${fields.name} যোগ হয়েছে।` : kind === "payment" ? "জমা হয়েছে।" : "হয়ে গেছে।";
       const rack =
         kind === "sale" && fields.part && fields.rack ? `${fields.part} ${fields.rack} তাকে আছে।` : null;
       return [first, balanceSentence(kind, fields), rack].filter(Boolean).join(" ");
@@ -457,7 +481,16 @@ const said = (tokens: string[], phrase: string) =>
 export function writeCueOf(
   text: string,
   options: { partyNamed: boolean },
-): "sale" | "payment" | "stock_in" | "return" | "price_update" | "add_fitment" | null {
+):
+  | "sale"
+  | "payment"
+  | "stock_in"
+  | "return"
+  | "price_update"
+  | "add_fitment"
+  | "add_customer"
+  | "add_supplier"
+  | null {
   const tokens = normalize(text).tokens;
   if (!tokens.length || text.trim().endsWith("?")) return null;
   // A price change names the price it sets (D171); every other write is said without a question word.
@@ -472,6 +505,8 @@ export function writeCueOf(
     return sets && !selling && saidMoney(text).size > 0 ? "price_update" : null;
   }
   if (saysFits(tokens)) return "add_fitment";
+  const party = newPartyOf(tokens);
+  if (party && !PAYMENT_WORDS.some((phrase) => said(tokens, phrase))) return party;
   if (
     WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
     (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))
@@ -569,6 +604,128 @@ const WALK_IN_WORDS = [
 export function saysWalkIn(text: string): boolean {
   const tokens = normalize(text).tokens;
   return WALK_IN_WORDS.some((phrase) => said(tokens, phrase));
+}
+
+// A new customer or supplier (D173): নতুন with the party's word and an add word ("নতুন কাস্টমার যোগ করো", "notun
+// supplier add koro"). গ্যারেজ is a customer word here, never a price kind, since it is often part of a name.
+const NEW_WORDS = ["নতুন", "নুতন", "notun", "nutun", "new"];
+const PARTY_WORDS = {
+  add_customer: [
+    "কাস্টমার",
+    "কাস্টোমার",
+    "খদ্দের",
+    "ক্রেতা",
+    "গ্যারেজ",
+    "customer",
+    "kastomar",
+    "costomer",
+    "garage",
+  ],
+  add_supplier: ["সাপ্লায়ার", "সাপ্লাইয়ার", "মহাজন", "supplier", "saplayar", "suplier", "mohajon"],
+} as const;
+const ADD_WORDS = ["যোগ", "অ্যাড", "খোলো", "খুলো", "খোলেন", "add", "jog", "khulo", "kholo"];
+
+function newPartyOf(tokens: string[]): "add_customer" | "add_supplier" | null {
+  if (!NEW_WORDS.some((word) => said(tokens, word)) || !ADD_WORDS.some((word) => said(tokens, word)))
+    return null;
+  if (PARTY_WORDS.add_supplier.some((word) => said(tokens, word))) return "add_supplier";
+  if (PARTY_WORDS.add_customer.some((word) => said(tokens, word))) return "add_customer";
+  return null;
+}
+
+/** The value of the button that adds a name the app does not have (D173). */
+export const NEW_PARTY = "__new__";
+
+/** Whether an answer chooses to add the name as a new one: the button's words, or নতুন alone (D173). */
+export function saysNewParty(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return tokens.length <= 5 && NEW_WORDS.some((word) => said(tokens, word));
+}
+
+const RETAIL_KIND = [
+  "খুচরা",
+  "খুচরো",
+  "রিটেইল",
+  "সাধারণ",
+  "khuchra",
+  "khucra",
+  "khuchro",
+  "retail",
+  "normal",
+];
+const PAIKARI_KIND = [
+  "পাইকারি",
+  "পাইকার",
+  "গ্যারেজ",
+  "মিস্ত্রি",
+  "ডিলার",
+  "হোলসেল",
+  "paikari",
+  "paikar",
+  "garage",
+  "mistri",
+  "dealer",
+  "wholesale",
+  "mechanic",
+];
+
+/**
+ * A new customer's price kind as said (D173): খুচরা or পাইকারি, with the app's garage, dealer or wholesale words as
+ * paikari (D145). `inRequest` leaves out গ্যারেজ and garage, which a request says as part of a name.
+ */
+export function customerKindOf(
+  text: string,
+  options: { inRequest?: boolean } = {},
+): "retail" | "paikari" | null {
+  const tokens = normalize(text).tokens;
+  const paikari = PAIKARI_KIND.filter((word) => !options.inRequest || !["গ্যারেজ", "garage"].includes(word));
+  if (paikari.some((word) => said(tokens, word))) return "paikari";
+  if (RETAIL_KIND.some((word) => said(tokens, word))) return "retail";
+  return null;
+}
+
+const NO_PHONE = ["নেই", "নাই", "না", "জানি না", "পরে", "nei", "nai", "na", "no", "none", "jani na", "pore"];
+
+/**
+ * A phone number as said or typed (D173): 11 digits from 01, in Bangla or Latin digits, with spaces, dashes or +88;
+ * "none" for নেই, nei; null for anything else.
+ */
+export function phoneOf(text: string): string | "none" | null {
+  const ascii = asciiDigits(text);
+  let digits = ascii.replace(/[^\d+]/g, "").replace(/^\+/, "");
+  // Said digit by digit, as speech-to-text may write it: "শূন্য এক সাত…", "zero one seven double one…".
+  if (digits.length < 11) digits = spokenDigits(text) || digits;
+  if (!digits) {
+    const tokens = normalize(text).tokens;
+    return tokens.length <= 3 && NO_PHONE.some((word) => said(tokens, word)) ? "none" : null;
+  }
+  if (digits.length === 13 && digits.startsWith("880")) digits = digits.slice(2);
+  return /^01[3-9]\d{8}$/.test(digits) ? digits : null;
+}
+
+const DOUBLE = new Set(["ডাবল", "double", "dabol"]);
+
+/** A number said as words, digit by digit or in pairs ("সতেরো"), with ডাবল for a digit twice; "" when none is. */
+function spokenDigits(text: string): string {
+  let out = "";
+  let times = 1;
+  for (const token of normalize(text).tokens) {
+    if (DOUBLE.has(token)) {
+      times = 2;
+      continue;
+    }
+    const ascii = asciiDigits(token);
+    const word = /^\d+$/.test(ascii) ? null : wordNumber(token);
+    const value = /^\d+$/.test(ascii) ? ascii : word !== null && word < 100 ? String(word) : null;
+    if (value !== null) out += value.repeat(times);
+    times = 1;
+  }
+  return out;
+}
+
+/** A phone of 11 digits as the sheet shows it: ০১৭১১-২২৩৩৪৪. */
+export function phoneText(phone: string): string {
+  return banglaDigits(phone.length === 11 ? `${phone.slice(0, 5)}-${phone.slice(5)}` : phone);
 }
 
 /** What staff are told when they ask for a write only the owner may make, and nothing changes (D171). */

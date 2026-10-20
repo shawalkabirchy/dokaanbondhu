@@ -225,6 +225,10 @@ export type QuestionSlot =
   | "part_type"
   | "customer"
   | "supplier"
+  | "new_name"
+  | "new_check"
+  | "party_type"
+  | "phone"
   | "sale_ref"
   | "new_price"
   | "quantity"
@@ -245,6 +249,10 @@ export const QUESTION_ORDER: QuestionSlot[] = [
   "part_type",
   "customer",
   "supplier",
+  "new_name",
+  "new_check",
+  "party_type",
+  "phone",
   "sale_ref",
   "new_price",
   "quantity",
@@ -270,6 +278,9 @@ export interface QuestionInput {
   sold?: string;
   /** A price change's kind (D171). */
   tier?: "retail" | "paikari";
+  /** A new customer's or supplier's questions (D173): whose, and a close record found by its phone. */
+  party?: "customer" | "supplier";
+  byPhone?: boolean;
 }
 
 /** The template question for one slot (spec 9.4). */
@@ -298,6 +309,23 @@ export function question(input: QuestionInput): string {
             : input.returning
               ? "কে ফেরত দিল?"
               : "কার নামে?";
+      break;
+    case "new_name":
+      text = `নতুন ${input.party === "supplier" ? "সাপ্লায়ারের" : "কাস্টমারের"} নাম কী?`;
+      break;
+    case "new_check": {
+      // A record close to the new one, shown before anything is added (D173).
+      const names = input.names ?? [];
+      text = `${
+        input.byPhone && names[0] ? `এই নম্বর ${possessive(names[0])}` : `${names.join(", ")} আগে থেকে আছে`
+      }। নতুন যোগ করব?`;
+      break;
+    }
+    case "party_type":
+      text = "খুচরা না পাইকারি?";
+      break;
+    case "phone":
+      text = "ফোন নম্বর কত? না থাকলে “নেই” বলুন।";
       break;
     case "sale_ref":
       text = "কোন দিনের বিক্রি?";

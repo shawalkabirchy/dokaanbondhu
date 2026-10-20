@@ -285,13 +285,61 @@ export async function writeCatalog(
   return syncedAt;
 }
 
+/**
+ * A customer or supplier the app saved in a turn, written into the cache at once, so the next turns know it before the
+ * next sync, which then reads it from the app as usual (D173).
+ */
+export async function addToCatalog(
+  tx: Tx,
+  shopId: string,
+  connectionId: string,
+  record: { concept: "customer" | "supplier"; hostId: string; name: string; attrs: Record<string, unknown> },
+): Promise<void> {
+  const syncedAt = new Date();
+  await tx
+    .insert(catalogCache)
+    .values({
+      shopId,
+      connectionId,
+      concept: record.concept,
+      hostId: record.hostId,
+      displayName: record.name,
+      displayNameBn: null,
+      partNumbers: null,
+      phoneticKey: phoneticKey(record.name),
+      attrs: record.attrs,
+      syncedAt,
+    })
+    .onConflictDoUpdate({
+      target: [catalogCache.connectionId, catalogCache.concept, catalogCache.hostId],
+      set: { displayName: record.name, phoneticKey: phoneticKey(record.name), attrs: record.attrs, syncedAt },
+    });
+}
+
+/** An added customer or supplier undone: out of the cache at once (D173). */
+export async function removeFromCatalog(
+  tx: Tx,
+  connectionId: string,
+  record: { concept: "customer" | "supplier"; hostId: string },
+): Promise<void> {
+  await tx
+    .delete(catalogCache)
+    .where(
+      and(
+        eq(catalogCache.connectionId, connectionId),
+        eq(catalogCache.concept, record.concept),
+        eq(catalogCache.hostId, record.hostId),
+      ),
+    );
+}
+
 /** The catalog of one connection in memory, as the resolvers use it. */
 export interface Catalog {
   syncedAt: Date | null;
   parts: (CatalogPart & { attrs: Record<string, unknown> })[];
   vehicles: CatalogVehicle[];
   customers: (CatalogCustomer & { attrs: Record<string, unknown> })[];
-  suppliers: { hostId: string; name: string; nameBn?: string | null }[];
+  suppliers: { hostId: string; name: string; nameBn?: string | null; attrs?: Record<string, unknown> }[];
 }
 
 const number = (value: unknown) =>
@@ -362,7 +410,7 @@ export function toCatalog(rows: (CatalogRow & { syncedAt?: Date })[]): Catalog {
     } else if (row.concept === "customer") {
       catalog.customers.push({ hostId: row.hostId, name: row.displayName, nameBn: row.displayNameBn, attrs });
     } else {
-      catalog.suppliers.push({ hostId: row.hostId, name: row.displayName, nameBn: row.displayNameBn });
+      catalog.suppliers.push({ hostId: row.hostId, name: row.displayName, nameBn: row.displayNameBn, attrs });
     }
   }
   return catalog;

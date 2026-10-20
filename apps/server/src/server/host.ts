@@ -35,6 +35,8 @@ export interface ShopHost {
   shopWords: string[];
   /** Every write of the API connection, switched on or not: an action is decided and undone by its own (spec 11.9). */
   allWrites: WriteCapability[];
+  /** The database connection whose catalog the turn uses, for a record added at once (D173). */
+  connectionId: string | null;
 }
 
 interface Entry {
@@ -92,7 +94,7 @@ async function load(shopId: string): Promise<Entry> {
         ...writeHost,
       };
       return {
-        value: { host, dictionary, shopWords, allWrites },
+        value: { host, dictionary, shopWords, allWrites, connectionId: null },
         connectionId: null,
         version: versionOf(null, wordsVersion),
         checkedAt: Date.now(),
@@ -146,7 +148,7 @@ async function load(shopId: string): Promise<Entry> {
       ...writeHost,
     };
     return {
-      value: { host, dictionary, shopWords, allWrites },
+      value: { host, dictionary, shopWords, allWrites, connectionId: connection.id },
       connectionId: connection.id,
       version: versionOf(catalog.syncedAt, wordsVersion),
       checkedAt: Date.now(),

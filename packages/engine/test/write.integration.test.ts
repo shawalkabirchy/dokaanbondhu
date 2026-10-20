@@ -39,7 +39,10 @@ const ready = local(apiUrl) && local(migrationUrl) && seedKey.length > 0;
 if (process.env.CI === "true" && !ready)
   throw new Error("the write tests need the CI job's API and database");
 
-/** Enabled in these tests: the three of step 5, the return (D169), and the price change, which only the owner may use. */
+/**
+ * Enabled in these tests: the three of step 5, the return (D169), the price change, which only the owner may use, the
+ * fitment (D172), and a new customer or supplier (D173).
+ */
 const ENABLED = new Set([
   "record_sale",
   "receive_payment",
@@ -47,6 +50,8 @@ const ENABLED = new Set([
   "record_return",
   "update_price",
   "add_fitment",
+  "add_customer",
+  "add_supplier",
 ]);
 
 /** The capability registry as setup leaves it: every proposal confirmed, the writes above enabled (spec 11.8). */
@@ -277,14 +282,18 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     const writesOf = (names: string[]) =>
       names.filter((name) => ENABLED.has(name) || /void|reverse/.test(name));
     expect(writesOf(staff.offered[0]!).sort()).toEqual([
+      "add_customer",
       "add_fitment",
+      "add_supplier",
       "receive_payment",
       "record_return",
       "record_sale",
       "stock_in",
     ]);
     expect(writesOf(owner.offered[0]!).sort()).toEqual([
+      "add_customer",
       "add_fitment",
+      "add_supplier",
       "receive_payment",
       "record_return",
       "record_sale",
@@ -1136,4 +1145,151 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       expect(first.outcome.actions).toEqual([]);
     },
   );
+
+  // D173, a new customer inside a sale on the test host: the new-name button adds it (its own dry run, then yes), and
+  // the sale goes on with it to its own dry run. The sale is then cancelled and the add undone, so the seed ends as it
+  // began. GearGrid's own tests show a customer that has bought is never removed (CUSTOMER_IN_USE).
+  it.each([
+    {
+      style: "Bangla",
+      text: "সেলিম অটোকে এক্সিও ২০১৪-এর সামনের নন-জেনুইন ব্রেক প্যাড দুই সেট বাকিতে দাও",
+      args: {
+        customer: "সেলিম অটো",
+        items: [
+          {
+            part: {
+              part_type: "সামনের ব্রেক প্যাড",
+              vehicle: "এক্সিও",
+              year: "২০১৪",
+              position: "সামনের",
+              quality: "নন-জেনুইন",
+            },
+            quantity: "দুই সেট",
+          },
+        ],
+        payment: { method_word: "বাকিতে" },
+      },
+      name: "সেলিম অটো",
+      phone: "০১৮১১-২২৩৩৪৪",
+      yes: "হ্যাঁ",
+      no: "না",
+    },
+    {
+      style: "Banglish",
+      text: "Selim Auto ke axio 2014 er samner non genuine brake pad dui set bakite dao",
+      args: {
+        customer: "Selim Auto",
+        items: [
+          {
+            part: {
+              part_type: "brake pad",
+              vehicle: "axio",
+              year: "2014",
+              position: "samner",
+              quality: "non genuine",
+            },
+            quantity: "dui set",
+          },
+        ],
+        payment: { method_word: "bakite" },
+      },
+      name: "Selim Auto",
+      phone: "01811 223344",
+      yes: "ha",
+      no: "na",
+    },
+  ])("D173: a sale adds its new customer and goes on with it; the add is undone ($style)", async (said) => {
+    calls.length = 0;
+    const tap = (reply: Awaited<ReturnType<typeof say>>, label: RegExp) => {
+      const choices = reply.events.find((event) => event.type === "choices");
+      const option =
+        choices?.type === "choices" ? choices.options.find((o) => label.test(o.label)) : undefined;
+      if (choices?.type !== "choices" || !option) throw new Error(`no ${label}: ${reply.reply}`);
+      return { choice: { slot: choices.slot, optionId: option.id } };
+    };
+    const customers = async () => {
+      const [row] = await pools.readOnly(db, (run) =>
+        run({ text: "select count(*)::text as n from customers where deleted_at is null", values: [] }),
+      );
+      return Number(row!.n);
+    };
+    const before = await customers();
+    const asked = await say(fresh(), said.text, [
+      scripted([{ calls: [{ name: "record_sale", arguments: said.args }] }]),
+    ]);
+    expect(asked.reply).toMatch(/কার নামে\?$/);
+    const typed = await say(asked.state, tap(asked, /^নতুন হিসেবে যোগ করুন$/));
+    expect(typed.reply).toBe("খুচরা না পাইকারি?");
+    const phone = await say(typed.state, tap(typed, /^পাইকারি$/));
+    const sheet = await say(phone.state, said.phone);
+    expect(sheet.reply).toBe(`নতুন কাস্টমার: ${said.name}, পাইকারি, ০১৮১১-২২৩৩৪৪। যোগ করব?`);
+    expect(nothingSent()).toBe(true);
+    expect(await customers()).toBe(before);
+
+    const added = await say(sheet.state, said.yes);
+    expect(added.reply).toMatch(
+      new RegExp(
+        `^${said.name} যোগ হয়েছে। ${said.name} — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, .*বাকিতে। ঠিক আছে\\?$`,
+      ),
+    );
+    const record = added.outcome.added[0]!;
+    expect(record).toMatchObject({ concept: "customer", name: said.name });
+    const addAction = added.outcome.actions.find((action) => action.status === "done")!;
+    expect(addAction).toMatchObject({ verifyStatus: "ok" });
+    const [row] = await pools.readOnly(db, (run) =>
+      run({ text: "select type, price_tier, phone from customers where id = $1", values: [record.hostId] }),
+    );
+    expect(row).toEqual({ type: "garage", price_tier: "garage", phone: "01811223344" });
+    expect(calls.at(-1)).toMatchObject({ path: "/api/v1/sales", query: { dry_run: "true" } });
+    expect(calls.at(-1)!.body).toMatchObject({ customer_id: record.hostId });
+
+    const cancelled = await say(added.state, said.no);
+    expect(cancelled.reply).toBe("বাতিল করা হয়েছে, কিছু সেভ হয়নি।");
+    const undone = await undo(addAction, { preview: sheet.outcome.actions[0]!.preview! });
+    expect(undone).toMatchObject({ status: "undone" });
+    expect(await customers()).toBe(before);
+    catalog.customers = catalog.customers.filter((customer) => customer.hostId !== record.hostId);
+  });
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নতুন সাপ্লায়ার যোগ করো, ঢাকা অটো ট্রেডার্স",
+      name: "ঢাকা অটো ট্রেডার্স",
+      none: "নেই",
+      yes: "হ্যাঁ",
+    },
+    {
+      style: "Banglish",
+      text: "notun supplier add koro, Dhaka Auto Traders",
+      name: "Dhaka Auto Traders",
+      none: "nei",
+      yes: "ha",
+    },
+  ])("D173: a new supplier is added, read back and undone ($style)", async (said) => {
+    calls.length = 0;
+    const first = await say(fresh(), said.text, [
+      scripted([{ calls: [{ name: "add_supplier", arguments: { name: said.name } }] }]),
+    ]);
+    expect(first.reply).toBe("ফোন নম্বর কত? না থাকলে “নেই” বলুন।");
+    const sheet = await say(first.state, said.none);
+    expect(sheet.reply).toBe(`নতুন সাপ্লায়ার: ${said.name}। যোগ করব?`);
+    expect(nothingSent()).toBe(true);
+    const done = await say(sheet.state, said.yes);
+    expect(done.reply).toBe(`${said.name} যোগ হয়েছে।`);
+    const action = done.outcome.actions[0]!;
+    expect(action).toMatchObject({ status: "done", verifyStatus: "ok" });
+    const record = done.outcome.added[0]!;
+    expect(record).toMatchObject({ concept: "supplier", name: said.name });
+    const undone = await undo(action, { preview: sheet.outcome.actions[0]!.preview! });
+    expect(undone).toMatchObject({ status: "undone" });
+    const [row] = await pools.readOnly(db, (run) =>
+      run({
+        text: "select deleted_at is not null as gone from suppliers where id = $1",
+        values: [record.hostId],
+      }),
+    );
+    expect(row).toEqual({ gone: true });
+    catalog.suppliers = catalog.suppliers.filter((supplier) => supplier.hostId !== record.hostId);
+  });
 });

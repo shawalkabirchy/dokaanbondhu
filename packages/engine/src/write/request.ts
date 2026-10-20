@@ -79,6 +79,8 @@ export interface ResolvedWrite {
   prices?: { retail?: number | null; paikari?: number | null } | null;
   /** Which trade price is the shop's paikari price, as the owner chose (D146); null: garage, else wholesale. */
   paikariField?: "garage_price" | "wholesale_price" | null;
+  /** A new customer or supplier (D173): the name as said, the app's own type value, the phone (11 digits). */
+  newParty?: { name: string; type: string | null; phone: string | null; address: string | null } | null;
   /** Required parameters without a slot, by their leaf name (spec 9.6 extra.<name>). */
   extras?: Record<string, string>;
 }
@@ -196,6 +198,14 @@ function valueFor(
       if (!ref || index > 0) return undefined;
       return /item|line/.test(leaf) ? (ref.lineId ?? undefined) : ref.saleId;
     }
+    case "name":
+      return resolved.newParty?.name;
+    case "party_type":
+      return resolved.newParty?.type ?? undefined;
+    case "phone":
+      return resolved.newParty?.phone ?? undefined;
+    case "address":
+      return resolved.newParty?.address ?? undefined;
     case "refund": {
       const refund = resolved.refund;
       if (!refund) return undefined;

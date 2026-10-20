@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   confirmationText,
+  customerKindOf,
   daysAgoSaid,
   decisionOf,
   methodText,
   ownerOnlyText,
   parseAmount,
   paymentText,
+  phoneOf,
+  phoneText,
   refundText,
   refusalText,
   saidMoney,
   saidNumbers,
   saysDamaged,
+  saysNewParty,
   saysWalkIn,
   writeCueOf,
   resultText,
@@ -381,5 +385,92 @@ describe("a fitment said (D172)", () => {
     "premio r pad lage",
   ])("%s adds none", (text) => {
     expect(writeCueOf(text, { partyNamed: false })).not.toBe("add_fitment");
+  });
+});
+
+describe("a new customer or supplier said (D173)", () => {
+  it.each([
+    ["নতুন কাস্টমার যোগ করো, রহিম গ্যারেজ", "add_customer"],
+    ["notun customer jog koro, Rahim Garage", "add_customer"],
+    ["রহিম গ্যারেজ নামে নতুন গ্যারেজ অ্যাড করো", "add_customer"],
+    ["Rahim Garage name e notun garage add koro", "add_customer"],
+    ["নতুন কাস্টমার যোগ করে দিন", "add_customer"],
+    ["notun customer jog kore din", "add_customer"],
+    ["নতুন সাপ্লায়ার যোগ করো, ঢাকা অটো", "add_supplier"],
+    ["notun supplier add koro, Dhaka Auto", "add_supplier"],
+  ] as const)("%s is %s", (text, kind) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBe(kind);
+  });
+
+  it.each([
+    "নতুন কাস্টমার রহিমকে দুই সেট প্যাড বাকিতে দাও", // a sale to a new name: the sale asks to add it
+    "notun customer Rahim ke dui set pad bakite dao",
+    "নতুন কাস্টমার কয়জন?",
+    "notun customer koyjon?",
+    "কাস্টমার যোগ করো", // নতুন is not said
+    "customer jog koro",
+  ])("%s adds none", (text) => {
+    expect(["add_customer", "add_supplier"]).not.toContain(writeCueOf(text, { partyNamed: false }));
+  });
+
+  it.each([
+    ["০১৭১১২২৩৩৪৪", "01711223344"],
+    ["01711-223344", "01711223344"],
+    ["০১৭১১ ২২৩ ৩৪৪", "01711223344"],
+    ["+8801711223344", "01711223344"],
+    ["amar number 01911 000000", "01911000000"],
+    ["শূন্য এক সাত এক এক দুই দুই তিন তিন চার চার", "01711223344"],
+    ["zero one seven double one two two three three four four", "01711223344"],
+    ["জিরো ওয়ান এইট ওয়ান ওয়ান দুই দুই তিন তিন চার চার", "01811223344"],
+    ["নেই", "none"],
+    ["nei", "none"],
+    ["ফোন নাই", "none"],
+    ["phone nai", "none"],
+    ["০১২৩৪", null],
+    ["01211223344", null], // no operator starts 012
+    ["kal dibo", null],
+  ] as const)("phone %s is %s", (text, phone) => {
+    expect(phoneOf(text)).toBe(phone);
+  });
+
+  it("shows a phone in Bangla digits with a dash", () => {
+    expect(phoneText("01711223344")).toBe("০১৭১১-২২৩৩৪৪");
+  });
+
+  it.each([
+    ["খুচরা", "retail"],
+    ["khuchra", "retail"],
+    ["পাইকারি", "paikari"],
+    ["paikari", "paikari"],
+    ["গ্যারেজ", "paikari"],
+    ["garage", "paikari"],
+    ["মিস্ত্রি", "paikari"],
+    ["dealer", "paikari"],
+    ["জানি না", null],
+  ] as const)("the kind %s is %s", (text, kind) => {
+    expect(customerKindOf(text)).toBe(kind);
+  });
+
+  it("does not take গ্যারেজ in a request for a kind, since names hold it", () => {
+    expect(customerKindOf("রহিম গ্যারেজ নামে নতুন কাস্টমার যোগ করো", { inRequest: true })).toBeNull();
+    expect(customerKindOf("Rahim Garage notun customer, paikari", { inRequest: true })).toBe("paikari");
+  });
+
+  it.each(["নতুন হিসেবে যোগ করুন", "নতুন", "notun", "notun hishebe jog korun"])(
+    "%s adds the name",
+    (text) => {
+      expect(saysNewParty(text)).toBe(true);
+    },
+  );
+
+  it("confirms a new customer and a new supplier, and says each is added", () => {
+    expect(
+      confirmationText("add_customer", { name: "রহিম গ্যারেজ", kind: "paikari", phone: "01711223344" }),
+    ).toBe("নতুন কাস্টমার: রহিম গ্যারেজ, পাইকারি, ০১৭১১-২২৩৩৪৪। যোগ করব?");
+    expect(confirmationText("add_supplier", { name: "Dhaka Auto" })).toBe(
+      "নতুন সাপ্লায়ার: Dhaka Auto। যোগ করব?",
+    );
+    expect(resultText("done", "add_customer", { name: "রহিম গ্যারেজ" })).toBe("রহিম গ্যারেজ যোগ হয়েছে।");
+    expect(resultText("done", "add_supplier", { name: "Dhaka Auto" })).toBe("Dhaka Auto যোগ হয়েছে।");
   });
 });

@@ -1,5 +1,5 @@
 import type { ActionTemplate } from "@dokaanbondhu/core";
-import type { Catalog } from "../host/catalog";
+import { readAppWord, type Catalog } from "../host/catalog";
 import { toTaka } from "../host/find-parts";
 import type { ImportedDocument } from "../host/openapi-import";
 import { hasField } from "../host/schema-map";
@@ -10,6 +10,7 @@ import {
   buildBody,
   cashMethod,
   dryRunQuery,
+  readPath,
   refundOf,
   requestPath,
   type ResolvedWrite,
@@ -190,9 +191,48 @@ async function unfittedCar(read: ReadPath, catalog: Catalog, partId: string): Pr
   return null;
 }
 
+/** A new record's sample name: unlike any the app has (D173). */
+const sandboxName = (now: Date) => `Sandbox check ${now.toISOString().slice(0, 19).replace("T", " ")}`;
+
+/** The app's retail customer type, else its first one (D173). */
+function retailType(capability: WriteCapability): string | null {
+  const values = capability.params.find((param) => param.semanticSlot === "party_type")?.enumValues ?? [];
+  return values.find((value) => readAppWord("price_tier", value).our === "retail") ?? values[0] ?? null;
+}
+
+/** How many records of the concept have the name, through the read path; null when the map cannot tell. */
+async function namedCount(
+  read: ReadPath,
+  concept: "Customer" | "Supplier",
+  name: string,
+): Promise<number | null> {
+  const { map, run } = read;
+  if (!hasField(map, concept, "id") || !hasField(map, concept, "name")) return null;
+  const rows = await run(
+    buildQuery(map, {
+      from: { concept, alias: "r" },
+      select: [{ ref: { alias: "r", field: "id" }, as: "id" }],
+      where: [{ ref: { alias: "r", field: "name" }, op: "eq", value: name }],
+      limit: 5,
+    }),
+  );
+  return rows.length;
+}
+
 /** The sample request of each template step 5 enables, or null when the check has no sample for it yet. */
-function sampleOf(capability: WriteCapability, samples: Samples): ResolvedWrite | null {
+function sampleOf(capability: WriteCapability, samples: Samples, now: Date): ResolvedWrite | null {
   const { customer, supplier, part } = samples;
+  // A new customer or supplier without a phone, of the app's retail type; its undo removes it (D173).
+  if (capability.template === "add_customer" || capability.template === "add_supplier")
+    return {
+      newParty: {
+        name: sandboxName(now),
+        type: capability.template === "add_customer" ? retailType(capability) : null,
+        phone: null,
+        address: null,
+      },
+      payments: [],
+    };
   if (capability.template === "sale" && customer && part)
     return { customer, line: { hostPartId: part.hostId, quantity: 1 }, payments: [] };
   if (capability.template === "payment" && customer) {
@@ -289,7 +329,7 @@ export async function verifyCapabilities(input: {
   const dry = dryRunQuery(host.features);
 
   for (const capability of host.capabilities) {
-    const resolved = sampleOf(capability, samples);
+    const resolved = sampleOf(capability, samples, input.now());
     const checks: VerificationEntry["checks"] = [];
     const entry = (result: VerificationEntry["result"]): VerificationEntry => ({
       name: capability.name,
@@ -322,7 +362,24 @@ export async function verifyCapabilities(input: {
       customer: resolved.customer ?? null,
       supplier: resolved.supplier ?? null,
       expect: { stock: {}, balance: null },
+      ...(resolved.newParty
+        ? {
+            newParty: {
+              party: capability.template === "add_supplier" ? ("supplier" as const) : ("customer" as const),
+              name: resolved.newParty.name,
+              type: resolved.newParty.type,
+              phone: null,
+            },
+          }
+        : {}),
     };
+    // A new record's concept, for the checks that it is not added by the dry run and is gone after the undo (D173).
+    const concept =
+      capability.template === "add_customer"
+        ? "Customer"
+        : capability.template === "add_supplier"
+          ? "Supplier"
+          : null;
     // The samples sell and buy on credit; only a payment has an amount, and it is the payment's own.
     resolved.payments = (resolved.payments ?? []).map((payment) => ({
       ...payment,
@@ -366,7 +423,9 @@ export async function verifyCapabilities(input: {
       const answer = await host.call({ method: capability.httpMethod, path, query: dry, body });
       total = answerFacts(answer.body).total ?? total;
       const unchanged = same(before, await snapshot(read, preview));
-      checks.push({ name: "dry_run_changes_nothing", ok: answer.status < 300 && unchanged });
+      const notAdded =
+        concept && resolved.newParty ? (await namedCount(read, concept, resolved.newParty.name)) === 0 : true;
+      checks.push({ name: "dry_run_changes_nothing", ok: answer.status < 300 && unchanged && notAdded });
     }
     if (total === null && resolved.line?.unitCost) total = resolved.line.unitCost * resolved.line.quantity;
     const paid = capability.template === "payment" ? (resolved.amount ?? 0) : 0;
@@ -429,8 +488,24 @@ export async function verifyCapabilities(input: {
         capability.template === "add_fitment" && resolved.part && resolved.vehicle
           ? (await fitRecorded(read, resolved.part.hostId, resolved.vehicle.hostId)) === false
           : true;
+      // A new record's undo must remove it: its read-back answers 404 (D173).
+      const readBack = capability.readBack ? host.operations[capability.readBack.operation] : undefined;
+      const id = capability.readBack ? readPath(execution.response, capability.readBack.idFrom) : undefined;
+      const recordGone =
+        concept && readBack && id != null
+          ? (
+              await host.call({
+                method: readBack.httpMethod,
+                path: readBack.path.replace(/\{[^}]+\}/, encodeURIComponent(String(id))),
+              })
+            ).status === 404
+          : true;
       const undone =
-        undo?.status === "undone" && same(before, await snapshot(read, preview)) && priceBack && fitGone;
+        undo?.status === "undone" &&
+        same(before, await snapshot(read, preview)) &&
+        priceBack &&
+        fitGone &&
+        recordGone;
       checks.push({ name: "undo_puts_everything_back", ok: undone, detail: undo?.text });
       // An action that is its own undo (a price change sets the old prices again) is checked once, as itself.
       if (capability.compensation.operation !== capability.name)

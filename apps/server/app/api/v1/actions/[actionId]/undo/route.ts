@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { actionUndoSchema, type ReplyEvent } from "@dokaanbondhu/contracts";
 import { resultText, splitSentences } from "@dokaanbondhu/core";
+import { addedRecord } from "@dokaanbondhu/engine/conversation";
+import { removeFromCatalog } from "@dokaanbondhu/engine/host";
 import { mayUndo, undoAction, type ActionPreview, type Undo } from "@dokaanbondhu/engine/write";
 import { actionLogs, users } from "@dokaanbondhu/platform-db";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { undoable } from "../../../../../../src/server/actions";
 import { appError } from "../../../../../../src/server/errors";
-import { shopHost } from "../../../../../../src/server/host";
+import { clearHostCache, shopHost } from "../../../../../../src/server/host";
 import { readBody, route } from "../../../../../../src/server/route";
 import { logger, platform } from "../../../../../../src/server/singletons";
 import { ndjsonResponse } from "../../../../../../src/server/turns";
@@ -30,7 +32,7 @@ export const POST = route<{ actionId: string }>(
       tx.select().from(actionLogs).where(eq(actionLogs.id, id.data)),
     );
     if (!row) throw appError("NOT_FOUND", 404, { entity: "action" });
-    const { allWrites, host } = await shopHost(caller.shopId);
+    const { allWrites, host, connectionId } = await shopHost(caller.shopId);
     const capability = allWrites.find((write) => write.id === row.capabilityId);
     if (!undoable(row, capability) || !host.writes || row.undoneAt) throw appError("UNDO_NOT_AVAILABLE", 409);
     const now = new Date();
@@ -79,7 +81,10 @@ export const POST = route<{ actionId: string }>(
         logger().error({ err: error, request_id: requestId, action_id: row.id }, "undo failed");
       }
       const ok = undone?.status === "undone";
+      // An added customer or supplier, undone, leaves the catalog at once (D173).
+      const record = ok ? addedRecord(capability!, preview, row.response) : null;
       await platform().withShop(caller.shopId, async (tx) => {
+        if (record && connectionId) await removeFromCatalog(tx, connectionId, record);
         await tx.insert(actionLogs).values({
           id: undoId,
           shopId: caller.shopId,
@@ -100,6 +105,7 @@ export const POST = route<{ actionId: string }>(
           .set(ok ? { status: "undone" } : { undoneAt: null })
           .where(eq(actionLogs.id, row.id));
       });
+      if (record) clearHostCache(caller.shopId);
       const text = undone?.text ?? resultText("failed", preview.template, { reason: "অ্যাপ সাড়া দেয়নি।" });
       const sentences = splitSentences(text);
       sentences.forEach((sentence, seq) =>

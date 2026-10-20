@@ -16,4 +16,4 @@ export {
   type TurnState,
 } from "./turn";
 export { buildKeyterms, MAX_KEYTERMS } from "./keyterms";
-export { CONFIRM_TTL_MS } from "./write-flow";
+export { addedRecord, CONFIRM_TTL_MS, type AddedRecord } from "./write-flow";

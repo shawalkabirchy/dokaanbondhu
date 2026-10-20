@@ -54,6 +54,8 @@ export interface Shop {
   sales?: ShopSale[];
   /** Rahim Motors' due, when a test reads it. */
   customerDue?: number;
+  /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
+  customerTypes?: string[];
 }
 
 /** The tests' now: 15 Oct 2026, noon in Dhaka. */
@@ -103,6 +105,7 @@ export const geargrid: Shop = {
 /** Shop B (D122): no make column, two Axio chassis of the same years, grades and sides in its own words. */
 export const shopB: Shop = {
   name: "shop B",
+  customerTypes: ["Walk-in", "Mechanic"],
   vehicles: [
     car("1", "", "Axio NZE141", 2012, 2017),
     car("2", "", "Fielder", 2012, 2017),
@@ -123,6 +126,7 @@ export const shopB: Shop = {
 /** An app with cars kept without years, its own engine codes, and grades and brands no word list knows. */
 export const ownWords: Shop = {
   name: "an app with its own words",
+  customerTypes: ["Normal", "Dealer", "Workshop"],
   vehicles: [
     car("pj-a", "Mitsubishi", "Pajero", 0, null, "4D56"),
     car("pj-b", "Mitsubishi", "Pajero", 0, null, "4M40"),
@@ -168,6 +172,21 @@ const fitAnswer: ApiAnswer = async (request) => ({
   body: { fitment: { id: "fit-1", ...(request.body as Record<string, unknown>) } },
 });
 
+/** A new customer or supplier as GearGrid answers it: the record with its new ID (D173). */
+const partyAnswer: ApiAnswer = async (request) => {
+  const party = request.path.endsWith("/suppliers") ? "supplier" : "customer";
+  const dry = request.query?.dry_run === "true";
+  return {
+    status: dry ? 200 : 201,
+    headers: new Headers(),
+    body: {
+      [party]: { id: `${party}-new`, ...(request.body as Record<string, unknown>) },
+      warnings: [],
+      dry_run: dry,
+    },
+  };
+};
+
 /** The app's price change as GearGrid answers it: the new prices, and the previous ones for an undo (D132). */
 const priceAnswer: ApiAnswer = async (request) => {
   const body = (request.body ?? {}) as { retail_price_taka?: number; garage_price_taka?: number };
@@ -212,13 +231,17 @@ function returnAnswer(shop: Shop): ApiAnswer {
 
 const IDS: Record<string, string> = {
   record_sale: "sale",
+  stock_in: "stock",
   record_return: "return",
   update_price: "price",
   add_fitment: "fit",
+  add_customer: "add-customer",
+  add_supplier: "add-supplier",
 };
 
-/** GearGrid's sale and return as setup imports them (dry runs as the API allows, unless `api` turns them off). */
-function appCapabilities(api: Api = {}): WriteCapability[] {
+/** GearGrid's writes as setup imports them (dry runs as the API allows, unless `api` turns them off), with the app's
+ * own customer types. */
+function appCapabilities(api: Api = {}, shop?: Shop): WriteCapability[] {
   const imported = importOpenApi(openapi);
   return imported.capabilities
     .filter((capability) => capability.kind === "write" && IDS[capability.name])
@@ -236,7 +259,8 @@ function appCapabilities(api: Api = {}): WriteCapability[] {
         location: param.location,
         type: param.type,
         required: param.required,
-        enumValues: param.enumValues,
+        enumValues:
+          param.semanticSlot === "party_type" && shop?.customerTypes ? shop.customerTypes : param.enumValues,
         entityConcept: param.entityConcept,
         semanticSlot: param.semanticSlot,
         spokenMap: param.spokenMap,
@@ -254,7 +278,7 @@ export function appCapability(name: string): WriteCapability {
 /** The writes sent to a fake API; each call and each wake is counted. */
 function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, api: Api): WriteHost {
   return {
-    capabilities: appCapabilities(api),
+    capabilities: appCapabilities(api, shop),
     operations: {},
     features: importOpenApi(openapi).features,
     call: async (request, options) => {
@@ -267,7 +291,9 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
             ? priceAnswer
             : request.path.endsWith("/fitments")
               ? fitAnswer
-              : answered);
+              : /\/(customers|suppliers)$/.test(request.path)
+                ? partyAnswer
+                : answered);
       return answer(request, options);
     },
     wake: () => {
@@ -347,8 +373,10 @@ function catalogOf(shop: Shop): Catalog {
       attrs: {},
     })),
     vehicles: shop.vehicles,
-    customers: [{ hostId: "c1", name: "Rahim Motors", nameBn: "রহিম মোটরস", attrs: {} }],
-    suppliers: [],
+    customers: [
+      { hostId: "c1", name: "Rahim Motors", nameBn: "রহিম মোটরস", attrs: { phone: "01711000000" } },
+    ],
+    suppliers: [{ hostId: "s1", name: "Nawabpur Auto Parts", nameBn: null, attrs: { phone: "01911000000" } }],
   };
 }
 
@@ -408,6 +436,8 @@ export function connect(shop: Shop, api: Api = {}) {
         { text: string; fields: { label: string; value: string }[] } | undefined,
       found: outcome.trace.lookups.at(-1)?.parts.flat() ?? [],
       statuses: events.flatMap((event) => (event.type === "status" ? [event.label_key] : [])),
+      results: events.flatMap((event) => (event.type === "action_result" ? [event.status] : [])),
+      added: outcome.added,
       state: outcome.state,
     };
   }
