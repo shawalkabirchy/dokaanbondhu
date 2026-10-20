@@ -205,6 +205,62 @@ describe("undo under a saved action", () => {
     await unmount();
   });
 
+  // D175, the owner's G19: "Selim Auto jog hoyeche" and the sale's sheet came in one reply, and the sheet had no Yes
+  // or No, only the new customer's Undo.
+  const sale = {
+    type: "confirm" as const,
+    action_id: "5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+    text: "সেলিম অটো — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, ৩,২০০ টাকা, বাকিতে। ঠিক আছে?",
+    fields: [{ label: "কাস্টমার", value: "সেলিম অটো", highlight: false }],
+    warnings: [],
+    expires_at: new Date(Date.now() + 45_000).toISOString(),
+  };
+
+  it("keeps Yes and No on a sheet that came with another action's result, and its undo waits", async () => {
+    const message = { ...saved(Date.now() + 10 * 60_000), confirm: sale };
+    const onDecide = jest.fn();
+    const { rerender, unmount } = await render(
+      <AssistantBubble message={message} {...props} onDecide={onDecide} onUndo={jest.fn()} />,
+    );
+    await fireEvent.press(screen.getByText("confirm.no"));
+    expect(onDecide).toHaveBeenCalledWith(sale.action_id, "no");
+    expect(screen.queryByText("history.undo")).toBeNull();
+    // Once the sale is decided, the new customer's undo is offered again.
+    const decided = {
+      type: "action_result" as const,
+      action_id: sale.action_id,
+      status: "cancelled" as const,
+      undo_available: false,
+    };
+    await rerender(
+      <AssistantBubble
+        message={message}
+        {...props}
+        result={decided}
+        onDecide={onDecide}
+        onUndo={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("history.undo")).toBeTruthy();
+    await unmount();
+  });
+
+  it("keeps Yes and No on a corrected sheet, whose old one was cancelled in the same reply", async () => {
+    const message: AssistantMessage = {
+      ...saved(),
+      confirm: sale,
+      result: {
+        type: "action_result",
+        action_id: "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e",
+        status: "cancelled",
+        undo_available: false,
+      },
+    };
+    const { unmount } = await render(<AssistantBubble message={message} {...props} onDecide={jest.fn()} />);
+    expect(screen.getByText("confirm.yes")).toBeTruthy();
+    await unmount();
+  });
+
   it("offers no undo for an action that cannot be undone, or after its 10 minutes", async () => {
     const { rerender } = await render(<AssistantBubble message={saved()} {...props} onUndo={jest.fn()} />);
     expect(screen.queryByText("history.undo")).toBeNull();

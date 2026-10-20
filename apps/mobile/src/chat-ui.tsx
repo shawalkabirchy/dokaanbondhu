@@ -404,12 +404,18 @@ export function AssistantBubble(props: {
       {message.confirm && props.onDecide ? (
         <ConfirmSheet
           confirm={message.confirm}
-          active={props.newest && !props.busy && !message.result}
+          // A reply may report another action and bring a new sheet: a customer added inside a sale (D173), or a
+          // corrected sheet in place of the old one. Only the sheet's own result decides it (D175).
+          active={props.newest && !props.busy && message.result?.action_id !== message.confirm.action_id}
           result={props.result}
           onDecide={(decision) => props.onDecide!(message.confirm!.action_id, decision)}
         />
       ) : null}
-      {message.result && message.undoUntil && props.onUndo ? (
+      {message.result &&
+      message.undoUntil &&
+      props.onUndo &&
+      // The other action's undo waits while this reply's sheet waits: the sale may be about to use the new customer.
+      !(message.confirm && message.confirm.action_id !== message.result.action_id && !props.result) ? (
         <UndoButton
           until={message.undoUntil}
           disabled={props.busy}
