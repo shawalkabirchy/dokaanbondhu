@@ -136,3 +136,46 @@ def test_health(client) -> None:
     assert body["status"] == "ok"
     assert body["voices"] == ["aditi", "arjun"]
     assert set(body) == {"status", "version", "device", "asr_model", "tts_model", "voices"}
+
+
+class FlakyTts(FakeTts):
+    """Gives the outputs it is handed first, as a sampled model now and then does (D179), then the tone."""
+
+    def __init__(self, outputs: list[np.ndarray]) -> None:
+        super().__init__()
+        self.outputs = outputs
+
+    def synthesize(self, text: str, description: str) -> tuple[np.ndarray, int]:
+        if self.outputs:
+            self.calls.append((text, description))
+            return self.outputs.pop(0), 44_100
+        return super().synthesize(text, description)
+
+
+ONE_SAMPLE = np.asarray(0.0, dtype=np.float32)  # what squeeze made of a one-sample output (21 Oct, D179)
+EMPTY = np.zeros(0, dtype=np.float32)
+
+
+def test_a_broken_warm_up_never_stops_the_worker_from_starting(fake_tts: FakeTts) -> None:
+    speech_app.state.tts = FlakyTts([ONE_SAMPLE, ONE_SAMPLE] * len(speech_app.WARM_PHRASES) * 2)
+    speech_app.tts_cache.clear()
+    speech_app.warm_up()  # no exception: each failed phrase is logged and skipped
+    assert not speech_app.tts_cache  # a broken clip is never kept
+
+
+def test_a_clip_without_audio_is_made_once_more(client) -> None:
+    flaky = FlakyTts([ONE_SAMPLE])
+    speech_app.state.tts = flaky
+    speech_app.tts_cache.clear()
+    answer = client.post("/tts", json={"text": "হয়ে গেছে।", "voice": "arjun"})
+    assert answer.status_code == 200
+    assert sf.info(io.BytesIO(answer.content)).frames == 44_100
+    assert len(flaky.calls) == 2
+
+
+def test_a_second_clip_without_audio_is_refused_and_not_kept(client) -> None:
+    speech_app.state.tts = FlakyTts([EMPTY, ONE_SAMPLE])
+    speech_app.tts_cache.clear()
+    answer = client.post("/tts", json={"text": "হয়ে গেছে।", "voice": "arjun"})
+    assert answer.status_code == 503
+    assert not speech_app.tts_cache

@@ -229,8 +229,18 @@ def voice_description(voice: str) -> str:
 
 def to_wav(samples: np.ndarray, sample_rate: int) -> bytes:
     buffer = io.BytesIO()
-    sf.write(buffer, np.asarray(samples, dtype=np.float32), sample_rate, format="WAV", subtype="PCM_16")
+    # Always one channel of samples: a single sample squeezed to a plain number broke the write (D179).
+    mono = np.asarray(samples, dtype=np.float32).reshape(-1)
+    sf.write(buffer, mono, sample_rate, format="WAV", subtype="PCM_16")
     return buffer.getvalue()
+
+
+# Text-to-speech samples its output, so once in a while a clip is empty or a single sample (D179).
+MIN_AUDIO_SECONDS = 0.2
+
+
+def too_short(samples: np.ndarray, sample_rate: int) -> bool:
+    return np.asarray(samples).size < MIN_AUDIO_SECONDS * sample_rate
 
 
 def to_mp3(wav: bytes) -> bytes:
@@ -268,6 +278,12 @@ def speak(text: str, voice: str, audio_format: str) -> tuple[bytes, bool]:
             raise HTTPException(503, "text-to-speech model not loaded")
         with tts_lock:
             samples, sample_rate = tts.synthesize(text, voice_description(voice))
+            # A clip without audio is made once more; a second one is refused, never kept (D179).
+            if too_short(samples, sample_rate):
+                log.warning("text-to-speech gave no audio for %r; trying once more", text)
+                samples, sample_rate = tts.synthesize(text, voice_description(voice))
+        if too_short(samples, sample_rate):
+            raise HTTPException(503, "text-to-speech gave no audio")
         wav = to_wav(samples, sample_rate)
     clip = to_mp3(wav) if audio_format == "mp3" else wav
     remember(key, clip)
@@ -356,7 +372,7 @@ class ParlerTts:
                 prompt_input_ids=prompt.input_ids,
                 prompt_attention_mask=prompt.attention_mask,
             )
-        return generation.to(self.torch.float32).cpu().numpy().squeeze(), self.sample_rate
+        return generation.to(self.torch.float32).cpu().numpy().reshape(-1), self.sample_rate
 
 
 def load_models() -> None:
@@ -378,15 +394,24 @@ def load_models() -> None:
 
 
 def warm_up() -> None:
-    """Builds the VAD session and puts the fixed phrases into the cache, in the format the server asks for."""
+    """
+    Builds the VAD session and puts the fixed phrases into the cache, in the format the server asks for. A step that
+    fails is logged and skipped: the warm-up only saves time later, so it never stops the worker from starting (D179).
+    """
     started = time.perf_counter()
     if state.asr is not None:
-        silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
-        state.asr.transcribe(silence, initial_prompt=None, **MAIN_DECODE)
+        try:
+            silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
+            state.asr.transcribe(silence, initial_prompt=None, **MAIN_DECODE)
+        except Exception:
+            log.exception("speech-to-text warm-up failed; starting without it")
     if state.tts is not None:
         for voice in VOICES:
             for phrase in WARM_PHRASES:
-                speak(phrase, voice, "mp3")
+                try:
+                    speak(phrase, voice, "mp3")
+                except Exception:
+                    log.exception("text-to-speech warm-up of %r failed; starting without it", phrase)
     log.info("warm-up done in %.1f s", time.perf_counter() - started)
 
 
