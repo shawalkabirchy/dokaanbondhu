@@ -138,6 +138,31 @@ describe("scoring", () => {
     );
   });
 
+  it("counts every side listed with the expected part as right when the card leaves the side out (D187)", () => {
+    const light = item({
+      id: "c-040",
+      kind: "part_lookup",
+      expected: {
+        tool: "find_parts",
+        params: { part_type: "Headlight", vehicle: "Toyota Axio", year: 2015, position: "left" },
+        part_key: "LOC-HEA-1",
+      },
+      script: { position: "left" },
+    });
+    const listed = {
+      resolved: { part_type: "Headlight", vehicle: "Toyota Axio", year: 2015, position: null, quality: null },
+      result: "rows" as const,
+      parts: [["LOC-HEA-1"], ["LOC-HEA-2"]],
+    };
+    expect(scoreItem(light, done("c-040", [turn({ trace: trace({ lookups: [listed] }) })])).correct).toBe(
+      true,
+    );
+    const without = { ...listed, parts: [["LOC-HEA-2"]] };
+    expect(scoreItem(light, done("c-040", [turn({ trace: trace({ lookups: [without] }) })])).correct).toBe(
+      false,
+    );
+  });
+
   it("marks a wrong year and a missing part, with notes", () => {
     const score = scoreItem(
       pads,

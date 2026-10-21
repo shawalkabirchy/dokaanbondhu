@@ -380,12 +380,14 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     // A quality the card leaves out may be answered by listing every quality with the expected part among them,
     // instead of asking (the owner's rule, D186); a brand the card names is right when its part is the one found.
     const listedQualities = item.script.quality !== undefined && exactPart;
+    // The same for a side the card leaves out: every side listed, each said (the owner's rule, D187).
+    const listedSides = item.script.position !== undefined && exactPart;
     const matches =
       !!resolved &&
       (params.part_type === undefined || same(resolved.part_type, params.part_type)) &&
       (params.vehicle === undefined || same(resolved.vehicle, params.vehicle)) &&
       (params.year === undefined || resolved.year === params.year) &&
-      (params.position === undefined || same(resolved.position, params.position)) &&
+      (params.position === undefined || same(resolved.position, params.position) || listedSides) &&
       (params.quality === undefined || same(resolved.quality, params.quality) || listedQualities) &&
       (params.brand === undefined || same(resolved.brand, params.brand) || exactPart);
     if (final && !matches) notes.push(`understood ${JSON.stringify(resolved)}`);
