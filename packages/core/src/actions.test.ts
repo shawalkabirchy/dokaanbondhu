@@ -15,6 +15,7 @@ import {
   refusalText,
   saidMoney,
   saidNumbers,
+  salePriceOf,
   saysDamaged,
   saysNewParty,
   saysWalkIn,
@@ -492,5 +493,47 @@ describe("the car a fitment adds, said with “also” (D174)", () => {
 
   it.each(["প্রিমিওর প্যাড লাগে", "premio r pad lage", "এই প্যাডটা আছে?"])("%s names none", (text) => {
     expect(alsoCarWords(text)).toBeNull();
+  });
+});
+
+describe("a sale's price said (D176, D177)", () => {
+  it.each([
+    ["রহিম মোটরসকে দুই সেট ব্রেক প্যাড ৩০০০ টাকায় দাও", 3000, false],
+    ["Rahim Motors ke dui set brake pad 3000 takay dao", 3000, false],
+    ["তিন হাজার টাকায় দাও", 3000, false],
+    ["3,000 takai dao", 3000, false],
+    ["দুই সেট প্যাড ৩০০০ টাকা দামে দাও", 3000, false],
+    ["দুই সেট ১৫০০ টাকা করে দাও", 1500, true],
+    ["dui set 1500 taka kore dao", 1500, true],
+    ["প্রতি সেট ১৫০০ টাকা দাও", 1500, true],
+    ["proti set 1500 taka dao", 1500, true],
+  ] as const)("%s sets %d (each: %s)", (text, amount, each) => {
+    expect(salePriceOf(text)).toEqual({ amount, each });
+  });
+
+  it.each([
+    "দুই সেট দাও, ২০০০ টাকা নগদ দিল", // a payment's amount
+    "dui set dao, 2000 taka nogod dilo",
+    "পাঁচ করে দাও", // a quantity, not money
+    "1500 kore dao",
+    "রহিম মোটরসকে দুই সেট প্যাড বাকিতে দাও",
+  ])("%s sets none", (text) => {
+    expect(salePriceOf(text)).toBeNull();
+  });
+
+  it("says the price of one after the quantity", () => {
+    expect(
+      confirmationText("sale", {
+        customer: "Rahim Motors",
+        lines: [{ part: "ব্রেক প্যাড", quantity: "২ সেট", unit: "সেট", unitPrice: 1500n }],
+        total: 3000n,
+        payment: "বাকিতে",
+      }),
+    ).toBe("Rahim Motors — ব্রেক প্যাড, ২ সেট, প্রতি সেট ১,৫০০ টাকা, ৩,০০০ টাকা, বাকিতে। ঠিক আছে?");
+  });
+
+  it("takes টাকায় as money", () => {
+    expect([...saidMoney("১২০০ টাকায় কিনলাম")]).toEqual([1200]);
+    expect([...saidMoney("1200 takay kinlam")]).toEqual([1200]);
   });
 });

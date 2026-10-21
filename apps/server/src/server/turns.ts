@@ -329,7 +329,14 @@ async function answer(
 ): Promise<void> {
   const { caller, conversation } = request;
   let held: DoneEvent | null = null;
-  const [llm, shopHostValue] = await Promise.all([shopLlm(caller.shopId), shopHost(caller.shopId)]);
+  const [llm, shopHostValue, settings] = await Promise.all([
+    shopLlm(caller.shopId),
+    shopHost(caller.shopId),
+    // The owner's switch for staff setting a sale's price (D176).
+    platform()
+      .withShop(caller.shopId, (tx) => loadShop(tx, caller.shopId))
+      .then(settingsOf),
+  ]);
   // Read before the turn, which changes the frame in place: when the open frame would have expired.
   const opened = conversation.state.frame;
   const openedExpiry = opened ? Date.parse(opened.expiresAt) : 0;
@@ -345,6 +352,7 @@ async function answer(
       evalMode: request.evalMode,
       shopWords: shopHostValue.shopWords,
       role: caller.role,
+      staffPriceOverride: settings.staff_price_override,
       actingUser: conversation.userName,
     },
     (event) => {

@@ -141,6 +141,8 @@ export interface ActionLine {
   quantity?: string; // "২ সেট"
   unit?: string; // the unit word for "প্রতি সেট"
   unitCost?: bigint | null;
+  /** A sale's price the user set for one (D176), said after the quantity. */
+  unitPrice?: bigint | null;
 }
 
 export interface ActionFields {
@@ -195,7 +197,13 @@ function lineText(line: ActionLine): string {
   const part = [line.position ? banglaOf("position", line.position) : null, line.part]
     .filter(Boolean)
     .join(" ");
-  return [car, part || null, line.quality ? banglaOf("quality", line.quality) : null, line.quantity]
+  return [
+    car,
+    part || null,
+    line.quality ? banglaOf("quality", line.quality) : null,
+    line.quantity,
+    line.unitPrice != null ? `প্রতি ${line.unit ?? "টা"} ${money(line.unitPrice)}` : null,
+  ]
     .filter(Boolean)
     .join(", ");
 }
@@ -777,7 +785,12 @@ export function refundText(due: bigint, cash: bigint): string {
 }
 
 /** Words that make the number before them money, and words that make the number after them a price (D157). */
-const MONEY_AFTER = new Set(["টাকা", "taka", "tk", "৳"].map((word) => normalize(word).tokens.join(" ")));
+// টাকায়, takay: "at a price of" (D177), money as টাকা is.
+const MONEY_AFTER = new Set(
+  ["টাকা", "taka", "tk", "৳", "টাকায়", "টাকাতে", "takay", "takai", "takaye"].map((word) =>
+    normalize(word).tokens.join(" "),
+  ),
+);
 const PRICE_BEFORE = new Set(
   ["প্রতি", "proti", "per", "দাম", "dam"].map((word) => normalize(word).tokens.join(" ")),
 );
@@ -804,6 +817,54 @@ export function saidMoney(text: string): Set<number> {
     }
   });
   return money;
+}
+
+const word = (text: string) => normalize(text).tokens.join(" ");
+/** The price of what the line says: "৩০০০ টাকায়", "3000 takay", "৩০০০ টাকা দামে" (D176). */
+const LINE_PRICE = new Set(["টাকায়", "টাকাতে", "takay", "takai", "takaye"].map(word));
+const PRICE_DAME = new Set(["দামে", "dame"].map(word));
+/** The price of one: "১৫০০ টাকা করে", "1500 taka kore", "প্রতি সেট ১৫০০ টাকা". */
+const EACH_AFTER = new Set(["করে", "kore", "korey", "koira"].map(word));
+const EACH_BEFORE = new Set(["প্রতি", "প্রতিটা", "proti", "protita", "per"].map(word));
+const TAKA = new Set(["টাকা", "taka", "tk", "৳"].map(word));
+
+/**
+ * The price a sale's request sets (D176, D177): with টাকায় or দামে the price of what the line says, with করে or
+ * প্রতি the price of one; always said as money (D157), so a quantity ("পাঁচ করে") or a payment's amount ("২০০০ টাকা
+ * নগদ দিল") is never one. Null when the request sets none.
+ */
+export function salePriceOf(text: string): { amount: number; each: boolean } | null {
+  const tokens = normalize(asciiDigits(text).replace(/(\d)[,،](?=\d{2,3}(\D|$))/g, "$1")).tokens;
+  // The unbroken run of number words right before a token: "৩০০০ টাকায়", "তিন হাজার টাকায়".
+  const runBefore = (index: number) => {
+    let start = index;
+    while (start > 0 && (valueOf(tokens[start - 1]!) !== null || MULTIPLIERS.has(nfc(tokens[start - 1]!))))
+      start--;
+    return start < index ? parseAmount(tokens.slice(start, index).join(" ")) : null;
+  };
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (LINE_PRICE.has(token)) {
+      const amount = runBefore(index);
+      if (amount !== null) return { amount, each: false };
+    }
+    if (PRICE_DAME.has(token) && index > 0 && TAKA.has(tokens[index - 1]!)) {
+      const amount = runBefore(index - 1);
+      if (amount !== null) return { amount, each: false };
+    }
+    if (EACH_AFTER.has(token) && index > 0 && TAKA.has(tokens[index - 1]!)) {
+      const amount = runBefore(index - 1);
+      if (amount !== null) return { amount, each: true };
+    }
+    if (EACH_BEFORE.has(token)) {
+      // "প্রতি সেট ১৫০০ টাকা": a number then টাকা within the next few words
+      const rest = tokens.slice(index + 1, index + 8);
+      const taka = rest.findIndex((item) => TAKA.has(item) || LINE_PRICE.has(item));
+      const amount = taka > 0 ? parseAmount(rest.slice(0, taka).join(" ")) : null;
+      if (amount !== null) return { amount, each: true };
+    }
+  }
+  return null;
 }
 
 /** Every number a text says, in any form ("২০১৪", "দুই", "dui set", "১০ হাজার", "দুইটা"): what the user said, so a

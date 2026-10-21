@@ -163,6 +163,10 @@ export interface Api {
   dryRun?: boolean;
   /** Who is signed in: staff by default; a price change is the owner's (D171). */
   role?: "owner" | "staff";
+  /** The owner lets staff set a sale's price (D176). */
+  staffPriceOverride?: boolean;
+  /** An app whose sale takes no unit price (D177). */
+  noUnitPrice?: boolean;
 }
 
 /** The app's new fitment as GearGrid answers it (D172). */
@@ -254,17 +258,21 @@ function appCapabilities(api: Api = {}, shop?: Shop): WriteCapability[] {
       httpMethod: capability.httpMethod,
       path: capability.path,
       dryRun: capability.supportsDryRun && api.dryRun !== false,
-      params: capability.params.map((param) => ({
-        path: param.path,
-        location: param.location,
-        type: param.type,
-        required: param.required,
-        enumValues:
-          param.semanticSlot === "party_type" && shop?.customerTypes ? shop.customerTypes : param.enumValues,
-        entityConcept: param.entityConcept,
-        semanticSlot: param.semanticSlot,
-        spokenMap: param.spokenMap,
-      })),
+      params: capability.params
+        .filter((param) => !(api.noUnitPrice && /unit_price/.test(param.path)))
+        .map((param) => ({
+          path: param.path,
+          location: param.location,
+          type: param.type,
+          required: param.required,
+          enumValues:
+            param.semanticSlot === "party_type" && shop?.customerTypes
+              ? shop.customerTypes
+              : param.enumValues,
+          entityConcept: param.entityConcept,
+          semanticSlot: param.semanticSlot,
+          spokenMap: param.spokenMap,
+        })),
       compensation: null,
       readBack: capability.readBack,
     }));
@@ -416,6 +424,7 @@ export function connect(shop: Shop, api: Api = {}) {
     evalMode: false,
     shopWords: [],
     role: api.role ?? "staff",
+    staffPriceOverride: api.staffPriceOverride ?? false,
   });
   /** One turn; an answer needs no LLM, so a request brings the one tool call its script names. */
   async function say(state: TurnState, input: Input, steps: Step[] = []) {

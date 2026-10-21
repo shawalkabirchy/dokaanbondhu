@@ -1,5 +1,5 @@
 import type { ToolDef } from "../providers";
-import { leafOf, writeSlots } from "./request";
+import { leafOf, unitPriceParam, writeSlots } from "./request";
 import type { WriteCapability } from "./types";
 
 // A capability's tool (spec 9.6): built from its parameters' semantic slots, never from a host's names. Every argument
@@ -60,6 +60,14 @@ export function writeTool(capability: WriteCapability): ToolDef {
           part: PART_QUERY,
           quantity: said("how many, as said, e.g. দুই সেট, 4 ta"),
           ...(costInLines ? { unit_cost: said("the buying price of one, as said") } : {}),
+          // A sale's own price, as said (D176): never what was paid.
+          ...(capability.template === "sale" && unitPriceParam(capability)
+            ? {
+                price: said(
+                  "a price the user sets for this sale, as said: ৩০০০ টাকায়, 1500 taka kore; not a payment",
+                ),
+              }
+            : {}),
         },
         required: ["part"],
         additionalProperties: false,

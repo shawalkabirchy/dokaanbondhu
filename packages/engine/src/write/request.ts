@@ -57,7 +57,8 @@ export function coerce(param: Pick<WriteParam, "type">, value: unknown): unknown
 export interface ResolvedWrite {
   customer?: { hostId: string; name: string } | null;
   supplier?: { hostId: string; name: string } | null;
-  line?: { hostPartId: string; quantity: number; unitCost?: number | null } | null;
+  /** unitPrice: a sale's price the user set for one (D176), whole taka. */
+  line?: { hostPartId: string; quantity: number; unitCost?: number | null; unitPrice?: number | null } | null;
   /** Empty: on credit (বাকিতে). An amount of null is filled from the total. */
   payments?: { method: string; amount: number | null; trxId?: string | null }[];
   amount?: number | null;
@@ -129,6 +130,18 @@ function paikariParam(capability: WriteCapability, choice: ResolvedWrite["paikar
   );
 }
 
+/** A sale line's unit-price field (D177): a price of one, in the lines, that is no cost; null when the sale has none. */
+export function unitPriceParam(capability: WriteCapability): WriteParam | null {
+  return (
+    capability.params.find(
+      (param) =>
+        param.semanticSlot === "items" &&
+        /price/.test(leafOf(param.path)) &&
+        !/cost/.test(leafOf(param.path)),
+    ) ?? null
+  );
+}
+
 /** Whether an action can change the paikari price (D171). */
 export const takesPaikari = (capability: WriteCapability) => paikariParam(capability, null) !== null;
 
@@ -165,7 +178,9 @@ function valueFor(
       if (/part_?id$/.test(leaf)) return line.hostPartId;
       if (/quantity|qty/.test(leaf)) return line.quantity;
       if (/cost/.test(leaf)) return line.unitCost ?? undefined;
-      return undefined; // a unit price is the host's own price for the customer (custom prices come in step 6)
+      // A price the user set (D176); otherwise the host's own price for the customer.
+      if (/price/.test(leaf)) return line.unitPrice ?? undefined;
+      return undefined;
     }
     case "payment": {
       const payment = resolved.payments?.[index];

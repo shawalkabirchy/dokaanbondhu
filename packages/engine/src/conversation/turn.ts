@@ -210,6 +210,8 @@ export interface TurnDeps {
   role?: "owner" | "staff";
   /** The user's name, sent as the acting-user header where the host has one (spec 11.9). */
   actingUser?: string;
+  /** The owner lets staff set a sale's price (the shop setting staff_price_override, D176). */
+  staffPriceOverride?: boolean;
 }
 
 export interface TurnTrace {
@@ -968,6 +970,7 @@ export async function runTurn(
     })),
     appWords: deps.host.appWords ?? {},
     tier: billTier,
+    mayPrice: role === "owner" || deps.staffPriceOverride === true,
     paikari: deps.host.paikari ?? null,
     // A fitment's car among the app's vehicles, and whether the fit is recorded already (D172).
     cars: (query) =>

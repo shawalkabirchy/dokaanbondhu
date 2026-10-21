@@ -24,6 +24,7 @@ import {
   resolveCustomer,
   resultText,
   saidMoney,
+  salePriceOf,
   saidNumbers,
   saysCredit,
   saysDamaged,
@@ -61,6 +62,7 @@ import {
   requestPath,
   takesDamaged,
   takesPaikari,
+  unitPriceParam,
   writeSlots,
   type ResolvedWrite,
 } from "../write/request";
@@ -87,6 +89,10 @@ export const ONE_LINE = "একবারে একটা পার্ট বল�
 const NO_ANSWER = "অ্যাপ সাড়া দেয়নি।";
 /** A name this close to a customer or supplier is offered as a button when it is not clear enough to take (D148). */
 const NEAR_NAME = 0.5;
+/** A sale at a price staff set, while the owner has not allowed it (D176). */
+const STAFF_PRICE = "অন্য দামে বেচতে পারেন শুধু দোকানের মালিক।";
+/** A sale at a said price on an app whose sale has no price field (D177). */
+const NO_CUSTOM_PRICE = "এই অ্যাপে অন্য দামে বিক্রি করা যায় না।";
 /** A paikari price change on an app with no paikari price field (D171). */
 const NO_PAIKARI = "এই অ্যাপে পাইকারি দাম বদলানো যায় না।";
 /** A return's button for a buyer without a name (D169). */
@@ -128,6 +134,8 @@ export interface WriteTurn {
   /** The owner's choices for the app's own words: a new customer's type is read through them (D145, D173). */
   appWords?: AppWords;
   tier: "retail" | "paikari";
+  /** Whether the user may set a sale's price: the owner, or staff the owner allows (D176). */
+  mayPrice?: boolean;
   /** Which trade price is the shop's paikari price (D146), for a price change (D171). */
   paikari?: "garage_price" | "wholesale_price" | null;
   /** The remembered customer (spec 9.8): used only where the action needs one and none was named. */
@@ -277,6 +285,13 @@ export function writeFrame(
   putSaid("paid_amount", payment.amount, parseAmount);
   put("trx_id", payment.trx_id);
   putSaid("amount", args.amount, parseAmount);
+  // A sale's own price, from the request's words (D176, D177); a payment amount the model took from it is dropped.
+  const salePrice = capability.template === "sale" ? salePriceOf(turn.request) : null;
+  if (salePrice) {
+    frame.slots.sale_price = understood(salePrice);
+    if (str(payment.amount) && parseAmount(String(payment.amount)) === salePrice.amount)
+      delete frame.slots.paid_amount;
+  }
   put("note", args.note);
   put("reason", args.reason);
   put("when", args.when);
@@ -392,7 +407,14 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   const ask = (slot: QuestionSlot, extra: Partial<QuestionInput> = {}) =>
     askSlot(slot, question({ slot, ...(first ? { understood: understoodSoFar(frame) } : {}), ...extra }));
 
-  // 0. A new customer or supplier (D173): its own action, or one a sale or a stock-in adds before it goes on.
+  // 0. A sale at a price the user set (D176): refused at once, before any question, to staff the owner has not
+  // allowed, and on an app whose sale cannot take a price.
+  if (frame.slots.sale_price && capability.template === "sale") {
+    if (!unitPriceParam(capability)) return { kind: "answer", text: NO_CUSTOM_PRICE };
+    if (!turn.mayPrice) return { kind: "answer", text: STAFF_PRICE };
+  }
+
+  // 0b. A new customer or supplier (D173): its own action, or one a sale or a stock-in adds before it goes on.
   const adding = frame.slots.adding?.value;
   if (adding === "customer" || adding === "supplier") {
     const adder = capability.template === `add_${adding}` ? capability : adderFor(turn, capability, adding);
@@ -656,6 +678,31 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         return ask("quantity", { unit, returning: true, sold: quantityText(sale.left, unit) });
       }
       frame.slots.quantity = understood(check.quantity, { display: quantityText(check.quantity, unit) });
+    }
+  }
+
+  // 3b. A sale's price the user set (D176, D177): the line's shared out per unit, or one's; whole taka, else asked.
+  if (slots.has("items") && chosen && capability.template === "sale") {
+    const unit = chosen.unit ?? "piece";
+    const said = frame.slots.sale_price?.value as { amount: number; each: boolean } | undefined;
+    const quantity = frame.slots.quantity?.value;
+    if (said && typeof quantity === "number") {
+      const each = said.each ? said.amount : said.amount / quantity;
+      if (!Number.isInteger(each)) {
+        delete frame.slots.sale_price;
+        delete frame.slots.unit_price;
+        return ask("unit_price", { unit });
+      }
+      frame.slots.unit_price = understood(each, { display: money(BigInt(each)) });
+    }
+    const slot = frame.slots.unit_price;
+    if (slot && typeof slot.value !== "number") {
+      const amount = parseAmount(String(slot.value));
+      if (amount === null) {
+        delete frame.slots.unit_price;
+        return ask("unit_price", { unit });
+      }
+      frame.slots.unit_price = understood(amount, { display: money(BigInt(amount)) });
     }
   }
 
@@ -1101,6 +1148,7 @@ function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWri
           hostPartId: chosen.hostPartId,
           quantity: Number(frame.slots.quantity?.value ?? 0),
           unitCost: typeof frame.slots.unit_cost?.value === "number" ? frame.slots.unit_cost.value : null,
+          unitPrice: typeof frame.slots.unit_price?.value === "number" ? frame.slots.unit_price.value : null,
         }
       : null,
     payments:
@@ -1220,7 +1268,10 @@ async function prepareWrite(
         walkIn: walkedIn,
       });
     } else if (line && line.unitCost != null) total = line.unitCost * line.quantity;
-    else if (line && chosen) total = chosen.price !== null ? chosen.price * line.quantity : null;
+    else if (line && chosen) {
+      const each = line.unitPrice ?? chosen.price;
+      total = each !== null ? each * line.quantity : null;
+    }
     if (open(resolved) && total !== null)
       resolved.payments = resolved.payments!.map((payment) => ({
         ...payment,
@@ -1267,6 +1318,7 @@ async function prepareWrite(
                 quantity: quantityText(quantity, unit),
                 unit: unitWord(unit),
                 unitCost: resolved.line?.unitCost != null ? BigInt(resolved.line.unitCost) : null,
+                unitPrice: resolved.line?.unitPrice != null ? BigInt(resolved.line.unitPrice) : null,
               },
             ]
           : [];
@@ -1337,6 +1389,20 @@ async function prepareWrite(
           },
           ...(slots.has("items")
             ? [{ label: "পরিমাণ", value: quantityText(quantity, unit), highlight: false }]
+            : []),
+          // A price the user set, with the shop's own beside it, so a slip shows (D177).
+          ...(resolved.line?.unitPrice != null
+            ? [
+                {
+                  label: "দাম",
+                  value: `প্রতি ${unitWord(unit)} ${money(BigInt(resolved.line.unitPrice))}${
+                    chosen.price !== null && chosen.price !== resolved.line.unitPrice
+                      ? ` (দোকানের দাম ${money(BigInt(chosen.price))})`
+                      : ""
+                  }`,
+                  highlight: false,
+                },
+              ]
             : []),
         ]
       : []),
@@ -1480,6 +1546,13 @@ export function correctWrite(
   if (slots.has("items") && said?.unit) {
     frame.slots.quantity = understood(rest);
     return "quantity";
+  }
+  // "না, ১৪০০ টাকা করে": the sale's price (D177).
+  const price = capability.template === "sale" ? salePriceOf(rest) : null;
+  if (price) {
+    frame.slots.sale_price = understood(price);
+    delete frame.slots.unit_price;
+    return "sale_price";
   }
   const detail =
     correctedSlot(text, turn.dictionary, turn.now) ?? followUpSlot(rest, turn.dictionary, turn.now);

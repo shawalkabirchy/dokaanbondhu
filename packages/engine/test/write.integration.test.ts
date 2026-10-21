@@ -1292,4 +1292,85 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     expect(row).toEqual({ gone: true });
     catalog.suppliers = catalog.suppliers.filter((supplier) => supplier.hostId !== record.hostId);
   });
+
+  // D176, D177: the owner's sale at a said price on the test host: "৩০০০ টাকায়" for two sets is 1,500 a set, sent
+  // as the line's unit price (GearGrid takes it with prices:write and keeps its own price beside it), and undone.
+  it.each([
+    {
+      style: "Bangla",
+      text: "রহিম মোটরসকে এক্সিও ২০১৪-এর সামনের নন-জেনুইন ব্রেক প্যাড দুই সেট ৩০০০ টাকায় বাকিতে দাও",
+      args: {
+        customer: "রহিম মোটরস",
+        items: [
+          {
+            part: {
+              part_type: "সামনের ব্রেক প্যাড",
+              vehicle: "এক্সিও",
+              year: "২০১৪",
+              position: "সামনের",
+              quality: "নন-জেনুইন",
+            },
+            quantity: "দুই সেট",
+            price: "৩০০০ টাকায়",
+          },
+        ],
+        payment: { method_word: "বাকিতে" },
+      },
+      yes: "হ্যাঁ",
+    },
+    {
+      style: "Banglish",
+      text: "Rahim Motors ke axio 2014 er samner non genuine brake pad dui set 3000 takay bakite dao",
+      args: {
+        customer: "Rahim Motors",
+        items: [
+          {
+            part: {
+              part_type: "brake pad",
+              vehicle: "axio",
+              year: "2014",
+              position: "samner",
+              quality: "non genuine",
+            },
+            quantity: "dui set",
+            price: "3000 takay",
+          },
+        ],
+        payment: { method_word: "bakite" },
+      },
+      yes: "ha",
+    },
+  ])(
+    "D176: the owner's sale at a said price is saved at it, and undone ($style)",
+    async ({ text, args, yes }) => {
+      calls.length = 0;
+      const due = await balance("customers", "Rahim Motors");
+      const sheet = await say(
+        fresh(),
+        text,
+        [scripted([{ calls: [{ name: "record_sale", arguments: args }] }])],
+        "owner",
+      );
+      expect(sheet.reply).toBe(
+        "Rahim Motors — এক্সিও ২০১৪, সামনের ব্রেক প্যাড, নন-জেনুইন, ২ সেট, প্রতি সেট ১,৫০০ টাকা, ৩,০০০ টাকা, বাকিতে। ঠিক আছে?",
+      );
+      expect(nothingSent()).toBe(true);
+      const done = await say(sheet.state, yes, [scripted([])], "owner");
+      expect(done.reply).toMatch(/^হয়ে গেছে।/);
+      const action = done.outcome.actions[0]!;
+      expect(action).toMatchObject({ status: "done", verifyStatus: "ok" });
+      const saleId = (action.response as { sale: { id: string } }).sale.id;
+      const [row] = await pools.readOnly(db, (run) =>
+        run({
+          text: "select unit_price, list_price, quantity from sale_items where sale_id = $1",
+          values: [saleId],
+        }),
+      );
+      expect(row).toMatchObject({ unit_price: "1500", list_price: "1600" });
+      expect(await balance("customers", "Rahim Motors")).toBe(due + 3000n);
+      const undone = await undo(action, { preview: sheet.outcome.actions[0]!.preview! });
+      expect(undone).toMatchObject({ status: "undone" });
+      expect(await balance("customers", "Rahim Motors")).toBe(due);
+    },
+  );
 });
