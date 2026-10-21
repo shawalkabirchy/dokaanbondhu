@@ -142,8 +142,17 @@ function enumOf(schema: Json): string[] | null {
   return values ? values.filter((value) => value !== null).map(String) : null;
 }
 
+/** A leaf as read, with the table its x-references hint names (the scanner's exists rule, D183). */
+type Leaf = Omit<ImportedParam, "location"> & { table: string | null };
+
+/** The table a schema's x-references hint names: { "table": "customers", "column": "id" }. */
+function tableOf(schema: Json): string | null {
+  const hint = schema["x-references"] as Json | undefined;
+  return hint && typeof hint.table === "string" && hint.table ? hint.table : null;
+}
+
 /** Every leaf of a schema with its JSON path; a leaf is required only when every object above it requires it. */
-function leaves(schema: Json, prefix: string, required: boolean): Omit<ImportedParam, "location">[] {
+function leaves(schema: Json, prefix: string, required: boolean): Leaf[] {
   const type = typeOf(schema);
   if (type === "object" && schema.properties) {
     const needed = new Set((schema.required as string[]) ?? []);
@@ -165,6 +174,7 @@ function leaves(schema: Json, prefix: string, required: boolean): Omit<ImportedP
       semanticSlot: null,
       safetyCritical: false,
       spokenMap: null,
+      table: tableOf(schema),
     },
   ];
 }
@@ -186,7 +196,7 @@ const CONCEPTS = [
 ];
 
 /** customer_id -> Customer, sale_item_id -> SaleItem; a name that is no concept proposes none. */
-function conceptOf(name: string): string | null {
+export function conceptOf(name: string): string | null {
   const match = /^(.+?)_?id$/i.exec(name);
   if (!match) return null;
   const pascal = match[1]!
@@ -214,12 +224,31 @@ function spokenMapOf(values: string[] | null): Record<string, string> | null {
   return Object.keys(map).length ? map : null;
 }
 
+/** The concept a table holds: customers -> Customer, sale_items -> SaleItem, parties -> none (no such concept). */
+export function conceptOfTable(table: string): string | null {
+  const name = snakeCase(table.split(".").at(-1)!);
+  const singular = name
+    .replace(/ies$/, "y")
+    .replace(/(ss|x|z|ch|sh)es$/, "$1")
+    .replace(/([^s])s$/, "$1");
+  return conceptOf(`${singular}_id`);
+}
+
 /** A path with every name in snake_case, so camelCase hosts match the same rules: lines[].partId -> lines[].part_id. */
 function normalPath(path: string): string {
   return path
     .split(".")
     .map((segment) => (segment.endsWith("[]") ? `${snakeCase(segment.slice(0, -2))}[]` : snakeCase(segment)))
     .join(".");
+}
+
+/** The path as the rules read it: a leaf that references a concept's table is named for it (client_id -> customer_id). */
+function namedPath(path: string, concept: string | null): string {
+  if (!concept) return path;
+  const segments = path.split(".");
+  const last = segments.pop()!;
+  const list = last.endsWith("[]") ? "[]" : "";
+  return [...segments, `${snakeCase(concept)}_id${list}`].join(".");
 }
 
 /** The semantic slot proposed for a leaf (spec 9.6), from its (normalized) path alone. */
@@ -338,6 +367,12 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
 
       // Headers and the dry-run switch belong to the feature list, not to a capability's parameters.
       const params: ImportedParam[] = [];
+      const tables = new Map<ImportedParam, string | null>();
+      const add = ({ table, ...leaf }: Leaf, location: ImportedParam["location"]) => {
+        const param = { ...leaf, location };
+        params.push(param);
+        tables.set(param, table);
+      };
       for (const parameter of parameters) {
         const location = parameter.in;
         if (location !== "query" && location !== "path") continue;
@@ -347,14 +382,19 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
           String(parameter.name),
           parameter.required === true,
         )) {
-          params.push({ ...leaf, location });
+          add(leaf, location);
         }
       }
       if (body) {
         const required = (resolve(operation.requestBody).required as boolean | undefined) ?? true;
-        for (const leaf of leaves(body, "", required)) params.push({ ...leaf, location: "body" });
+        for (const leaf of leaves(body, "", required)) add(leaf, "body");
       }
-      const normal = new Map(params.map((param) => [param, normalPath(param.path)]));
+      const referenced = new Map(
+        params.map((param) => [param, tables.get(param) ? conceptOfTable(tables.get(param)!) : null]),
+      );
+      const normal = new Map(
+        params.map((param) => [param, namedPath(normalPath(param.path), referenced.get(param) ?? null)]),
+      );
       const linesWithParts = new Set(
         [...normal.values()]
           .filter((path) => /\[\]\.part_id$/.test(path))
@@ -363,7 +403,9 @@ export function importOpenApi(input: unknown, documentPath = "/api/openapi.json"
       for (const param of params) {
         const path = normal.get(param)!;
         const leaf = path.split(".").at(-1)!;
-        param.entityConcept = param.type.endsWith(":uuid") || /_id$/.test(leaf) ? conceptOf(leaf) : null;
+        param.entityConcept =
+          referenced.get(param) ??
+          (param.type.endsWith(":uuid") || /_id$/.test(leaf) ? conceptOf(leaf) : null);
         param.semanticSlot =
           param.location === "body" || param.location === "query" ? slotOf(path, linesWithParts) : null;
         // A kind is a slot only with the values to choose from (D173).

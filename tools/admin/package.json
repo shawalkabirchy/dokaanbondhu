@@ -8,6 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@dokaanbondhu/contracts": "*",
     "@dokaanbondhu/engine": "*",
     "@dokaanbondhu/platform-db": "*",
     "@supabase/supabase-js": "2.117.1",

@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import { loginConfigSchema, scannerSummarySchema } from "@dokaanbondhu/contracts";
 import {
   apiKeyHeaderOf,
   callHost,
   fetchOpenApi,
   HostPools,
   importOpenApi,
+  importScannerSummary,
   readCatalog,
   toCatalog,
   type ApiConnection,
@@ -18,17 +20,20 @@ import {
 import { verifyCapabilities, writeHostOf } from "@dokaanbondhu/engine/write";
 import { z } from "zod";
 
-// npm run verify-capabilities -- --map <module> [--host <name>] [--commit <sha>] [--out <file>] (spec 11.11; D139):
-// the sandbox check against a throw-away copy of a host, run by the verify-capabilities workflow. It reads the host's
-// OpenAPI description, runs every write with sample values from the host's own data, checks the effects through the
-// read-only role, runs each compensation, and writes verification-report.json for admin import-verification. Only
-// against a throw-away copy: every check saves and undoes real records.
+// npm run verify-capabilities -- --map <module> [--summary <file>] [--host <name>] [--commit <sha>] [--out <file>]
+// (spec 11.11; D139, D183): the sandbox check against a throw-away copy of a host, run by the verify-capabilities
+// workflow. It reads the host's OpenAPI description (or, with --summary, the Laravel scanner's summary of it), runs
+// every write with sample values from the host's own data, checks the effects through the read-only role, runs each
+// compensation, and writes verification-report.json for admin import-verification. Only against a throw-away copy:
+// every check saves and undoes real records.
 
 const env = z
   .object({
     SANDBOX_API_URL: z.url(),
     SANDBOX_API_SECRET: z.string().min(1),
-    SANDBOX_AUTH: z.enum(["api_key", "bearer"]).default("api_key"),
+    SANDBOX_AUTH: z.enum(["api_key", "bearer", "session"]).default("api_key"),
+    /** session only: the sign-in as JSON, {"login_path": "/login", "user": "owner@shop.test", ...} (D183). */
+    SANDBOX_LOGIN: z.string().optional(),
     /** Left out, the header comes from the document's apiKey scheme. */
     SANDBOX_KEY_HEADER: z.string().optional(),
     /** The read-only role on the sandbox's database, postgres:// or mysql://. */
@@ -39,6 +44,7 @@ const env = z
 const { values } = parseArgs({
   options: {
     map: { type: "string" },
+    summary: { type: "string" },
     host: { type: "string", default: "host" },
     commit: { type: "string", default: "unknown" },
     out: { type: "string", default: "verification-report.json" },
@@ -80,11 +86,22 @@ try {
     authHeader: env.SANDBOX_KEY_HEADER ?? null,
     secret: env.SANDBOX_API_SECRET,
     features: {},
+    loginConfig:
+      env.SANDBOX_AUTH === "session"
+        ? loginConfigSchema.parse(JSON.parse(z.string().min(2).parse(env.SANDBOX_LOGIN)))
+        : null,
   };
-  const { document, path } = await fetchOpenApi(connection);
-  if (connection.authType === "api_key" && !connection.authHeader)
-    connection.authHeader = apiKeyHeaderOf(document);
-  const imported = importOpenApi(document, path);
+  let imported;
+  if (values.summary) {
+    imported = importScannerSummary(
+      scannerSummarySchema.parse(JSON.parse(await readFile(values.summary, "utf8"))),
+    );
+  } else {
+    const { document, path } = await fetchOpenApi(connection);
+    if (connection.authType === "api_key" && !connection.authHeader)
+      connection.authHeader = apiKeyHeaderOf(document);
+    imported = importOpenApi(document, path);
+  }
   connection.features = imported.features;
   const run = (query: { text: string; values: unknown[] }) => pools.readOnly(db, (each) => each(query));
   const report = await verifyCapabilities({

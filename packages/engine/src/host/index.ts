@@ -78,6 +78,7 @@ export {
   type ImportedOperationRef,
   type ImportedParam,
 } from "./openapi-import";
+export { describeRoutes, importScannerSummary, routeTitle, scannerDocument } from "./scanner-import";
 export {
   apiKeyHeaderOf,
   AUTH_ADAPTERS,

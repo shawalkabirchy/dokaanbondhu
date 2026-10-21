@@ -124,7 +124,7 @@ describe("host addresses and auth adapters", () => {
     );
   });
 
-  it("puts an API key in its named header and a token in Authorization; session waits for step 7", () => {
+  it("puts an API key in its named header and a token in Authorization; a session signs in per call (D183)", () => {
     expect(authHeaders({ authType: "api_key", authHeader: "X-Api-Key", secret: "k" })).toEqual({
       "X-Api-Key": "k",
     });
@@ -132,7 +132,9 @@ describe("host addresses and auth adapters", () => {
       authorization: "Bearer t",
     });
     expect(() => authHeaders({ authType: "api_key", authHeader: null, secret: "k" })).toThrow(HostCallFailed);
-    expect(() => authHeaders({ authType: "session", authHeader: null, secret: "x" })).toThrow(/step 7/);
+    // A session's cookies and CSRF token are added by callHost, after it signs in (session-auth.test.ts).
+    expect(authHeaders({ authType: "session", authHeader: null, secret: "x" })).toEqual({});
+    expect(() => authHeaders({ authType: "oauth", authHeader: null, secret: "x" })).toThrow(HostCallFailed);
   });
 });
 

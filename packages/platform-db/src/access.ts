@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -15,6 +16,19 @@ export class SetupTokenError extends Error {
     super(`setup token ${reason}`);
     this.name = "SetupTokenError";
   }
+}
+
+/** How long a scanner upload's setup token lasts (spec 8.3). */
+export const SETUP_TOKEN_MS = 15 * 60_000;
+
+/** A new setup token: 32 random bytes, URL-safe. Only its hash is stored. */
+export function newSetupToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** The stored form of a setup token: its SHA-256, hex. */
+export function setupTokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export interface Platform {

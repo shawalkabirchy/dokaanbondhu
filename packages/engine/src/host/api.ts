@@ -1,13 +1,15 @@
+import type { LoginConfig } from "@dokaanbondhu/contracts";
 import { importOpenApi, OpenApiImportError } from "./openapi-import";
 
-// Calls to a host's own API through its auth adapter (spec 11.12): api_key (the secret in a named header) and bearer
-// now; session comes with the Laravel scanner in step 7. A call never follows a redirect, so the secret goes only to
-// the address the owner gave; it stops after 10 s and reads at most 5 MB (D134). A host asleep on a free plan is woken
-// when a write starts, and its dry run waited for longer (D168).
+// Calls to a host's own API through its auth adapter (spec 11.12): api_key (the secret in a named header), bearer, and
+// session (a Laravel-style sign-in: a cookie jar, the XSRF-TOKEN cookie sent back as X-XSRF-TOKEN, one sign-in again
+// on 401 or 419; D183). A call never follows a redirect, so the secret goes only to the address the owner gave; it
+// stops after 10 s and reads at most 5 MB (D134). A host asleep on a free plan is woken when a write starts, and its
+// dry run waited for longer (D168).
 
 type Json = Record<string, unknown>;
 
-export const AUTH_ADAPTERS = ["api_key", "bearer"] as const;
+export const AUTH_ADAPTERS = ["api_key", "bearer", "session"] as const;
 export const HOST_TIMEOUT_MS = 10_000;
 /** How long a dry run sent again to a sleeping host waits: a free host wakes in about a minute (D168). */
 export const WAKE_WAIT_MS = 80_000;
@@ -21,8 +23,11 @@ export interface ApiConnection {
   baseUrl: string;
   authType: string;
   authHeader: string | null;
+  /** The password for a session sign-in; else the key or token. */
   secret: string;
   features: Json;
+  /** How a session app is signed in to (authType session). */
+  loginConfig?: LoginConfig | null;
 }
 
 export interface HostRequest {
@@ -76,14 +81,15 @@ export function hostUrl(baseUrl: string, path: string, query: Record<string, str
   return url;
 }
 
-/** The headers that carry the secret. */
+/** The headers that carry the secret (a session's cookies are added per call, by callHost). */
 export function authHeaders(connection: Pick<ApiConnection, "authType" | "authHeader" | "secret">) {
   if (connection.authType === "api_key") {
     if (!connection.authHeader) throw new HostCallFailed("the API key's header is not named", "auth");
     return { [connection.authHeader]: connection.secret };
   }
   if (connection.authType === "bearer") return { authorization: `Bearer ${connection.secret}` };
-  throw new HostCallFailed(`the ${connection.authType} sign-in is not built yet (step 7)`, "auth");
+  if (connection.authType === "session") return {};
+  throw new HostCallFailed(`there is no ${connection.authType} sign-in`, "auth");
 }
 
 async function readLimited(response: Response): Promise<string> {
@@ -106,23 +112,20 @@ async function readLimited(response: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** One call to the host with the connection's secret. Statuses are answers, not errors; only the call itself fails. */
-export async function callHost(
-  connection: ApiConnection,
+/** One request, never following a redirect; only the call itself fails, never a status. */
+async function send(
+  connection: Pick<ApiConnection, "baseUrl">,
   request: HostRequest,
-  options: { timeoutMs?: number; signIn?: boolean } = {},
-): Promise<HostResponse> {
-  const headers: Record<string, string> = { accept: "application/json", ...request.headers };
-  if (options.signIn !== false) Object.assign(headers, authHeaders(connection));
-  if (request.body !== undefined) headers["content-type"] = "application/json";
-  let response: Response;
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<Response> {
   try {
-    response = await fetch(hostUrl(connection.baseUrl, request.path, request.query), {
+    return await fetch(hostUrl(connection.baseUrl, request.path, request.query), {
       method: request.method,
       headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
       redirect: "manual",
-      signal: AbortSignal.timeout(options.timeoutMs ?? HOST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
@@ -130,6 +133,150 @@ export async function callHost(
       throw new HostCallFailed("the host did not answer in time", "timeout");
     const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
     throw new HostCallFailed(`the host cannot be reached${cause ? `: ${cause}` : ""}`, "network");
+  }
+}
+
+// --- session sign-in (spec 11.12, D183) ---
+
+type Jar = Map<string, string>;
+/** One signed-in session per connection, its address and its user; shared by the calls made at the same time. */
+const sessions = new Map<string, Promise<Jar>>();
+const sessionKey = (connection: ApiConnection) =>
+  `${connection.id}|${connection.baseUrl}|${connection.loginConfig?.user ?? ""}`;
+
+/** The cookies an answer sets or clears. */
+function keepCookies(jar: Jar, response: Response): void {
+  for (const line of response.headers.getSetCookie()) {
+    const [pair = "", ...attributes] = line.split(";");
+    const at = pair.indexOf("=");
+    if (at <= 0) continue;
+    const name = pair.slice(0, at).trim();
+    const value = pair.slice(at + 1).trim();
+    const expired = attributes.some((attribute) => {
+      const split = attribute.indexOf("=");
+      const key = attribute.slice(0, split < 0 ? undefined : split).trim();
+      const rest = split < 0 ? "" : attribute.slice(split + 1).trim();
+      if (/^max-age$/i.test(key)) return Number(rest) <= 0;
+      if (/^expires$/i.test(key)) return Date.parse(rest) <= Date.now();
+      return false;
+    });
+    if (expired || !value) jar.delete(name);
+    else jar.set(name, value);
+  }
+}
+
+/** The jar's cookies and its CSRF token: Laravel's XSRF-TOKEN cookie, URL-decoded, as X-XSRF-TOKEN. */
+function sessionHeaders(jar: Jar): Record<string, string> {
+  // Laravel answers an AJAX call it cannot sign in with 401, not a redirect to the login page.
+  const headers: Record<string, string> = { "x-requested-with": "XMLHttpRequest" };
+  if (jar.size) headers.cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
+  const token = jar.get("XSRF-TOKEN");
+  if (token) {
+    try {
+      headers["x-xsrf-token"] = decodeURIComponent(token);
+    } catch {
+      headers["x-xsrf-token"] = token;
+    }
+  }
+  return headers;
+}
+
+/** Whether a redirect goes to the app's login page: an app that redirects instead of answering 401. */
+function toLogin(connection: ApiConnection, response: Response): boolean {
+  const location = response.headers.get("location");
+  if (!location || !connection.loginConfig) return false;
+  const login = hostUrl(connection.baseUrl, connection.loginConfig.login_path).pathname;
+  return new URL(location, connection.baseUrl).pathname === login;
+}
+
+/** Signs in afresh: the CSRF cookie, then the login with the user and the password; throws when the app refuses. */
+async function signIn(connection: ApiConnection, timeoutMs: number): Promise<Jar> {
+  const config = connection.loginConfig;
+  if (!config) throw new HostCallFailed("the app's sign-in is not set up", "auth");
+  const jar: Jar = new Map();
+  const first = await send(
+    connection,
+    { method: "GET", path: config.csrf_path ?? config.login_path },
+    { accept: "text/html, application/json", ...sessionHeaders(jar) },
+    timeoutMs,
+  );
+  keepCookies(jar, first);
+  await first.body?.cancel();
+  const login = await send(
+    connection,
+    {
+      method: "POST",
+      path: config.login_path,
+      body: { [config.user_field]: config.user, [config.password_field]: connection.secret },
+    },
+    { accept: "application/json", "content-type": "application/json", ...sessionHeaders(jar) },
+    timeoutMs,
+  );
+  keepCookies(jar, login);
+  await login.body?.cancel();
+  // Signed in: a 2xx, or a redirect anywhere but back to the login page (a form login's answer).
+  const redirected = login.status >= 300 && login.status < 400;
+  if (!(login.status >= 200 && login.status < 300) && !(redirected && !toLogin(connection, login)))
+    throw new HostCallFailed(`the app refused the sign-in (${login.status})`, "auth");
+  return jar;
+}
+
+/** The connection's session, signed in once for all the calls made at the same time. */
+function sessionOf(connection: ApiConnection, timeoutMs: number, stale?: Promise<Jar>): Promise<Jar> {
+  const key = sessionKey(connection);
+  const current = sessions.get(key);
+  // A session is used until it is refused; then one call signs in again, and the others use its session.
+  if (current && (!stale || current !== stale)) return current;
+  const fresh = signIn(connection, timeoutMs);
+  sessions.set(key, fresh);
+  fresh.catch(() => {
+    if (sessions.get(key) === fresh) sessions.delete(key);
+  });
+  return fresh;
+}
+
+/** Forgets a connection's session, so the next call signs in again. */
+export function forgetSession(connection: ApiConnection): void {
+  sessions.delete(sessionKey(connection));
+}
+
+/** The connection test for a session app: a sign-in afresh. */
+export async function sessionSignIn(connection: ApiConnection): Promise<void> {
+  forgetSession(connection);
+  await sessionOf(connection, HOST_TIMEOUT_MS);
+}
+
+/**
+ * One call to the host with the connection's secret. Statuses are answers, not errors; only the call itself fails. A
+ * session app's call that is refused for its session (401, 419, or a redirect to the login page) was not carried out,
+ * so it is sent once more after signing in again.
+ */
+export async function callHost(
+  connection: ApiConnection,
+  request: HostRequest,
+  options: { timeoutMs?: number; signIn?: boolean } = {},
+): Promise<HostResponse> {
+  const timeoutMs = options.timeoutMs ?? HOST_TIMEOUT_MS;
+  const headers: Record<string, string> = { accept: "application/json", ...request.headers };
+  const signIn = options.signIn !== false;
+  if (signIn) Object.assign(headers, authHeaders(connection));
+  if (request.body !== undefined) headers["content-type"] = "application/json";
+  let response: Response;
+  if (signIn && connection.authType === "session") {
+    const attempt = async (session: Promise<Jar>) => {
+      const jar = await session;
+      const answer = await send(connection, request, { ...headers, ...sessionHeaders(jar) }, timeoutMs);
+      keepCookies(jar, answer);
+      return answer;
+    };
+    const session = sessionOf(connection, timeoutMs);
+    response = await attempt(session);
+    if (response.status === 401 || response.status === 419 || toLogin(connection, response)) {
+      await response.body?.cancel();
+      response = await attempt(sessionOf(connection, timeoutMs, session));
+    }
+  } else {
+    response = await send(connection, request, headers, timeoutMs);
   }
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();
@@ -235,8 +382,24 @@ export interface ApiConnectionCheck {
   error?: string;
 }
 
-/** POST /setup/connections/{id}/test for an API connection: the document can be read, and the secret is accepted. */
+/**
+ * POST /setup/connections/{id}/test for an API connection: the document can be read, and the secret is accepted. A
+ * session app has no document (its capabilities come from the scanner): its test is a sign-in.
+ */
 export async function checkApiConnection(connection: ApiConnection): Promise<ApiConnectionCheck> {
+  if (connection.authType === "session") {
+    try {
+      await sessionSignIn(connection);
+      return { ok: true, key: "accepted" };
+    } catch (error) {
+      if (!(error instanceof HostCallFailed)) throw error;
+      return {
+        ok: false,
+        ...(error.reason === "auth" ? { key: "refused" as const } : {}),
+        error: error.message.slice(0, 300),
+      };
+    }
+  }
   try {
     const { document, path } = await fetchOpenApi(connection);
     const operations = importOpenApi(document, path).capabilities.length;

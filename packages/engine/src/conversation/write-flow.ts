@@ -48,7 +48,7 @@ import {
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
 import { HostCallFailed, WAKE_WAIT_MS, type HostRequest, type HostResponse } from "../host/api";
-import { readAppWord, type AppWords } from "../host/catalog";
+import { customerTier, readAppWord, type AppWords } from "../host/catalog";
 import type { CarChoice, FindPartsResult, PartQuery } from "../host/find-parts";
 import {
   answerFacts,
@@ -1279,7 +1279,19 @@ async function prepareWrite(
       });
     } else if (line && line.unitCost != null) total = line.unitCost * line.quantity;
     else if (line && chosen) {
-      const each = line.unitPrice ?? chosen.price;
+      // The app bills the named customer at their own price level, so the estimate does too: a customer named in
+      // this very sentence is not yet the remembered one whose level the turn's prices took (D183).
+      const buyer = resolved.customer
+        ? turn.customers.find((party) => party.hostId === resolved.customer!.hostId)
+        : undefined;
+      const level = buyer ? customerTier(buyer.attrs, turn.appWords) : null;
+      const atLevel =
+        level === null || level === turn.tier
+          ? chosen.price
+          : level === "paikari"
+            ? (chosen.paikari ?? chosen.retail ?? chosen.price)
+            : (chosen.retail ?? chosen.price);
+      const each = line.unitPrice ?? atLevel;
       total = each !== null ? each * line.quantity : null;
     }
     if (open(resolved) && total !== null)

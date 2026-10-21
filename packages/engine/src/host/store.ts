@@ -1,3 +1,4 @@
+import { loginConfigSchema } from "@dokaanbondhu/contracts";
 import { connections, schemaEntities, schemaFields, type Tx } from "@dokaanbondhu/platform-db";
 import { and, eq, inArray } from "drizzle-orm";
 import { decryptSecret } from "../crypto";
@@ -57,6 +58,9 @@ export async function loadApiConnection(
       row.secretEncrypted,
     ),
     features: row.features as Record<string, unknown>,
+    // A session sign-in that is not set up (or not valid) fails at the first call, saying so.
+    loginConfig:
+      row.authType === "session" ? (loginConfigSchema.safeParse(row.loginConfig).data ?? null) : null,
   };
 }
 

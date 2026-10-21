@@ -457,3 +457,80 @@ export const featuresViewSchema = z.object({
 export type FeaturesView = z.infer<typeof featuresViewSchema>;
 
 export const featuresPutSchema = z.object({ connection_id: z.uuid(), features: hostFeaturesSchema }).strict();
+
+// The Laravel scanner's summary (spec 16; architecture Appendix B; D183): what the owner saw before it was uploaded,
+// each route with its parameters as the scanner read them from the app's validation rules.
+export const scannedParamSchema = z
+  .object({
+    /** A JSON path: customer_id, items[].part_id; a path parameter by its name. */
+    name: z.string().min(1).max(200),
+    location: z.enum(["body", "path", "query"]),
+    type: z.enum(["integer", "number", "string", "boolean", "array", "object"]).nullable(),
+    required: z.boolean(),
+    nullable: z.boolean(),
+    enum: z.array(z.string().max(100)).max(100).nullable(),
+    min: z.number().nullable(),
+    max: z.number().nullable(),
+    format: z.enum(["date", "email"]).nullable(),
+    /** exists:table,column, or a route-model binding's table. */
+    references: z.object({ table: z.string().max(100), column: z.string().max(100) }).nullable(),
+    /** The rules as written, for the owner to read. */
+    rules: z.string().max(1000),
+  })
+  .strict();
+export type ScannedParam = z.infer<typeof scannedParamSchema>;
+
+export const scannedRouteSchema = z
+  .object({
+    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+    path: z.string().min(1).max(300),
+    name: z.string().max(200).nullable(),
+    handler: z.string().max(300),
+    auth: z.enum(["session", "bearer", "none"]),
+    /** The rules in short, as the owner reads them. */
+    validation: z.string().max(4000).nullable(),
+    params: z.array(scannedParamSchema).max(200),
+  })
+  .strict();
+export type ScannedRoute = z.infer<typeof scannedRouteSchema>;
+
+export const scannerSummarySchema = z
+  .object({
+    framework: z.literal("laravel"),
+    scanner_version: z.string().max(20),
+    scanned_files: z.number().int().nonnegative(),
+    routes: z.array(scannedRouteSchema).max(500),
+    skipped: z.array(z.string().max(200)).max(50),
+  })
+  .strict();
+export type ScannerSummary = z.infer<typeof scannerSummarySchema>;
+
+const appPath = z
+  .string()
+  .max(200)
+  .regex(/^\/[^\s?#]*$/, "a path on the app, starting with /");
+
+/**
+ * How DokaanBondhu signs in to an app that uses a session (spec 11.12, D183): a GET of csrf_path (else of the login
+ * page) for the XSRF-TOKEN cookie, then a JSON POST of the user and the stored password to login_path.
+ */
+export const loginConfigSchema = z
+  .object({
+    login_path: appPath,
+    csrf_path: appPath.optional(),
+    user_field: z.string().min(1).max(100).default("email"),
+    password_field: z.string().min(1).max(100).default("password"),
+    user: z.string().min(1).max(200),
+  })
+  .strict();
+export type LoginConfig = z.infer<typeof loginConfigSchema>;
+
+/** POST /setup/scanner-tokens (spec 8.3): a one-time token for one scanner upload, valid 15 minutes. */
+export const scannerTokenResultSchema = z.object({ token: z.string(), expires_at: z.string() });
+export type ScannerTokenResult = z.infer<typeof scannerTokenResultSchema>;
+
+/** POST /setup/scanner-upload (spec 8.3): the import's summary, as a discovery's. */
+export const scannerUploadResultSchema = discoverResultSchema
+  .pick({ connection_id: true, added: true, changed: true, kept: true, removed: true, unresolved: true })
+  .extend({ described: z.number().int().nonnegative() });
+export type ScannerUploadResult = z.infer<typeof scannerUploadResultSchema>;

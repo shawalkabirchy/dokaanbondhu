@@ -1,0 +1,606 @@
+{
+  "framework": "laravel",
+  "scanner_version": "0.1.0",
+  "scanned_files": 15,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/sales",
+      "name": "sales.index",
+      "handler": "SaleController@index",
+      "auth": "session",
+      "validation": "inline validate: from?, to?, status?=posted|void",
+      "params": [
+        {
+          "name": "from",
+          "location": "query",
+          "type": null,
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": "date",
+          "references": null,
+          "rules": "nullable|date"
+        },
+        {
+          "name": "to",
+          "location": "query",
+          "type": null,
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": "date",
+          "references": null,
+          "rules": "nullable|date"
+        },
+        {
+          "name": "status",
+          "location": "query",
+          "type": null,
+          "required": false,
+          "nullable": true,
+          "enum": ["posted", "void"],
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "nullable|in:posted,void"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sales",
+      "name": "sales.store",
+      "handler": "SaleController@store",
+      "auth": "session",
+      "validation": "StoreSaleRequest: customer_id?, items[{part_id, quantity, unit_price?}], payment_method=cash|bkash|due, sold_on?, note?, tags[]?, buyer_phone?",
+      "params": [
+        {
+          "name": "customer_id",
+          "location": "body",
+          "type": "integer",
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "customers",
+            "column": "id"
+          },
+          "rules": "nullable|integer|exists:customers,id"
+        },
+        {
+          "name": "items",
+          "location": "body",
+          "type": "array",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|array|min:1"
+        },
+        {
+          "name": "items[].part_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "parts",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:parts,id"
+        },
+        {
+          "name": "items[].quantity",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": 999,
+          "format": null,
+          "references": null,
+          "rules": "required|integer|min:1|max:999"
+        },
+        {
+          "name": "items[].unit_price",
+          "location": "body",
+          "type": "number",
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": 0,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "nullable|numeric|min:0"
+        },
+        {
+          "name": "payment_method",
+          "location": "body",
+          "type": null,
+          "required": true,
+          "nullable": false,
+          "enum": ["cash", "bkash", "due"],
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|in:cash,bkash,due"
+        },
+        {
+          "name": "sold_on",
+          "location": "body",
+          "type": null,
+          "required": false,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": "date",
+          "references": null,
+          "rules": "sometimes|date"
+        },
+        {
+          "name": "note",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": 500,
+          "format": null,
+          "references": null,
+          "rules": "nullable|string|max:500"
+        },
+        {
+          "name": "tags",
+          "location": "body",
+          "type": "array",
+          "required": false,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "sometimes|array"
+        },
+        {
+          "name": "tags[]",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": 20,
+          "format": null,
+          "references": null,
+          "rules": "string|max:20"
+        },
+        {
+          "name": "buyer_phone",
+          "location": "body",
+          "type": null,
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "nullable|new BangladeshPhone()"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/sales/{sale}",
+      "name": "sales.show",
+      "handler": "SaleController@show",
+      "auth": "session",
+      "validation": null,
+      "params": [
+        {
+          "name": "sale",
+          "location": "path",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "sales",
+            "column": "id"
+          },
+          "rules": "route model binding: Sale"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/sales/{sale}/void",
+      "name": "sales.void",
+      "handler": "SaleController@void",
+      "auth": "session",
+      "validation": "inline validate: reason",
+      "params": [
+        {
+          "name": "sale",
+          "location": "path",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "sales",
+            "column": "id"
+          },
+          "rules": "route model binding: Sale"
+        },
+        {
+          "name": "reason",
+          "location": "body",
+          "type": "string",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": 200,
+          "format": null,
+          "references": null,
+          "rules": "required|string|max:200"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/returns",
+      "name": "returns.store",
+      "handler": "ReturnController@store",
+      "auth": "session",
+      "validation": "StoreReturnRequest: sale_id, sale_item_id, quantity, reason?",
+      "params": [
+        {
+          "name": "sale_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "sales",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:sales,id"
+        },
+        {
+          "name": "sale_item_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "sale_items",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:App\\Models\\SaleItem,id"
+        },
+        {
+          "name": "quantity",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|integer|min:1"
+        },
+        {
+          "name": "reason",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": 200,
+          "format": null,
+          "references": null,
+          "rules": "nullable|string|max:200"
+        }
+      ]
+    },
+    {
+      "method": "PATCH",
+      "path": "/parts/{part}/price",
+      "name": "parts.price",
+      "handler": "PartController@updatePrice",
+      "auth": "session",
+      "validation": "UpdatePriceRequest: retail_price?, garage_price?",
+      "params": [
+        {
+          "name": "part",
+          "location": "path",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "spare_parts",
+            "column": "id"
+          },
+          "rules": "route model binding: Part"
+        },
+        {
+          "name": "retail_price",
+          "location": "body",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": 1000000,
+          "format": null,
+          "references": null,
+          "rules": "sometimes|integer|between:1,1000000"
+        },
+        {
+          "name": "garage_price",
+          "location": "body",
+          "type": "integer",
+          "required": false,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "sometimes|integer|min:1"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/parts/{part}",
+      "name": "parts.destroy",
+      "handler": "PartController@destroy",
+      "auth": "session",
+      "validation": null,
+      "params": [
+        {
+          "name": "part",
+          "location": "path",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "spare_parts",
+            "column": "id"
+          },
+          "rules": "route model binding: Part"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/payments",
+      "name": "payments.store",
+      "handler": "PaymentController@store",
+      "auth": "bearer",
+      "validation": "inline validate: customer_id, amount, method=cash|bkash|nagad, trx_id?",
+      "params": [
+        {
+          "name": "customer_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "customers",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:App\\Models\\Customer,id"
+        },
+        {
+          "name": "amount",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|integer|min:1"
+        },
+        {
+          "name": "method",
+          "location": "body",
+          "type": null,
+          "required": true,
+          "nullable": false,
+          "enum": ["cash", "bkash", "nagad"],
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|in:cash,bkash,nagad"
+        },
+        {
+          "name": "trx_id",
+          "location": "body",
+          "type": "string",
+          "required": false,
+          "nullable": true,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "nullable|string|Rule::unique('payments', 'trx_id')->ignore($request->id)"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/payments/{payment}",
+      "name": null,
+      "handler": "PaymentController@show",
+      "auth": "bearer",
+      "validation": null,
+      "params": [
+        {
+          "name": "payment",
+          "location": "path",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": ""
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/stock-in",
+      "name": "stock-in",
+      "handler": "StockInController@__invoke",
+      "auth": "none",
+      "validation": "StockInRequest: vendor_id, lines[{product_id, qty, cost}]",
+      "params": [
+        {
+          "name": "vendor_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "suppliers",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:suppliers,id"
+        },
+        {
+          "name": "lines",
+          "location": "body",
+          "type": "array",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|array"
+        },
+        {
+          "name": "lines[].product_id",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": null,
+          "max": null,
+          "format": null,
+          "references": {
+            "table": "parts",
+            "column": "id"
+          },
+          "rules": "required|integer|exists:parts,id"
+        },
+        {
+          "name": "lines[].qty",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 1,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|integer|min:1"
+        },
+        {
+          "name": "lines[].cost",
+          "location": "body",
+          "type": "integer",
+          "required": true,
+          "nullable": false,
+          "enum": null,
+          "min": 0,
+          "max": null,
+          "format": null,
+          "references": null,
+          "rules": "required|integer|min:0"
+        }
+      ]
+    }
+  ],
+  "skipped": [
+    ".env",
+    "vendor/",
+    "node_modules/",
+    "storage/",
+    ".git/",
+    "GET /up (closure route)",
+    "GET /sanctum/csrf-cookie (a package's route)",
+    "POST /sales/{sale}/print (print not found in SaleController)",
+    "GET /reports/{name?} (ReportController: file not found)"
+  ]
+}

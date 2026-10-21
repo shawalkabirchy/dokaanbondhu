@@ -58,6 +58,8 @@ export interface Shop {
   stock?: Record<string, number>;
   /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
   customerTypes?: string[];
+  /** What the app stores about Rahim Motors besides the phone: a price level, a type (D183). */
+  customerAttrs?: Record<string, unknown>;
 }
 
 /** The tests' now: 15 Oct 2026, noon in Dhaka. */
@@ -394,7 +396,12 @@ function catalogOf(shop: Shop): Catalog {
     })),
     vehicles: shop.vehicles,
     customers: [
-      { hostId: "c1", name: "Rahim Motors", nameBn: "রহিম মোটরস", attrs: { phone: "01711000000" } },
+      {
+        hostId: "c1",
+        name: "Rahim Motors",
+        nameBn: "রহিম মোটরস",
+        attrs: { phone: "01711000000", ...shop.customerAttrs },
+      },
     ],
     suppliers: [{ hostId: "s1", name: "Nawabpur Auto Parts", nameBn: null, attrs: { phone: "01911000000" } }],
   };

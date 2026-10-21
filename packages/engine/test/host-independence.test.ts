@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { callHost, fetchOpenApi } from "../src/host/api";
 import { importOpenApi } from "../src/host/openapi-import";
 import { writeHostOf } from "../src/write/sandbox";
-import { connect, fresh, geargrid, NOW } from "./sale-apps";
+import { connect, fresh, geargrid, NOW, type Shop } from "./sale-apps";
 import type { Step } from "./scripted-llm";
 import { startStubHost, STUB_PROFIT, STUB_TOTAL, type StubFeatures, type StubState } from "./stub-host";
 
@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 /** The stub host with these features, connected as setup leaves it: every write switched on. */
-async function stubShop(features: StubFeatures, state: StubState = {}) {
+async function stubShop(features: StubFeatures, state: StubState = {}, appFields: Partial<Shop> = {}) {
   const stub = await startStubHost(features, state);
   hosts.push(stub);
   const { document, path } = await fetchOpenApi(stub.connection);
@@ -25,7 +25,7 @@ async function stubShop(features: StubFeatures, state: StubState = {}) {
   stub.connection.features = imported.features;
   const writes = writeHostOf(imported, (request) => callHost(stub.connection, request), randomUUID);
   // The app's stock moves with its orders, so the check after a sale finds what it expects.
-  const app = { ...geargrid, stock: {} as Record<string, number> };
+  const app = { ...geargrid, ...appFields, stock: {} as Record<string, number> };
   stub.state.onOrder = (body) => {
     for (const line of (body as { lines: { partId: string; qty: number }[] }).lines)
       app.stock[line.partId] = (app.stock[line.partId] ?? 4) - line.qty;
@@ -108,6 +108,20 @@ describe("a sale on an app named unlike GearGrid (D181)", () => {
   );
 
   it.each(STYLES)(
+    "without a dry run, a customer named in the sentence is billed at their own price level ($style)",
+    async (said) => {
+      // Rahim Motors buys at the garage price (1,500 a set, the paikari price), not the 1,600 retail (D183).
+      const garage = await stubShop({}, {}, { customerAttrs: { price_tier: "garage" } });
+      const sheet = await garage.shop.say(fresh(), { text: said.sale }, saleCall(said.args));
+      expect(sheet.confirm?.text).toMatch(/২ সেট, ৩,০০০ টাকা। ঠিক আছে\?$/);
+      // With a dry run the app's own total stands, whatever the level.
+      const dry = await stubShop({ dryRun: true }, {}, { customerAttrs: { price_tier: "garage" } });
+      const dryRun = await dry.shop.say(fresh(), { text: said.sale }, saleCall(said.args));
+      expect(dryRun.confirm?.text).toMatch(/২ সেট, ২,৯০০ টাকা। ঠিক আছে\?$/);
+    },
+  );
+
+  it.each(STYLES)(
     "idempotency key and acting user: sent when named, left out when not ($style)",
     async (said) => {
       const named = await stubShop({ idempotency: true, actingUser: true });
@@ -162,6 +176,52 @@ describe("a sale on an app named unlike GearGrid (D181)", () => {
     expect(sheet.asked).toBeUndefined();
     expect(calls("/orders").at(-1)!.body).not.toHaveProperty("payments");
   });
+});
+
+describe("a sale on an app that signs in with a session (D183)", () => {
+  const signedSale = async (said: (typeof STYLES)[number]) => {
+    const app = await stubShop({ session: true, dryRun: true });
+    let saved = 0;
+    const record = app.stub.state.onOrder!;
+    app.stub.state.onOrder = (body) => {
+      saved += 1;
+      record(body);
+    };
+    const sheet = await app.shop.say(fresh(), { text: said.sale }, saleCall(said.args));
+    expect(sheet.confirm?.text).toMatch(/২ সেট, ২,৯০০ টাকা। ঠিক আছে\?$/);
+    return { ...app, sheet, saved: () => saved };
+  };
+
+  it.each(STYLES)(
+    "signs in once, then sends its cookie and CSRF token; the password goes only to the login ($style)",
+    async (said) => {
+      const { shop, sheet, calls, stub, saved } = await signedSale(said);
+      expect((await shop.say(sheet.state, { text: said.yes })).results).toEqual(["done"]);
+      expect(saved()).toBe(1);
+      expect(calls("/csrf-cookie")).toHaveLength(1);
+      expect(calls("/login")).toEqual([
+        expect.objectContaining({ body: { email: "owner@stub.test", password: stub.connection.secret } }),
+      ]);
+      const order = calls("/orders").at(-1)!;
+      expect(order.headers.cookie).toMatch(/stub_session=sess\d+/);
+      expect(order.headers["x-xsrf-token"]).toMatch(/^csrf\/\d+=$/); // the cookie's value, URL-decoded
+      const others = stub.requests.filter((request) => request.path !== "/login");
+      expect(JSON.stringify(others)).not.toContain(stub.connection.secret);
+    },
+  );
+
+  it.each(STYLES)(
+    "a session the app forgot (401) or a stale CSRF token (419): signs in again once, the sale saved once ($style)",
+    async (said) => {
+      for (const lose of ["forgetSessions", "staleTokens"] as const) {
+        const { shop, sheet, calls, stub, saved } = await signedSale(said);
+        stub[lose]();
+        expect((await shop.say(sheet.state, { text: said.yes })).results, lose).toEqual(["done"]);
+        expect(calls("/login"), lose).toHaveLength(2);
+        expect(saved(), lose).toBe(1);
+      }
+    },
+  );
 });
 
 describe("an app's own reports and sync status (D180, D181)", () => {

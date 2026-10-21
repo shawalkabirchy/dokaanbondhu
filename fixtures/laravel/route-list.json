@@ -1,0 +1,128 @@
+[
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "up",
+    "name": null,
+    "action": "Closure",
+    "middleware": [],
+    "path": "vendor/laravel/framework/src/Illuminate/Foundation/Configuration/ApplicationBuilder.php:219"
+  },
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "sanctum/csrf-cookie",
+    "name": "sanctum.csrf-cookie",
+    "action": "Laravel\\Sanctum\\Http\\Controllers\\CsrfCookieController@show",
+    "middleware": ["web"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "sales",
+    "name": "sales.index",
+    "action": "App\\Http\\Controllers\\SaleController@index",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "sales",
+    "name": "sales.store",
+    "action": "App\\Http\\Controllers\\SaleController@store",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "sales/{sale}",
+    "name": "sales.show",
+    "action": "App\\Http\\Controllers\\SaleController@show",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "sales/{sale}/void",
+    "name": "sales.void",
+    "action": "App\\Http\\Controllers\\SaleController@void",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "sales/{sale}/print",
+    "name": "sales.print",
+    "action": "App\\Http\\Controllers\\SaleController@print",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "returns",
+    "name": "returns.store",
+    "action": "App\\Http\\Controllers\\ReturnController@store",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "PUT|PATCH",
+    "uri": "parts/{part}/price",
+    "name": "parts.price",
+    "action": "App\\Http\\Controllers\\PartController@updatePrice",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "DELETE",
+    "uri": "parts/{part}",
+    "name": "parts.destroy",
+    "action": "App\\Http\\Controllers\\PartController@destroy",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "reports/{name?}",
+    "name": "reports.show",
+    "action": "App\\Http\\Controllers\\ReportController@show",
+    "middleware": ["web", "auth"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "api/payments",
+    "name": "payments.store",
+    "action": "App\\Http\\Controllers\\Api\\PaymentController@store",
+    "middleware": ["api", "auth:sanctum"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "GET|HEAD",
+    "uri": "api/payments/{payment}",
+    "name": null,
+    "action": "App\\Http\\Controllers\\Api\\PaymentController@show",
+    "middleware": ["api", "auth:api"],
+    "path": null
+  },
+  {
+    "domain": null,
+    "method": "POST",
+    "uri": "api/stock-in",
+    "name": "stock-in",
+    "action": "App\\Http\\Controllers\\Api\\StockInController",
+    "middleware": ["api"],
+    "path": null
+  }
+]

@@ -1,0 +1,22 @@
+{
+  "name": "@dokaanbondhu/laravel-scanner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@dokaanbondhu/contracts": "*",
+    "commander": "15.0.0",
+    "php-parser": "3.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

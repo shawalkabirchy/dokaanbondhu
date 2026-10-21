@@ -1,0 +1,3 @@
+#!/usr/bin/env php
+<?php
+// A fixture: only its presence matters to the scanner (it never runs PHP in the fixture tests).

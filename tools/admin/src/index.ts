@@ -1,10 +1,13 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { parseArgs } from "node:util";
+import { loginConfigSchema } from "@dokaanbondhu/contracts";
 import { encryptSecret, parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
   applyVerification,
   baseUrlProblem,
+  checkApiConnection,
   HostPools,
   runSpeechCheck,
   syncConnection,
@@ -23,6 +26,10 @@ import {
   aiProviders,
   connections,
   createPlatform,
+  newSetupToken,
+  SETUP_TOKEN_MS,
+  setupTokenHash,
+  setupTokens,
   shops,
   users,
   type Platform,
@@ -66,6 +73,40 @@ const providerOptions = z
 function password(length = 16): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   return Array.from({ length }, () => alphabet[randomInt(alphabet.length)]).join("");
+}
+
+/** A secret typed without showing it, or the first line of a pipe (a script). */
+async function askSecret(prompt: string): Promise<string> {
+  process.stderr.write(prompt);
+  if (!process.stdin.isTTY) {
+    const lines = createInterface({ input: process.stdin });
+    for await (const line of lines) {
+      lines.close();
+      return line;
+    }
+    return "";
+  }
+  return new Promise((done) => {
+    let value = "";
+    const finish = () => {
+      process.stdin.off("data", onData);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stderr.write("\n");
+      done(value);
+    };
+    const onData = (chunk: string) => {
+      for (const char of chunk) {
+        if (char === "\r" || char === "\n") return finish();
+        if (char === "\u0003") process.exit(130);
+        value = char === "\u007f" || char === "\b" ? value.slice(0, -1) : value + char;
+      }
+    };
+    process.stdin.setRawMode(true);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", onData);
+    process.stdin.resume();
+  });
 }
 
 function supabaseAdmin() {
@@ -505,6 +546,125 @@ const commands: Record<string, Command> = {
       .filter((entry) => entry.result !== "pass")
       .map((entry) => `${entry.name} (${entry.result})`);
     if (failed.length) out(`Not passed: ${failed.join(", ")}`);
+  },
+
+  /**
+   * scanner-token --shop <id>: a one-time token for the Laravel scanner's upload, valid 15 minutes (spec 16.3; D182: an
+   * admin command this semester, the app's setup screen later). It is made in the shop owner's name and printed alone
+   * on a line, so a script can read it.
+   */
+  "scanner-token": async (platform, args) => {
+    const { values } = parseArgs({ args, options: { shop: { type: "string" } } });
+    const shopId = uuid.parse(values.shop);
+    const [owner] = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.shopId, shopId), eq(users.role, "owner"), eq(users.status, "active")))
+        .orderBy(asc(users.createdAt))
+        .limit(1),
+    );
+    if (!owner) throw new Error(`shop ${shopId} has no active owner`);
+    const token = newSetupToken();
+    const expiresAt = new Date(Date.now() + SETUP_TOKEN_MS);
+    await platform.withAdmin((tx) =>
+      tx.insert(setupTokens).values({
+        shopId,
+        tokenHash: setupTokenHash(token),
+        purpose: "scanner_upload",
+        expiresAt,
+        createdBy: owner.id,
+      }),
+    );
+    console.error(`One-time scanner token, valid until ${expiresAt.toISOString()} (15 minutes):`);
+    out(token);
+  },
+
+  /**
+   * set-session-login --shop <id> [--url <u>] --login-path <p> [--csrf-path <p>] --user <u> [--user-field <f>]
+   * [--password-field <f>]: the session sign-in of the shop's API connection (spec 11.12; D182, D183), for a Laravel
+   * app the scanner read. The password is asked for (or read from a pipe) and stored encrypted; a shop without an API
+   * connection gets one at --url. The sign-in is tried at once: signed in, the connection is active.
+   */
+  "set-session-login": async (platform, args) => {
+    const { values } = parseArgs({
+      args,
+      options: {
+        shop: { type: "string" },
+        url: { type: "string" },
+        "login-path": { type: "string" },
+        "csrf-path": { type: "string" },
+        user: { type: "string" },
+        "user-field": { type: "string" },
+        "password-field": { type: "string" },
+      },
+    });
+    const shopId = uuid.parse(values.shop);
+    const loginConfig = loginConfigSchema.parse({
+      login_path: values["login-path"],
+      user: values.user,
+      ...(values["csrf-path"] ? { csrf_path: values["csrf-path"] } : {}),
+      ...(values["user-field"] ? { user_field: values["user-field"] } : {}),
+      ...(values["password-field"] ? { password_field: values["password-field"] } : {}),
+    });
+    const url = values.url?.replace(/\/+$/, "");
+    const problem = url ? baseUrlProblem(url) : null;
+    if (problem) throw new Error(`--url: ${problem}`);
+    const rows = await platform.withAdmin((tx) =>
+      tx
+        .select({ id: connections.id, baseUrl: connections.baseUrl })
+        .from(connections)
+        .where(and(eq(connections.shopId, shopId), eq(connections.kind, "api"))),
+    );
+    if (rows.length > 1) throw new Error(`shop ${shopId} has ${rows.length} API connections; expected one`);
+    const baseUrl = url ?? rows[0]?.baseUrl;
+    if (!baseUrl) throw new Error("the shop has no API connection yet: give --url, the app's address");
+    const password = await askSecret(`Password of ${loginConfig.user} on the app: `);
+    if (!password) throw new Error("no password given");
+    if (!env.success) throw new Error("unreachable");
+    const id = rows[0]?.id ?? randomUUID(); // the encryption is bound to the row (spec 13.5)
+    const secretEncrypted = encryptSecret(
+      parseAesKey(env.data.AES_KEY),
+      { table: "connections", rowId: id, column: "secret_encrypted" },
+      password,
+    );
+    const session = { baseUrl, authType: "session", authHeader: null, loginConfig, secretEncrypted };
+    await platform.withAdmin((tx) =>
+      rows.length
+        ? tx
+            .update(connections)
+            .set({ ...session, status: "pending" })
+            .where(eq(connections.id, id))
+        : tx.insert(connections).values({
+            id,
+            shopId,
+            kind: "api",
+            label: "Laravel app",
+            ...session,
+            sslMode: null,
+            poolMax: 1,
+            status: "pending",
+          }),
+    );
+    const check = await checkApiConnection({
+      id,
+      baseUrl,
+      authType: "session",
+      authHeader: null,
+      secret: password,
+      features: {},
+      loginConfig,
+    });
+    await platform.withAdmin((tx) =>
+      tx
+        .update(connections)
+        .set({ status: check.ok ? "active" : "error", lastCheckedAt: new Date() })
+        .where(eq(connections.id, id)),
+    );
+    out(
+      `API connection ${id}: signs in at ${baseUrl}${loginConfig.login_path} as ${loginConfig.user}. ` +
+        (check.ok ? "Signed in: the connection is active." : `Not signed in: ${check.error}.`),
+    );
   },
 
   /** disable-user --user <id> */

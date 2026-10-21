@@ -1,0 +1,45 @@
+# The scanner's test backend (spec 16.4; D182): a small Laravel app over test shop B's MySQL tables
+# (tools/fixtures/shop-b), with its own sales tables and a session login. Local only: run-e2e.sh starts it.
+name: dokaan-laravel-test
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: test-backend-root
+      MYSQL_DATABASE: shopb
+    ports: ["127.0.0.1:3307:3306"]
+    volumes:
+      - ../../fixtures/shop-b/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../../fixtures/shop-b/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./mysql/03-read-only.sql:/docker-entrypoint-initdb.d/03-read-only.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-ptest-backend-root"]
+      interval: 3s
+      retries: 60
+
+  # A throwaway platform database for the end-to-end test, so the run never needs the real ones.
+  platform:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: e2e-platform
+      POSTGRES_DB: platform
+    ports: ["127.0.0.1:5434:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "platform"]
+      interval: 3s
+      retries: 40
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports: ["127.0.0.1:8081:8000"]
+    volumes:
+      # The scanner's one file, built by run-e2e.sh.
+      - ../dist:/scanner:ro
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/up') === false ? 1 : 0);"]
+      interval: 3s
+      retries: 40
