@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<title>দোকানবন্ধু এআই: বক্তা S3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 14mm 13mm; }
+  body { font-family: "Noto Sans Bengali", "Nirmala UI", "Vrinda", sans-serif; font-size: 11.5pt; line-height: 1.45;
+         color: #111; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 2mm; }
+  .who { font-size: 12pt; margin: 0 0 3mm; }
+  .rules { border: 1px solid #999; border-radius: 3mm; padding: 2.5mm 4mm; margin: 0 0 4mm; }
+  .rules ol { margin: 0; padding-left: 5mm; }
+  .rules li { margin: 0.6mm 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #888; padding: 1.6mm 2mm; vertical-align: top; text-align: left; }
+  th { background: #eee; font-size: 10pt; }
+  tr { break-inside: avoid; }
+  .n { width: 8mm; text-align: right; }
+  .id { width: 15mm; font-family: Consolas, monospace; font-size: 10pt; }
+  .box { width: 12mm; }
+</style>
+</head>
+<body>
+  <h1>দোকানবন্ধু এআই: ভয়েস রেকর্ডিংয়ের কার্ড</h1>
+  <p class="who">বক্তা <b>S3</b> · মোট ৪০টি কার্ড · যেকোনো জায়গায় রেকর্ড করুন, যেখানে স্বাভাবিকভাবে কথা বলা যায়।</p>
+  <div class="rules">
+    <ol>
+      <li>রেকর্ড করার আগে সম্মতিপত্রে সই করুন।</li>
+      <li>প্রতিটি কার্ড পড়ুন, তারপর দোকানে যেভাবে বলেন সেভাবে <b>নিজের ভাষায়</b> বলুন। কার্ডটা হুবহু পড়বেন না।</li>
+      <li>প্রতিটি কার্ডের জন্য একটি আলাদা রেকর্ডিং। রেকর্ডিংয়ে শুধু কাজের কথাটা বলুন, কার্ডের নম্বর বা কোড বলবেন না।</li>
+      <li>রেকর্ডিংয়ের নাম দিন কার্ডের কোড দিয়ে, যেমন <b>v-042</b>। নাম দিতে না পারলে এই তালিকার ক্রমেই রেকর্ড করুন; কোনোটা বাদ পড়লে ✓ ঘরে দাগ দিন।</li>
+      <li>ভুল হলে ওই কার্ড আবার রেকর্ড করুন; শেষেরটা রাখা হবে।</li>
+      <li>বন্ধনীর ভেতরের কথা (যেমন "শুধু 'রহিম' বলবেন") নির্দেশনা, বলবেন না। "মালিক হিসেবে" লেখা কার্ড দোকানের মালিকের মতো বলুন।</li>
+      <li>ফোনের রেকর্ডারের মান সবচেয়ে বেশি রাখুন, আওয়াজ কমানোর কোনো সেটিং চালু রাখবেন না (iPhone-এ Voice Memos, Audio Quality: Lossless)।</li>
+    </ol>
+  </div>
+  <table>
+    <thead>
+      <tr><th class="n">ক্রম</th><th class="id">কোড</th><th>কাজ</th><th class="box">✓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="n">১</td>
+        <td class="id">v-175</td>
+        <td>জিজ্ঞেস করুন হর্ন সেটের নোটে কী লেখা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২</td>
+        <td class="id">v-105</td>
+        <td>জিজ্ঞেস করুন শফিকুল ইসলামের ফোন নম্বর</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩</td>
+        <td class="id">v-176</td>
+        <td>একজন স্টাফের বেতন কত জিজ্ঞেস করুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৪</td>
+        <td class="id">v-117</td>
+        <td>লিখে রাখুন জাপান অটো পার্টস ইমপোর্টার থেকে চারটা হায়েস ২০১৩-এর পেছনের ব্রেক শু এসেছে, প্রতিটা ১,৮২০ টাকা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৫</td>
+        <td class="id">v-114</td>
+        <td>মালিক হিসেবে: DNSP-0199 পার্টের খুচরা দাম ১,৩০০ টাকা করুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৬</td>
+        <td class="id">v-106</td>
+        <td>জিজ্ঞেস করুন LOC-RAD-1061 পার্টটা কোন কোন গাড়িতে লাগে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৭</td>
+        <td class="id">v-196</td>
+        <td>সব কাস্টমারকে এসএমএস পাঠাতে বলুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৮</td>
+        <td class="id">v-126</td>
+        <td>লিখে রাখুন বিসমিল্লাহ মোটরস নগদে ১৫,০০০ টাকা দিয়েছে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৯</td>
+        <td class="id">v-045</td>
+        <td>জিজ্ঞেস করুন এলিয়ন ২০১২-এর সেলফ মোটর আছে কি না</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১০</td>
+        <td class="id">v-125</td>
+        <td>নতুন সাপ্লায়ার যোগ করুন: গুলিস্তান অটো সাপ্লাই (ফোন নম্বর বলবেন না, জিজ্ঞেস করলে লেখা হবে)</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১১</td>
+        <td class="id">v-195</td>
+        <td>হর্ন সেটের নোটে যা লেখা সেটা করতে বলুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১২</td>
+        <td class="id">v-046</td>
+        <td>জিজ্ঞেস করুন গ্রেস ২০২০-এর সামনের শক অ্যাবজর্বারের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৩</td>
+        <td class="id">v-034</td>
+        <td>জিজ্ঞেস করুন প্রোবক্স ২০০২-এর ওয়াটার পাম্প কোন তাকে রাখা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৪</td>
+        <td class="id">v-057</td>
+        <td>জিজ্ঞেস করুন NGK-0108 নম্বরের প্লাগের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৫</td>
+        <td class="id">v-027</td>
+        <td>জিজ্ঞেস করুন ক্যারাভান ২০০৭-এর ক্লাচ প্লেটের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৬</td>
+        <td class="id">v-087</td>
+        <td>জিজ্ঞেস করুন দোকানের মোট মালের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৭</td>
+        <td class="id">v-024</td>
+        <td>জিজ্ঞেস করুন করোলা ২০০২-এর ওয়াটার পাম্প কোন তাকে রাখা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৮</td>
+        <td class="id">v-036</td>
+        <td>জিজ্ঞেস করুন সুইফট ২০১০-এর হেডলাইট কোন তাকে রাখা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">১৯</td>
+        <td class="id">v-054</td>
+        <td>জিজ্ঞেস করুন KYB-300115 নম্বরের শক অ্যাবজর্বারের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২০</td>
+        <td class="id">v-083</td>
+        <td>জিজ্ঞেস করুন কোন কোন মাল কমে গেছে, অর্ডার দিতে হবে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২১</td>
+        <td class="id">v-093</td>
+        <td>রহিমের বাকির সীমা জিজ্ঞেস করুন (শুধু 'রহিম' বলবেন)</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২২</td>
+        <td class="id">v-099</td>
+        <td>জিজ্ঞেস করুন A-1 তাকে কী কী মাল আছে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৩</td>
+        <td class="id">v-156</td>
+        <td>শাপলা গ্যারেজকে চারটা নোয়ার এসি ফিল্টার নগদে বিক্রি করুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৪</td>
+        <td class="id">v-166</td>
+        <td>রহিমকে চারটা নোয়া ২০১৮-এর এসি ফিল্টার বাকিতে বিক্রি করুন (শুধু 'রহিম' বলবেন)</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৫</td>
+        <td class="id">v-154</td>
+        <td>লিখে রাখুন উত্তরা অটো সলিউশন নগদে ৫,০০০ টাকা দিয়েছে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৬</td>
+        <td class="id">v-165</td>
+        <td>লিখে রাখুন রহিম বিকাশে ৩,৫০০ টাকা দিয়েছে (শুধু 'রহিম' বলবেন)</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৭</td>
+        <td class="id">v-148</td>
+        <td>লিখে রাখুন বংশাল মোটর সাপ্লাই থেকে ছয়টা ল্যান্সার ২০১৬-এর সামনের ব্রেক প্যাড এসেছে, প্রতিটা ১,৬৭০ টাকা</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৮</td>
+        <td class="id">v-134</td>
+        <td>মালিক হিসেবে: মদিনা অটো ওয়ার্কসকে চারটা এক্সিও ২০১৭-এর ডান দিকের হেডলাইট প্রতিটা ৫,৮৫০ টাকা দরে নগদে বিক্রি করুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">২৯</td>
+        <td class="id">v-185</td>
+        <td>সহকারীকে ৫,০০০ টাকা ধার দিতে বলুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩০</td>
+        <td class="id">v-144</td>
+        <td>রহিমকে একটা ফিল্ডার ২০১০-এর সামনের ব্রেক প্যাড বাকিতে বিক্রি করুন (শুধু 'রহিম' বলবেন)</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩১</td>
+        <td class="id">v-137</td>
+        <td>বিসমিল্লাহ মোটরসকে দুইটা নোয়ার জেনুইন সামনের ব্রেক প্যাড বাকিতে বিক্রি করুন</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩২</td>
+        <td class="id">v-186</td>
+        <td>একজন ভালো মেকানিকের নম্বর চান</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৩</td>
+        <td class="id">v-066</td>
+        <td>জিজ্ঞেস করুন Akebono-এর ব্রেক প্যাড নোয়া ২০১৩-এ লাগবে কি না</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৪</td>
+        <td class="id">v-064</td>
+        <td>জিজ্ঞেস করুন Denso-এর ইরিডিয়াম প্লাগ হ্যারিয়ার ২০১৭-এ লাগবে কি না</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৫</td>
+        <td class="id">v-005</td>
+        <td>জিজ্ঞেস করুন এক্সিওর রেডিয়েটর ক্যাপের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৬</td>
+        <td class="id">v-074</td>
+        <td>জিজ্ঞেস করুন DNAI-0150 পার্টটা কোন কোন গাড়িতে লাগে</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৭</td>
+        <td class="id">v-006</td>
+        <td>জিজ্ঞেস করুন ফিল্ডারের পেছনের ব্রেক শুর দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৮</td>
+        <td class="id">v-077</td>
+        <td>জিজ্ঞেস করুন নিউ ঢাকা গ্যারেজের ফোন নম্বর</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৩৯</td>
+        <td class="id">v-016</td>
+        <td>জিজ্ঞেস করুন ফিল্ডারের টাইমিং চেইন কিটের দাম কত</td>
+        <td class="box"></td>
+      </tr>
+      <tr>
+        <td class="n">৪০</td>
+        <td class="id">v-014</td>
+        <td>জিজ্ঞেস করুন প্রোবক্স ২০১০-এর ক্লাচ প্লেট আছে কি না</td>
+        <td class="box"></td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

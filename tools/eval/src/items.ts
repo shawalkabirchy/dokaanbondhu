@@ -52,9 +52,13 @@ export const itemSchema = z.object({
   audio: z.string().optional(),
   reference_transcript: z.string().optional(),
   task_card: z.string(),
+  /** The card in Bangla: what the speaker reads (D84). */
+  task_card_bn: z.string().optional(),
   expected: z.union([lookup, write, mustNot, read]),
   script: z.record(z.string(), z.union([z.string(), z.number()])).default({}),
   needs_question: z.boolean().optional(),
+  /** A voice item's speaker, S1 to S5; their cards are on their sheet (D184). */
+  speaker: z.string().nullable().optional(),
 });
 export type Item = z.infer<typeof itemSchema>;
 export type LookupExpected = z.infer<typeof lookup>;

@@ -15,6 +15,7 @@ import {
 } from "./clips";
 import { loadItems, type Item } from "./items";
 import { runItems, type LoadClip, type RunState } from "./run";
+import { cardsMarkdown, SPEAKERS, speakerSheet } from "./cards";
 import { buildReport, renderMarkdown, scoreItem } from "./score";
 import { Session, type EvalEnv } from "./session";
 
@@ -24,6 +25,8 @@ import { Session, type EvalEnv } from "./session";
 // npm run eval -- score [--run <id>]
 // npm run eval -- say --file <audio file> [--as owner|staff]   one spoken question from a file, printed (a check)
 // npm run eval -- clips [--since yyyy-mm-dd]   the test shop's kept voice clips replayed and scored (D149)
+// npm run eval -- cards   task-cards.md and the speakers' printable sheets (sheets/S1.html to S5.html), from items.jsonl
+//                         (D184); then run Prettier on task-cards.md
 // The held-out split is for the final run only (build step 9); the default is the open split. Voice recordings are
 // read from the private recordings bucket with the project's secret key and converted with ffmpeg (spec 18.4).
 
@@ -93,8 +96,22 @@ async function main() {
     print(`report: ${writeReport(all, state)}`);
     return;
   }
+  if (command === "cards") {
+    const today = new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "Asia/Dhaka",
+    });
+    writeFileSync(join(root, "task-cards.md"), cardsMarkdown(all, today));
+    mkdirSync(join(root, "sheets"), { recursive: true });
+    for (const speaker of SPEAKERS)
+      writeFileSync(join(root, "sheets", `${speaker}.html`), speakerSheet(all, speaker));
+    print(`written: task-cards.md and sheets/${SPEAKERS.join(", ")}.html`);
+    return;
+  }
   if (command !== "run" && command !== "say" && command !== "clips")
-    throw new Error(`unknown command ${command}; use run, score, say or clips`);
+    throw new Error(`unknown command ${command}; use run, score, say, clips or cards`);
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {

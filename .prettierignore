@@ -1,2 +1,5 @@
 package-lock.json
 packages/platform-db/migrations/meta/
+
+# Made by npm run eval -- cards (D184)
+tools/eval/sheets/
