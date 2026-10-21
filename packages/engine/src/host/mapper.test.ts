@@ -93,6 +93,27 @@ const good = JSON.stringify({
 });
 
 describe("schema mapper (spec 11.3)", () => {
+  it("hints an app's rates as money, but not a tax or discount rate (D181)", () => {
+    const table = {
+      name: "item_prices",
+      columns: ["sale_rate", "dealer_rate", "mrp", "tax_rate", "discount_rate"].map((name) => ({
+        name,
+        dataType: "decimal",
+        nullable: true,
+        primaryKey: false,
+        references: null,
+      })),
+      samples: [],
+    } as unknown as Parameters<typeof columnHint>[0];
+    expect(table.columns.map((column) => columnHint(table, column))).toEqual([
+      "money",
+      "money",
+      "money",
+      null,
+      null,
+    ]);
+  });
+
   it("hints money, quantities, links, soft deletes and active flags from names", () => {
     const [items, stock] = tables;
     const hint = (table: IntrospectedTable, name: string) =>

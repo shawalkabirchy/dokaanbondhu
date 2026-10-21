@@ -95,8 +95,13 @@ export interface ReportInput {
 
 export async function getReport(input: ReportInput): Promise<ReportResult> {
   const { name, from, to } = input;
+  // The app's own figure when it has one (D180); a call that fails falls back to the formula or the app (D181).
   if (input.hostReports.includes(name) && input.callHost) {
-    return { kind: "figure", name, taka: await input.callHost(name, from, to), from, to, source: "host" };
+    try {
+      return { kind: "figure", name, taka: await input.callHost(name, from, to), from, to, source: "host" };
+    } catch {
+      // the fallbacks below
+    }
   }
   const formula = input.formulas.find((candidate) => candidate.name === name && candidate.confirmed);
   if (

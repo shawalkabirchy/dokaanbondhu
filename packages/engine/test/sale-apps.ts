@@ -54,6 +54,8 @@ export interface Shop {
   sales?: ShopSale[];
   /** Rahim Motors' due, when a test reads it. */
   customerDue?: number;
+  /** Each part's stock, when a test's app sells from it (D181); four sets by default. */
+  stock?: Record<string, number>;
   /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
   customerTypes?: string[];
 }
@@ -167,6 +169,10 @@ export interface Api {
   staffPriceOverride?: boolean;
   /** An app whose sale takes no unit price (D177). */
   noUnitPrice?: boolean;
+  /** Another app's writes in place of GearGrid's, as setup imports them (the stub host, D181). */
+  writes?: WriteHost;
+  /** The user's name, for an app with an acting-user header. */
+  actingUser?: string;
 }
 
 /** The app's new fitment as GearGrid answers it (D172). */
@@ -362,7 +368,13 @@ function runner(shop: Shop) {
           })),
       );
     if (query.text.includes('"stock_levels"'))
-      return parts.map((part) => ({ part_id: part.id, stock: "4", racks: ["B-3"] }));
+      return parts.map((part) => ({
+        part_id: part.id,
+        stock: String(shop.stock?.[part.id] ?? 4),
+        // as the stock check after a write reads it (D181)
+        quantity: String(shop.stock?.[part.id] ?? 4),
+        racks: ["B-3"],
+      }));
     if (query.text.includes('"retail_price"'))
       return parts.map((part) => ({ part_id: part.id, retail_price: "1600", garage_price: "1500" }));
     return [];
@@ -417,7 +429,7 @@ export function connect(shop: Shop, api: Api = {}) {
       rackExtra: new Map(),
       formulas: [],
       hostReports: [],
-      writes: salesApi(shop, calls, wakes, api),
+      writes: api.writes ?? salesApi(shop, calls, wakes, api),
     },
     now: () => NOW,
     newId: () => `id-${++id}`,
@@ -425,6 +437,7 @@ export function connect(shop: Shop, api: Api = {}) {
     shopWords: [],
     role: api.role ?? "staff",
     staffPriceOverride: api.staffPriceOverride ?? false,
+    ...(api.actingUser ? { actingUser: api.actingUser } : {}),
   });
   /** One turn; an answer needs no LLM, so a request brings the one tool call its script names. */
   async function say(state: TurnState, input: Input, steps: Step[] = []) {
@@ -446,6 +459,7 @@ export function connect(shop: Shop, api: Api = {}) {
       found: outcome.trace.lookups.at(-1)?.parts.flat() ?? [],
       statuses: events.flatMap((event) => (event.type === "status" ? [event.label_key] : [])),
       results: events.flatMap((event) => (event.type === "action_result" ? [event.status] : [])),
+      undoable: events.flatMap((event) => (event.type === "action_result" ? [event.undo_available] : [])),
       added: outcome.added,
       state: outcome.state,
     };

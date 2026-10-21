@@ -62,7 +62,13 @@ export function columnHint(
   if (name === "status" && table.samples.some((row) => /void|cancel|revers/i.test(row[column.name] ?? ""))) {
     return "status with void or reversed rows";
   }
-  if (numeric && /(price|cost|total|paid|due|amount|balance|limit|payable)/.test(name)) return "money";
+  // An app's "rate" is its price (sale_rate, dealer_rate; shop B, D181), but never a tax or discount rate.
+  if (
+    numeric &&
+    /(price|cost|total|paid|due|amount|balance|limit|payable|rate|mrp)/.test(name) &&
+    !/(tax|vat|discount|percent|pct)/.test(name)
+  )
+    return "money";
   if (numeric && /(qty|quantity|stock|reorder)/.test(name)) return "quantity";
   return null;
 }

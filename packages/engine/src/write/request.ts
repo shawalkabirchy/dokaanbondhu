@@ -400,4 +400,4 @@ export function refusalOf(response: HostResponse, features: Json): string {
   return refusalText(response.status);
 }
 
-export { numberOf };
+export { numberOf, find as findField };

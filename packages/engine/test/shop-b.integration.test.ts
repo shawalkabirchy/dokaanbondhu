@@ -18,6 +18,7 @@ import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "
 import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
 import { parsedFitments } from "../src/host/fitment-text";
 import { introspect } from "../src/host/introspect";
+import { columnHint, proposeSchemaMap } from "../src/host/mapper";
 import { paikariOptions } from "../src/host/paikari";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
@@ -95,6 +96,53 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       column: "item_id",
     });
     expect(tables.find((table) => table.name === "items")!.samples.length).toBe(5);
+  });
+
+  // D180, D181: shop B is the renamed host. The schema mapper's own name hints and checks run on its real tables.
+  it("gives shop B's columns the mapper's hints: money in its rates, quantities, links, soft deletes (D181)", async () => {
+    const tables = await pools.readOnly(db, (run) => introspect(run, "mysql"));
+    const hint = (table: string, column: string) => {
+      const found = tables.find((candidate) => candidate.name === table)!;
+      return columnHint(
+        found,
+        found.columns.find((candidate) => candidate.name === column)!,
+      );
+    };
+    expect(hint("item_prices", "sale_rate")).toBe("money");
+    expect(hint("item_prices", "workshop_rate")).toBe("money");
+    expect(hint("item_prices", "dealer_rate")).toBe("money");
+    expect(hint("item_prices", "cost_rate")).toBe("money");
+    expect(hint("parties", "balance")).toBe("money");
+    expect(hint("branch_stock", "qty")).toBe("quantity");
+    expect(hint("items", "is_deleted")).toBe("soft delete: keep rows where empty");
+    expect(hint("branch_stock", "item_id")).toBe("link to items.item_id");
+  });
+
+  it("keeps every concept and field of shop B's map when the mapper checks it on the real tables (D181)", async () => {
+    const tables = await pools.readOnly(db, (run) => introspect(run, "mysql"));
+    // The model's answer is the map its owner confirmed; the mapper's checks must drop nothing of it.
+    const proposal = {
+      entities: Object.values(shopBMap.entities).map((entity) => ({
+        concept: entity.concept,
+        host_table: entity.hostTable,
+        joins: entity.joins.map((join) => ({ table: join.table, on: join.on })),
+        row_filters: entity.rowFilters,
+        fields: Object.values(entity.fields).map((field) => ({
+          concept_field: field.conceptField,
+          host_table: field.hostTable,
+          host_column: field.hostColumn,
+        })),
+      })),
+    };
+    const result = await proposeSchemaMap([scripted([{ text: JSON.stringify(proposal) }])], tables);
+    expect(result.warnings).toEqual([]);
+    expect(result.entities.map((entity) => entity.concept).sort()).toEqual(
+      Object.keys(shopBMap.entities).sort(),
+    );
+    for (const entity of result.entities)
+      expect(Object.keys(entity.fields).sort()).toEqual(
+        Object.keys(shopBMap.entities[entity.concept]!.fields).sort(),
+      );
   });
 
   it("reads the catalog without deleted rows: parts with their group, all their racks, cars and customers", () => {

@@ -72,6 +72,7 @@ import {
   TABLE_ROWS,
   type ReadQueryResult,
 } from "../host/read-query";
+import { hostReport, reportNamesOf, syncNote } from "../host/host-features";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
 import type { SchemaMap } from "../host/schema-map";
 import { llmStream, NothingLeftError, type ChatMessage, type LlmProvider, type ToolCall } from "../providers";
@@ -461,7 +462,11 @@ function readAnswer(result: ReadQueryResult): string {
 function templateAnswer(facts: Facts): string {
   if (facts.report) {
     if (facts.report.kind === "see_in_app") return SEE_IN_APP;
-    return `স্টকের মোট দাম ${formatTaka(facts.report.taka)} টাকা।`;
+    // Each report its own sentence: an app's own profit or cash figure, or the stock value (D181).
+    const taka = formatTaka(facts.report.taka);
+    if (facts.report.name === "profit_loss") return `লাভ ${taka} টাকা।`;
+    if (facts.report.name === "cash_book") return `ক্যাশে ${taka} টাকা।`;
+    return `স্টকের মোট দাম ${taka} টাকা।`;
   }
   if (facts.parts) {
     const { result, context } = facts.parts;
@@ -1287,7 +1292,13 @@ export async function runTurn(
           map: deps.host.map,
           run: deps.host.run,
           formulas: deps.host.formulas,
-          hostReports: deps.host.hostReports,
+          // The app's own reports when its feature list names them (D180).
+          hostReports: deps.host.hostReports.length
+            ? deps.host.hostReports
+            : reportNamesOf(deps.host.writes?.features),
+          ...(deps.host.writes
+            ? { callHost: (report, from, to) => hostReport(deps.host.writes!, report, from, to) }
+            : {}),
         });
         facts.report = result;
         record(result.kind);
@@ -1850,6 +1861,17 @@ export async function runTurn(
     } else {
       reply = facts.parts || facts.read || facts.report ? template : request ? helpAnswer() : ASK_AGAIN;
     }
+  }
+
+  // An offline-first app whose phones last synced long ago: a read answer says how old its figures are (D181).
+  if (
+    state.state === "RESPONDING" &&
+    !final &&
+    (facts.parts || facts.read || facts.report?.kind === "figure") &&
+    deps.host.writes
+  ) {
+    const note = await syncNote(deps.host.writes, deps.now());
+    if (note) reply = `${reply} ${note}`;
   }
 
   const sentences = splitSentences(reply);
