@@ -1,5 +1,5 @@
 import { asciiDigits, factsIn, normalize, SEE_IN_APP } from "@dokaanbondhu/core";
-import type { Item, LookupExpected, MustNotExpected, ReadExpected } from "./items";
+import type { Item, LookupExpected, MustNotExpected, ReadExpected, WriteExpected } from "./items";
 
 // The scorer (spec 18.4; architecture 11.2): correct action, exact part after clarification, questions per item, the
 // zero rules and latency medians, per channel and split, per kind, and per writing style of the chat items (D96).
@@ -26,6 +26,22 @@ export interface Trace {
   grounding_failures: number;
   llm_calls: number;
   fallbacks: string[];
+  /** An action put on the Yes/No sheet: what it would save (the engine's ActionTrace, D185). */
+  action?: ActionTrace;
+}
+
+export interface ActionTrace {
+  capability: string;
+  template: string;
+  customer: string | null;
+  supplier: string | null;
+  new_party: { name: string; type: string | null; phone: string | null } | null;
+  lines: { part_numbers: string[]; quantity: number }[];
+  parts: string[][];
+  vehicle: { model: string; year_from: number } | null;
+  total: number | null;
+  paid: number;
+  request: { method: string; path: string; body: unknown };
 }
 
 export interface TableRecord {
@@ -49,6 +65,12 @@ export interface TurnRecord {
   transcript?: string;
   firstAudioMs?: number | null;
   timings?: Record<string, number>;
+  /** A turn the runner sent with the sheet's buttons: its Yes or No, or the Undo after it. */
+  kind?: "decision" | "undo";
+  /** The action the turn put on a Yes/No sheet. */
+  confirmId?: string;
+  /** What became of an action in this turn. */
+  actionResult?: { status: "done" | "failed" | "review" | "cancelled"; undoAvailable: boolean };
 }
 
 export interface ItemResult {
@@ -58,6 +80,8 @@ export interface ItemResult {
   turns: TurnRecord[];
   /** Questions answered "I don't know" because the script had no answer: each is unnecessary. */
   unscripted: number;
+  /** A saved write: whether it was undone again, so the next items see the data as seeded. */
+  undone?: boolean;
 }
 
 export interface ItemScore {
@@ -80,9 +104,6 @@ export interface ItemScore {
   notes: string[];
 }
 
-/** The read tools; any other tool is an action (a write). */
-const READ_TOOLS = new Set(["find_parts", "run_read_query", "get_report", "resolve_customer", "ask_user"]);
-
 const same = (a: unknown, b: unknown) =>
   String(a ?? "")
     .trim()
@@ -97,8 +118,125 @@ export const partKey = (value: string) =>
     .replace(/[\s\-_./]/g, "")
     .toUpperCase();
 
-function toolCalls(result: ItemResult) {
-  return result.turns.flatMap((turn) => turn.trace?.tool_calls ?? []);
+/** The action the item put on a Yes/No sheet last, if any. */
+const prepared = (result: ItemResult) =>
+  result.turns.flatMap((turn) => (turn.trace?.action ? [turn.trace.action] : [])).at(-1);
+
+/** A name as written, without case, spaces or marks; Bangla letters kept. */
+const nameKey = (value: unknown) =>
+  asciiDigits(String(value ?? ""))
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0980-\u09ff]/g, "");
+
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let previous = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const current = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
+      previous = current;
+    }
+  }
+  return row[b.length]!;
+}
+
+/** The same name, allowing a letter or two as speech writes it ("Al-Amin Auto Garage" = "alamin auto garage"). */
+export function sameName(said: unknown, ...expected: unknown[]): boolean {
+  const key = nameKey(said);
+  if (!key) return false;
+  return expected.some((value) => {
+    const want = nameKey(value);
+    return want !== "" && (key === want || editDistance(key, want) <= Math.floor(want.length / 8));
+  });
+}
+
+/** Every leaf of a request body, with the key it sits under. */
+function leaves(node: unknown, key = ""): { key: string; value: unknown }[] {
+  if (Array.isArray(node)) return node.flatMap((child) => leaves(child, key));
+  if (node && typeof node === "object")
+    return Object.entries(node).flatMap(([child, value]) => leaves(value, child));
+  return [{ key, value: node }];
+}
+
+/** Whether the action on the sheet is the item's, with every slot it names. */
+export function writeMatches(expected: WriteExpected, action: ActionTrace, notes: string[]): boolean {
+  const slots = (expected.slots ?? {}) as Record<string, unknown>;
+  let ok = true;
+  const check = (good: boolean, note: string) => {
+    if (!good) {
+      ok = false;
+      notes.push(note);
+    }
+  };
+  const body = leaves(action.request.body);
+  const keyed = (pattern: RegExp, value: unknown) =>
+    body.some((leaf) => pattern.test(leaf.key) && Number(leaf.value) === Number(value));
+  const carries = (value: unknown) =>
+    body.some((leaf) => String(leaf.value ?? "").toLowerCase() === String(value).toLowerCase());
+  const quantity = action.lines[0]?.quantity;
+  check(action.template === expected.action, `action ${action.template}, not ${expected.action}`);
+  if (expected.part_key) {
+    const numbers = [...action.lines.map((line) => line.part_numbers), ...action.parts];
+    const key = partKey(expected.part_key);
+    check(
+      numbers.some((list) => list.some((number) => partKey(number) === key)),
+      `part ${expected.part_key} not on the sheet`,
+    );
+  }
+  const saleRef = slots.sale_ref as { customer?: string } | undefined;
+  const customer = slots.customer ?? saleRef?.customer;
+  if (customer) check(sameName(action.customer, customer), `customer ${action.customer}, not ${customer}`);
+  if (slots.supplier)
+    check(sameName(action.supplier, slots.supplier), `supplier ${action.supplier}, not ${slots.supplier}`);
+  if (slots.quantity !== undefined)
+    check(quantity === slots.quantity, `quantity ${quantity}, not ${slots.quantity}`);
+  if (slots.payment === "due") check(action.paid === 0, `paid ${action.paid}, not on credit`);
+  else if (slots.payment)
+    check(action.paid > 0 && carries(slots.payment), `not paid by ${slots.payment} (paid ${action.paid})`);
+  if (slots.method) check(carries(slots.method), `method not ${slots.method}`);
+  if (slots.amount !== undefined)
+    check(action.paid === slots.amount || keyed(/amount/i, slots.amount), `amount not ${slots.amount}`);
+  if (slots.unit_price !== undefined)
+    check(
+      keyed(/price/i, slots.unit_price) ||
+        (quantity !== undefined && action.total === Number(slots.unit_price) * quantity),
+      `price not ${slots.unit_price} each (total ${action.total})`,
+    );
+  if (slots.unit_cost !== undefined)
+    check(keyed(/cost/i, slots.unit_cost), `cost not ${slots.unit_cost} each`);
+  const prices = slots.prices as Record<string, number> | undefined;
+  for (const [level, value] of Object.entries(prices ?? {}))
+    check(
+      keyed(level === "retail" ? /retail/i : /garage|wholesale|paikari|trade/i, value),
+      `${level} price not ${value}`,
+    );
+  const vehicle = slots.vehicle as { model: string; year: number } | undefined;
+  if (vehicle)
+    check(
+      sameName(action.vehicle?.model, vehicle.model) && action.vehicle?.year_from === vehicle.year,
+      `car ${action.vehicle?.model ?? "none"} ${action.vehicle?.year_from ?? ""}, not ${vehicle.model} ${vehicle.year}`,
+    );
+  if (slots.name)
+    check(
+      sameName(action.new_party?.name, slots.name, slots.name_bn),
+      `name ${action.new_party?.name ?? "none"}, not ${slots.name}`,
+    );
+  if (slots.party_type)
+    check(
+      same(action.new_party?.type, slots.party_type) || carries(slots.party_type),
+      `type ${action.new_party?.type ?? "none"}, not ${slots.party_type}`,
+    );
+  if (slots.phone) {
+    const digits = (value: unknown) => asciiDigits(String(value ?? "")).replace(/\D/g, "");
+    const phone = digits(slots.phone);
+    check(
+      digits(action.new_party?.phone) === phone || body.some((leaf) => digits(leaf.value) === phone),
+      `phone not ${slots.phone}`,
+    );
+  }
+  return ok;
 }
 
 function lookups(result: ItemResult) {
@@ -120,7 +258,8 @@ function shown(result: ItemResult): { text: string; numbers: Set<string>; rows: 
           if (cell === null) return;
           const kind = table.columns[index]?.kind;
           if (typeof cell === "number") {
-            numbers.add(String(kind === "money" ? Math.round(cell / 100) : cell));
+            // Every number as it is: money cells are whole taka (D110), like the money in the text.
+            numbers.add(String(kind === "money" ? Math.round(cell) : cell));
           } else {
             texts.push(cell);
             for (const number of factsIn(cell).numbers) numbers.add(number);
@@ -193,10 +332,18 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
       notes: [result.reason ?? result.status],
     };
   }
-  const actions = toolCalls(result).filter((call) => !READ_TOOLS.has(call.name));
-  // Zero rule 1: a write without confirmation. Writes come with step 5; until then any action is one.
-  if (actions.length)
-    zeroRules.push(`action without confirmation: ${actions.map((call) => call.name).join(", ")}`);
+  // Zero rule 1: a write saved without the user's yes. The runner says yes only on the sheet, so anything saved in
+  // another turn was saved without it.
+  const unconfirmed = result.turns.filter(
+    (turn) =>
+      turn.kind !== "decision" &&
+      turn.kind !== "undo" &&
+      (turn.actionResult?.status === "done" || turn.actionResult?.status === "review"),
+  );
+  if (unconfirmed.length) zeroRules.push(`action saved without confirmation (${unconfirmed.length})`);
+  // Any action put on a sheet: right only for a write item.
+  const action = prepared(result);
+  const acted = action !== undefined || unconfirmed.length > 0;
 
   let correct: boolean;
   let exactPart: boolean | null = null;
@@ -222,9 +369,9 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
       final?.result === "rows" &&
       final.parts.some((numbers) => numbers.some((number) => partKey(number) === partKey(expected.part_key)));
     if (final && !exactPart) notes.push(`part ${expected.part_key} not found (${final.result})`);
-    correct = matches && (params.part_number === undefined || exactPart) && actions.length === 0;
+    correct = matches && (params.part_number === undefined || exactPart) && !acted;
   } else if (item.kind === "other_read") {
-    correct = readAnswered(item.expected as ReadExpected, result, notes) && actions.length === 0;
+    correct = readAnswered(item.expected as ReadExpected, result, notes) && !acted;
   } else if (item.kind === "must_not_act") {
     const expected = item.expected as MustNotExpected;
     // Zero rule 2: an answer that asserts fitment not in the data (parts found for the car the item names).
@@ -239,10 +386,24 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
       );
       if (asserted) zeroRules.push("fitment asserted that is not in the data");
     }
-    correct = actions.length === 0 && zeroRules.length === 0;
+    if (action) notes.push(`put ${action.template} on a sheet`);
+    correct = !acted && zeroRules.length === 0;
   } else {
-    notes.push("writes are scored from step 5");
-    return { ...base, scored: false, correct: false, exactPart: null, zeroRules, notes };
+    // A write: the item's action on the sheet with every slot, saved on the runner's yes, and undone after.
+    const expected = item.expected as WriteExpected;
+    const decision = result.turns.find((turn) => turn.kind === "decision");
+    if (!action) notes.push("no action on a sheet");
+    const matches = action ? writeMatches(expected, action, notes) : false;
+    const saved = decision?.actionResult?.status === "done";
+    if (action && !saved) notes.push(`not saved: ${decision?.actionResult?.status ?? "no answer"}`);
+    if (expected.part_key && action) {
+      const key = partKey(expected.part_key);
+      exactPart = [...action.lines.map((line) => line.part_numbers), ...action.parts].some((list) =>
+        list.some((number) => partKey(number) === key),
+      );
+    }
+    if (result.undone === false) notes.push("not undone: reset the test shop before the next run");
+    correct = matches && saved && zeroRules.length === 0;
   }
   return { ...base, scored: true, correct, exactPart, zeroRules, notes };
 }

@@ -239,6 +239,70 @@ export interface TurnTrace {
   cleanup?: { heard: string; meant: string }[];
   /** LLM providers given up on, with the reason ("<id>: http 429"), so a run can stop at a daily limit. */
   fallbacks: string[];
+  /** An action put on the Yes/No sheet: what it would save, for the scorer (spec 18.4, D185). */
+  action?: ActionTrace;
+}
+
+export interface ActionTrace {
+  capability: string;
+  /** The template kind: sale, payment, stock_in, return, price_update, add_fitment, add_customer, add_supplier. */
+  template: string;
+  customer: string | null;
+  supplier: string | null;
+  new_party: { name: string; type: string | null; phone: string | null } | null;
+  /** The parts on the sheet, each with its quantity and its part numbers. */
+  lines: { part_numbers: string[]; quantity: number }[];
+  /** The parts and the car the request names by their IDs (a price change's part, a fitment's car). */
+  parts: string[][];
+  vehicle: { model: string; year_from: number } | null;
+  total: number | null;
+  paid: number;
+  request: { method: string; path: string; body: unknown };
+}
+
+/** Every string and number a request carries, in its path and body. */
+function requestValues(pending: PendingAction): Set<string> {
+  const values = new Set<string>(pending.request.path.split("/").filter(Boolean).map(decodeURIComponent));
+  const walk = (node: unknown) => {
+    if (typeof node === "string" || typeof node === "number") values.add(String(node));
+    else if (Array.isArray(node)) node.forEach(walk);
+    else if (node && typeof node === "object") Object.values(node).forEach(walk);
+  };
+  walk(pending.request.body);
+  return values;
+}
+
+/** What a waiting action would save, as the scorer reads it: names, part numbers and the car, not host IDs. */
+export function actionTrace(pending: PendingAction, capabilityName: string, catalog: Catalog): ActionTrace {
+  const { preview } = pending;
+  const values = requestValues(pending);
+  const numbersOf = (hostId: string) =>
+    catalog.parts.find((part) => part.hostId === hostId)?.partNumbers ?? [];
+  const vehicle = catalog.vehicles.find((item) => values.has(item.hostId));
+  return {
+    capability: capabilityName,
+    template: preview.template,
+    customer: preview.customer?.name ?? null,
+    supplier: preview.supplier?.name ?? null,
+    new_party: preview.newParty
+      ? { name: preview.newParty.name, type: preview.newParty.type, phone: preview.newParty.phone }
+      : null,
+    lines: preview.lines.map((line) => ({
+      part_numbers: numbersOf(line.hostPartId),
+      quantity: line.quantity,
+    })),
+    parts: catalog.parts.filter((part) => values.has(part.hostId)).map((part) => part.partNumbers),
+    vehicle: vehicle
+      ? { model: `${vehicle.make} ${vehicle.model}`.trim(), year_from: vehicle.yearFrom }
+      : null,
+    total: preview.total,
+    paid: preview.paid,
+    request: {
+      method: pending.request.method,
+      path: pending.request.path,
+      body: pending.request.body ?? null,
+    },
+  };
 }
 
 export interface TurnOutcome {
@@ -702,6 +766,9 @@ export async function runTurn(
     | null = null;
   const role = deps.role ?? "staff";
   const offered = offeredWrites(deps.host.writes, role);
+  /** A waiting action's capability, by name, for the trace. */
+  const capabilityName = (pending: PendingAction) =>
+    deps.host.writes?.capabilities.find((item) => item.id === pending.capabilityId)?.name ?? "";
   const actions: ActionRecord[] = [];
   const added: AddedRecord[] = [];
   // A write said as an instruction ("…বাকিতে দাও", "joma nao", "kinlam"): the matching capability, which the turn
@@ -1046,6 +1113,8 @@ export async function runTurn(
       frame.status = "confirming";
       renew(frame, now);
       state.action = step.action;
+      if (deps.evalMode)
+        trace.action = actionTrace(step.action, capabilityName(step.action), deps.host.catalog);
       actions.push({
         id: step.action.id,
         capabilityId: step.action.capabilityId,
@@ -1540,6 +1609,7 @@ export async function runTurn(
       tookStep(frame, await advanceWrite(frame, writeTurn(frame.request ?? text)));
     } else {
       state.action = pending;
+      if (deps.evalMode) trace.action = actionTrace(pending, capabilityName(pending), deps.host.catalog);
       emit({
         type: "confirm",
         action_id: pending.id,

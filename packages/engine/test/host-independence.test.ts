@@ -17,7 +17,12 @@ afterEach(async () => {
 });
 
 /** The stub host with these features, connected as setup leaves it: every write switched on. */
-async function stubShop(features: StubFeatures, state: StubState = {}, appFields: Partial<Shop> = {}) {
+async function stubShop(
+  features: StubFeatures,
+  state: StubState = {},
+  appFields: Partial<Shop> = {},
+  evalMode = false,
+) {
   const stub = await startStubHost(features, state);
   hosts.push(stub);
   const { document, path } = await fetchOpenApi(stub.connection);
@@ -30,7 +35,7 @@ async function stubShop(features: StubFeatures, state: StubState = {}, appFields
     for (const line of (body as { lines: { partId: string; qty: number }[] }).lines)
       app.stock[line.partId] = (app.stock[line.partId] ?? 4) - line.qty;
   };
-  const shop = connect(app, { writes, role: "owner", actingUser: "Test Staff" });
+  const shop = connect(app, { writes, role: "owner", actingUser: "Test Staff", evalMode });
   /** The calls to the app other than its document, by path. */
   const calls = (path: string) => stub.requests.filter((request) => request.path === path);
   return { stub, shop, calls, imported };
@@ -176,6 +181,34 @@ describe("a sale on an app named unlike GearGrid (D181)", () => {
     expect(sheet.asked).toBeUndefined();
     expect(calls("/orders").at(-1)!.body).not.toHaveProperty("payments");
   });
+});
+
+describe("the evaluation's trace of a prepared action (spec 18.4, D185)", () => {
+  it.each(STYLES)(
+    "names the action, the customer, the part's numbers and the quantity, not the app's IDs ($style)",
+    async (said) => {
+      const { shop } = await stubShop({}, {}, {}, true);
+      const sheet = await shop.say(fresh(), { text: said.sale }, saleCall(said.args));
+      expect(sheet.confirm).toBeDefined();
+      expect(sheet.trace.action).toMatchObject({
+        capability: "create_order",
+        template: "sale",
+        customer: "Rahim Motors",
+        supplier: null,
+        new_party: null,
+        lines: [{ part_numbers: ["PAD-NEW"], quantity: 2 }],
+        parts: [["PAD-NEW"]],
+        total: 3200,
+        paid: 0,
+        request: { method: "POST", path: "/orders", body: { customerId: "c1" } },
+      });
+      // Outside the evaluation, the trace carries no action.
+      const plain = await stubShop({});
+      expect(
+        (await plain.shop.say(fresh(), { text: said.sale }, saleCall(said.args))).trace.action,
+      ).toBeUndefined();
+    },
+  );
 });
 
 describe("a sale on an app that signs in with a session (D183)", () => {

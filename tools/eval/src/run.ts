@@ -70,7 +70,24 @@ export async function runChatItem(
       text = String(answer);
     }
   }
-  return { id: item.id, status: "done", turns, unscripted };
+  // A sheet: the runner says yes to a write item's (its script says so) and no to any other item's, as the user
+  // would on the app's buttons; a saved write is undone at once, so the next items see the data as seeded (D185).
+  const sheet = turns.at(-1);
+  let undone: boolean | undefined;
+  if (sheet?.state === "CONFIRMING" && sheet.confirmId) {
+    const yes = item.kind === "write" && item.script.confirm === "yes";
+    const decided = await session.decide(sheet.confirmId, yes ? "yes" : "no");
+    turns.push(decided);
+    const status = decided.actionResult?.status;
+    if (yes && (status === "done" || status === "review")) {
+      const reverted = decided.actionResult?.undoAvailable
+        ? await session.undo(sheet.confirmId, conversation)
+        : null;
+      if (reverted) turns.push(reverted);
+      undone = reverted?.actionResult?.status === "done";
+    }
+  }
+  return { id: item.id, status: "done", turns, unscripted, ...(undone !== undefined ? { undone } : {}) };
 }
 
 /** Why an item is not run now, or null to run it. */

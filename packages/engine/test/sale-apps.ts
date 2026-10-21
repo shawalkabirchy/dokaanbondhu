@@ -171,6 +171,8 @@ export interface Api {
   staffPriceOverride?: boolean;
   /** An app whose sale takes no unit price (D177). */
   noUnitPrice?: boolean;
+  /** Evaluation mode: the turn's trace, with the action a sheet would save (spec 18.4, D185). */
+  evalMode?: boolean;
   /** Another app's writes in place of GearGrid's, as setup imports them (the stub host, D181). */
   writes?: WriteHost;
   /** The user's name, for an app with an acting-user header. */
@@ -440,7 +442,7 @@ export function connect(shop: Shop, api: Api = {}) {
     },
     now: () => NOW,
     newId: () => `id-${++id}`,
-    evalMode: false,
+    evalMode: api.evalMode ?? false,
     shopWords: [],
     role: api.role ?? "staff",
     staffPriceOverride: api.staffPriceOverride ?? false,
@@ -469,6 +471,7 @@ export function connect(shop: Shop, api: Api = {}) {
       undoable: events.flatMap((event) => (event.type === "action_result" ? [event.undo_available] : [])),
       added: outcome.added,
       state: outcome.state,
+      trace: outcome.trace,
     };
   }
   /** The part the last dry run would sell. */

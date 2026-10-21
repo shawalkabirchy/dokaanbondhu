@@ -98,6 +98,20 @@ export class Session {
     return readTurn(response, text, started);
   }
 
+  /** The sheet's Yes or No (POST /actions/{id}/decision), as the app's buttons send it (spec 9.9). */
+  async decide(actionId: string, decision: "yes" | "no"): Promise<TurnRecord> {
+    const started = performance.now();
+    const response = await this.post(`/actions/${actionId}/decision`, { decision });
+    return { ...(await readTurn(response, decision, started)), kind: "decision" };
+  }
+
+  /** Undo, as the history's button sends it, from the action's own conversation (spec 11.9.1, D38). */
+  async undo(actionId: string, conversationId: string): Promise<TurnRecord> {
+    const started = performance.now();
+    const response = await this.post(`/actions/${actionId}/undo`, { conversation_id: conversationId });
+    return { ...(await readTurn(response, "undo", started)), kind: "undo" };
+  }
+
   /**
    * One spoken turn as the app sends it (spec 8.4, 18.4): 500 ms chunks of 16 kHz mono PCM, one every 500 ms (real
    * time), then finish; chunks the server reports missing are sent again once.
@@ -186,6 +200,10 @@ async function readTurn(response: Response, sent: string, started: number): Prom
     Extract<ReplyEvent, { type: "choices" }> | undefined;
   const transcript = events.find((event) => event.type === "transcript") as
     Extract<ReplyEvent, { type: "transcript" }> | undefined;
+  const confirm = events.find((event) => event.type === "confirm") as
+    Extract<ReplyEvent, { type: "confirm" }> | undefined;
+  const result = events.find((event) => event.type === "action_result") as
+    Extract<ReplyEvent, { type: "action_result" }> | undefined;
   const tables: TableRecord[] = events
     .filter((event): event is Extract<ReplyEvent, { type: "table" }> => event.type === "table")
     .map((table) => ({
@@ -212,5 +230,7 @@ async function readTurn(response: Response, sent: string, started: number): Prom
     firstTextMs,
     totalMs: Math.round(performance.now() - started),
     ...(transcript ? { transcript: transcript.text, firstAudioMs, timings: done?.timings_ms ?? {} } : {}),
+    ...(confirm ? { confirmId: confirm.action_id } : {}),
+    ...(result ? { actionResult: { status: result.status, undoAvailable: result.undo_available } } : {}),
   };
 }

@@ -1,7 +1,7 @@
 import { readReplyStream, type ActionsPage, type ReplyEvent } from "@dokaanbondhu/contracts";
 import { formatTaka } from "@dokaanbondhu/core";
 import { encryptSecret } from "@dokaanbondhu/engine/crypto";
-import { importOpenApi, saveImport } from "@dokaanbondhu/engine/host";
+import { HostPools, importOpenApi, saveImport } from "@dokaanbondhu/engine/host";
 import {
   actionLogs,
   capabilities,
@@ -14,12 +14,16 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { itemSchema } from "../../../tools/eval/src/items";
+import { scoreItem, type ActionTrace, type TurnRecord } from "../../../tools/eval/src/score";
 import {
   allLocal,
   chatCall,
   createHostShop,
   disableConnection,
+  EVAL_KEY,
   post,
+  readOnlyHost,
   token,
   urls,
   useTestEnvironment,
@@ -345,6 +349,110 @@ describe.skipIf(!allLocal || !apiLocal)("actions through the server", () => {
     expect((await undo(confirm.action_id)).reply).toMatch(/^আগের কাজটা ফিরিয়ে নেওয়া হয়েছে।/);
     expect(await due()).toBe(before);
   });
+
+  it.each(["Bangla", "Banglish"] as const)(
+    "in evaluation mode, traces the sale on the sheet as the evaluation scores it: right, saved on yes, undone (%s; D185)",
+    async (style) => {
+      const conversationId = await newConversation();
+      const before = await due();
+      llm.script.push({ calls: [{ name: "record_sale", arguments: saleArgs(style) }] });
+      const asked = await chatCall(
+        routes.chat.POST,
+        shop.owner.auth,
+        { conversation_id: conversationId, text: saleText[style] },
+        { "x-eval-key": EVAL_KEY },
+      );
+      const confirm = asked.events.find((event) => event.type === "confirm") as Extract<
+        ReplyEvent,
+        { type: "confirm" }
+      >;
+      const doneEvent = asked.events.find((event) => event.type === "done") as Extract<
+        ReplyEvent,
+        { type: "done" }
+      >;
+      const action = (doneEvent.trace as { action?: ActionTrace }).action!;
+      expect(action).toMatchObject({
+        capability: "record_sale",
+        template: "sale",
+        customer: "Rahim Motors",
+        supplier: null,
+        lines: [{ quantity: 2 }],
+        total: 3200,
+        paid: 0,
+        request: { method: "POST", path: "/api/v1/sales" },
+      });
+      // The part the sheet sells: the copy's aftermarket front pad for a 2014 Axio, by its main number.
+      const pools = new HostPools();
+      const [pad] = await pools
+        .readOnly(readOnlyHost(), (run) =>
+          run({
+            text: `select n.number from parts p
+              join part_numbers n on n.part_id = p.id and n.is_main
+              join fitments f on f.part_id = p.id join vehicles v on v.id = f.vehicle_id
+              where p.name_en = 'Front brake pad set' and p.quality = 'aftermarket' and v.model = 'Axio'
+                and v.year_from <= 2014 and coalesce(v.year_to, 9999) >= 2014`,
+            values: [],
+          }),
+        )
+        .finally(() => pools.closeAll());
+      const yes = await decide(confirm.action_id, "yes");
+      const undone = await undo(confirm.action_id);
+      expect(await due()).toBe(before);
+
+      // Scored as the evaluation's runner records the three turns.
+      const record = (events: ReplyEvent[], kind?: TurnRecord["kind"]): TurnRecord => {
+        const done = events.find((event) => event.type === "done") as
+          Extract<ReplyEvent, { type: "done" }> | undefined;
+        const result = events.find((event) => event.type === "action_result") as
+          Extract<ReplyEvent, { type: "action_result" }> | undefined;
+        const sheet = events.find((event) => event.type === "confirm") as
+          Extract<ReplyEvent, { type: "confirm" }> | undefined;
+        return {
+          sent: "",
+          reply: "",
+          state: done?.state ?? "UNKNOWN",
+          slot: null,
+          trace: (done?.trace as TurnRecord["trace"]) ?? null,
+          tables: [],
+          cards: 0,
+          errors: [],
+          firstTextMs: null,
+          totalMs: 0,
+          ...(kind ? { kind } : {}),
+          ...(sheet ? { confirmId: sheet.action_id } : {}),
+          ...(result
+            ? { actionResult: { status: result.status, undoAvailable: result.undo_available } }
+            : {}),
+        };
+      };
+      const item = itemSchema.parse({
+        id: "c-eval",
+        channel: "chat",
+        split: "open",
+        kind: "write",
+        task_card: "Sell 2 × aftermarket front brake pad for a 2014 Axio to Rahim Motors on credit",
+        text: saleText[style],
+        expected: {
+          action: "sale",
+          slots: { customer: "Rahim Motors", quantity: 2, payment: "due" },
+          part_key: String(pad!.number),
+        },
+        script: { confirm: "yes" },
+      });
+      const score = scoreItem(item, {
+        id: "c-eval",
+        status: "done",
+        turns: [record(asked.events), record(yes.events, "decision"), record(undone.events, "undo")],
+        unscripted: 0,
+        undone: true,
+      });
+      expect(score, JSON.stringify(score.notes)).toMatchObject({
+        correct: true,
+        exactPart: true,
+        zeroRules: [],
+      });
+    },
+  );
 
   it.each(["Bangla", "Banglish"] as const)(
     "no on the sheet cancels the sale and nothing is saved (%s)",
