@@ -113,12 +113,20 @@ export function rackText(row: PartRow): string | null {
 
 /** One kind: "জেনুইন ৩ সেট, ৪,৫০০ টাকা" (rack added by the caller when it differs); the brand when two kinds share
  * a quality, "নন-জেনুইন (Denso) ১০টা", so they can be told apart. */
-function kindText(row: PartRow, tier: PartsContext["tier"], withRack: boolean, withBrand = false): string {
+function kindText(
+  row: PartRow,
+  tier: PartsContext["tier"],
+  withRack: boolean,
+  withBrand = false,
+  withPosition = false,
+): string {
   const bits: string[] = [];
   const stock = stockText(row);
+  // Kinds that differ by side say their side, so two headlights are told apart (D186).
+  const position = withPosition && row.position ? banglaOf("position", row.position) : null;
   const quality = row.quality ? banglaOf("quality", row.quality) : null;
   const brand = withBrand && row.brand ? `(${row.brand})` : null;
-  const head = [quality, brand, stock].filter(Boolean).join(" ");
+  const head = [position, quality, brand, stock].filter(Boolean).join(" ");
   if (head) bits.push(head);
   const price = priceText(row, tier);
   if (price !== null && (row.stock ?? 1) > 0) bits.push(price);
@@ -157,6 +165,39 @@ function fromNameSentence(rows: PartRow[]): string {
 }
 
 /**
+ * A part found by its number alone (D186): the number and the part's name, then stock, price and rack as for any
+ * part, and the cars the app records it for, since "DNO2-0143 kon garir mal?" asks exactly that.
+ */
+export function numberAnswer(
+  rows: PartRow[],
+  number: string,
+  cars: { make: string; model: string; yearFrom: number; yearTo: number | null }[],
+  tier: PriceLevel,
+): string {
+  const row = rows[0];
+  const fits = cars.length
+    ? ` লাগে: ${cars
+        .slice(0, 6)
+        .map(
+          (car) =>
+            `${banglaOf("vehicle_model", `${car.make} ${car.model}`.trim())} ${yearText(car.yearFrom)}–${car.yearTo ? yearText(car.yearTo) : ""}`,
+        )
+        .join(", ")}${cars.length > 6 ? `, আরও ${banglaDigits(String(cars.length - 6))}টা গাড়ি` : ""}।`
+    : " কোন গাড়িতে লাগে, অ্যাপে লেখা নেই।";
+  if (!row) return `${number} পাওয়া যায়নি।`;
+  const name = [row.nameBn ?? row.name, row.quality ? banglaOf("quality", row.quality) : null]
+    .filter(Boolean)
+    .join(", ");
+  if (row.stock !== null && row.stock <= 0) return `${number} (${name}) এখন স্টকে নেই।${fits}`;
+  const parts = [
+    `${number} (${name}) ${stockText(row)} আছে`,
+    ...(priceText(row, tier) !== null ? [priceText(row, tier)!] : []),
+    ...(rackText(row) ? [`${rackText(row)} তাকে`] : []),
+  ];
+  return `${parts.join(", ")}।${fits}`;
+}
+
+/**
  * The parts answer (architecture, A.1): one kind in one sentence, several with "দুই রকম" and a shared rack. A position
  * not asked is said when every kind shares it (D120); the customer's rate is named when it was used (D119).
  */
@@ -182,7 +223,8 @@ export function partsAnswer(rows: PartRow[], asked: PartsContext, pairUsed: stri
   const sharedRack = racks.size === 1 ? [...racks][0] : null;
   const qualities = rows.map((row) => row.quality ?? "");
   const shared = (row: PartRow) => qualities.filter((quality) => quality === (row.quality ?? "")).length > 1;
-  const kinds = rows.map((row) => kindText(row, context.tier, !sharedRack, shared(row))).join("; ");
+  const sides = new Set(rows.map((row) => row.position ?? "")).size > 1;
+  const kinds = rows.map((row) => kindText(row, context.tier, !sharedRack, shared(row), sides)).join("; ");
   const both = rows.length === 2 ? "দুটোই" : "সবগুলো";
   const rack = sharedRack ? ` ${both} ${sharedRack} তাকে।` : "";
   return `${subject} ${kindsCount(rows.length)} আছে: ${kinds}।${rack}${rate}`;

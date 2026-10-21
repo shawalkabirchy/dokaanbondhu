@@ -38,6 +38,8 @@ export interface PartQuery {
   quality?: string;
   brand?: string;
   part_number?: string;
+  /** Only among these parts, with no car needed: a return's buyer's recent buys (D186). Never from the model. */
+  part_ids?: string[];
 }
 
 export interface FitmentExtra {
@@ -91,6 +93,9 @@ export type FindPartsResult =
       pairUsed: string | null;
       /** The asked quality or brand that none of these rows has: the answer says so, then lists them (D95). */
       unmet?: "quality" | "brand";
+      /** Found by its number alone: that number, and the cars the app records it for (D186). */
+      number?: string;
+      cars?: CatalogVehicle[];
     }
   | {
       kind: "ask";
@@ -358,6 +363,23 @@ function fitted(input: FindPartsInput): boolean {
   return hasField(input.map, "Fitment", "part_id") && hasField(input.map, "Fitment", "vehicle_id");
 }
 
+/** The cars the app records parts for, as the catalog has them, oldest model first (D186). */
+async function carsOf(input: FindPartsInput, partIds: string[]): Promise<CatalogVehicle[]> {
+  if (!fitted(input) || !partIds.length) return [];
+  const rows = await input.run(
+    buildQuery(input.map, {
+      from: { concept: "Fitment", alias: "f" },
+      select: [{ ref: { alias: "f", field: "vehicle_id" }, as: "fit_vehicle" }],
+      where: [{ ref: { alias: "f", field: "part_id" }, op: "in", values: partIds }],
+      limit: FETCH_LIMIT,
+    }),
+  );
+  const ids = new Set(rows.map((row) => String(row.fit_vehicle)));
+  return input.catalog.vehicles
+    .filter((vehicle) => ids.has(vehicle.hostId))
+    .sort((a, b) => `${a.make} ${a.model}`.localeCompare(`${b.make} ${b.model}`) || a.yearFrom - b.yearFrom);
+}
+
 /**
  * Owner-added and parsed fitments for the vehicle, as rows marked unverified unless the owner verified them; a fit
  * read only from the part's name or notes is marked so the answer can say it (D122).
@@ -574,12 +596,35 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
       return { kind: "none", resolved, closeVehicle: [], mentioned: ordered(itself).slice(0, ROW_LIMIT) };
     }
     const rows = await queryRows(input, ids, null);
-    return { kind: "rows", rows: ordered(rows).slice(0, ROW_LIMIT), resolved, pairUsed: null };
+    return {
+      kind: "rows",
+      rows: ordered(rows).slice(0, ROW_LIMIT),
+      resolved,
+      pairUsed: null,
+      number: match.exact,
+      cars: await carsOf(input, ids),
+    };
   }
 
   const type = understood("part_type", query.part_type, input, bold);
   if (type.unclear || !type.value) return { kind: "ask", slot: "part_type", options: type.options, resolved };
   resolved.partType = type.value;
+  // A return's part among what its buyer bought (D186): the sale names the part, so no car is asked.
+  if (query.part_ids && !query.vehicle) {
+    const among = new Set(query.part_ids);
+    const ids = partsOfType(type.value, catalog.parts, dictionary)
+      .map((part) => part.hostId)
+      .filter((id) => among.has(id));
+    for (const slot of ["position", "quality", "brand"] as const)
+      resolved[slot] = understood(slot, query[slot], input, bold).value;
+    const rows = ids.length ? await queryRows(input, ids, null) : [];
+    const fits = rows.filter((row) =>
+      (["position", "quality", "brand"] as const).every(
+        (slot) => !resolved[slot] || sameValue(slot, row[slot], resolved[slot], dictionary),
+      ),
+    );
+    return { kind: "rows", rows: ordered(fits).slice(0, ROW_LIMIT), resolved, pairUsed: null };
+  }
   const model = understood("vehicle_model", query.vehicle, input, bold);
   if (model.unclear || !model.value)
     return { kind: "ask", slot: "vehicle", options: model.options, resolved };

@@ -72,6 +72,14 @@ export const CANNOT_HELP = fn(
   { type: "object", properties: {}, additionalProperties: false },
 );
 
+/** How the database's dialect writes the shop's days, in Dhaka time (D186): the model wrote SQLite's date('now'). */
+const DAYS: Record<SchemaMap["dialect"], string> = {
+  postgres:
+    "The SQL is PostgreSQL. The shop's day is Dhaka's: a time column t is on yesterday when (t AT TIME ZONE 'Asia/Dhaka')::date = (now() AT TIME ZONE 'Asia/Dhaka')::date - 1, on today with - 0, in the last 7 days when t >= now() - interval '7 days'.",
+  mysql:
+    "The SQL is MySQL. A time column t is on yesterday when DATE(t) = CURDATE() - INTERVAL 1 DAY, on today when DATE(t) = CURDATE(), in the last 7 days when t >= NOW() - INTERVAL 7 DAY.",
+};
+
 /** run_read_query, described with the confirmed tables and columns the SQL may use. */
 export function readQueryTool(map: SchemaMap): ToolDef {
   const tables = new Map<string, Set<string>>();
@@ -105,7 +113,7 @@ export function readQueryTool(map: SchemaMap): ToolDef {
     .join("; ");
   return fn(
     "run_read_query",
-    `Answer any other question about this shop's own records (its customers and suppliers with their phones, dues, payables and limits; sales, payments, purchases, stock and low stock; which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you.`,
+    `Answer any other question about this shop's own records (its customers and suppliers with their phones, dues, payables and limits; sales, payments, purchases, stock and low stock; which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you. ${DAYS[map.dialect]}`,
     {
       type: "object",
       properties: { sql: { type: "string" }, purpose: { type: "string" } },

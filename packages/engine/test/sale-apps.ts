@@ -60,6 +60,8 @@ export interface Shop {
   customerTypes?: string[];
   /** What the app stores about Rahim Motors besides the phone: a price level, a type (D183). */
   customerAttrs?: Record<string, unknown>;
+  /** More customers beside Rahim Motors (a second Rahim, so "rahim" asks which, D186). */
+  moreCustomers?: Catalog["customers"];
 }
 
 /** The tests' now: 15 Oct 2026, noon in Dhaka. */
@@ -245,6 +247,7 @@ function returnAnswer(shop: Shop): ApiAnswer {
 
 const IDS: Record<string, string> = {
   record_sale: "sale",
+  receive_payment: "payment",
   stock_in: "stock",
   record_return: "return",
   update_price: "price",
@@ -324,6 +327,12 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
 function runner(shop: Shop) {
   const lists = (values: unknown[]) => values.map((value) => (Array.isArray(value) ? value.map(String) : []));
   return async (query: { text: string; values: unknown[] }) => {
+    // What a customer bought in the last 30 days, newest first (D186).
+    if (query.text.includes('"bought_part"'))
+      return (shop.sales ?? [])
+        .filter((sale) => sale.customerId !== null && query.values.includes(sale.customerId))
+        .sort((a, b) => a.daysAgo - b.daysAgo)
+        .map((sale) => ({ bought_part: sale.partId, time: new Date(NOW.getTime() - sale.daysAgo * DAY_MS) }));
     // The sale finder (D169): the sales of a part to a customer, or without one, newest first.
     if (query.text.includes('"sale_items"')) {
       const walkIn = query.text.includes('"customer_id" IS NULL');
@@ -355,6 +364,9 @@ function runner(shop: Shop) {
       return [{ due: String(shop.customerDue), balance: String(shop.customerDue) }];
     const [partIds = [], vehicleIds = []] = lists(query.values);
     const parts = shop.parts.filter((part) => partIds.includes(part.id));
+    // The cars a part is recorded for (D186).
+    if (query.text.includes('"fit_vehicle"'))
+      return parts.flatMap((part) => part.fits.map((vehicle) => ({ fit_vehicle: vehicle })));
     if (query.text.includes('"fitments"'))
       return parts.flatMap((part) =>
         part.fits
@@ -381,6 +393,17 @@ function runner(shop: Shop) {
       }));
     if (query.text.includes('"retail_price"'))
       return parts.map((part) => ({ part_id: part.id, retail_price: "1600", garage_price: "1500" }));
+    // The parts themselves, without a car: a part number's, or a return's among its buyer's buys (D186).
+    if (query.text.includes('AS "name"'))
+      return parts.map((part) => ({
+        part_id: part.id,
+        name: part.name,
+        name_bn: null,
+        quality: part.quality,
+        position: part.position,
+        unit: "set",
+        brand: part.brand,
+      }));
     return [];
   };
 }
@@ -404,6 +427,7 @@ function catalogOf(shop: Shop): Catalog {
         nameBn: "রহিম মোটরস",
         attrs: { phone: "01711000000", ...shop.customerAttrs },
       },
+      ...(shop.moreCustomers ?? []),
     ],
     suppliers: [{ hostId: "s1", name: "Nawabpur Auto Parts", nameBn: null, attrs: { phone: "01911000000" } }],
   };

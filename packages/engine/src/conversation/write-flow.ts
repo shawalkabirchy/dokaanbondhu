@@ -152,6 +152,8 @@ export interface WriteTurn {
   find: (query: PartQuery) => Promise<FindPartsResult>;
   /** A return's sale finder over the read path (D169); without it a return cannot find its sale. */
   sales?: (input: { customerId: string | null; partId: string }) => Promise<FoundSales | null>;
+  /** The parts a customer bought in the last 30 days, for a return (D186). */
+  bought?: (customerId: string) => Promise<string[]>;
   /**
    * The query completed from the request and the memory; `answered` names the slots the user answered (D167). A
    * fitment's request names a second car, so its part is completed without the request's car (D172).
@@ -276,7 +278,13 @@ export function writeFrame(
       frame.slots.new_phone = understood(phone);
     put("new_address", args.address);
   }
-  const items = Array.isArray(args.items) ? (args.items as Record<string, unknown>[]) : [];
+  // The same line twice is one line: the model sometimes repeats it (D186).
+  const items = Array.isArray(args.items)
+    ? (args.items as Record<string, unknown>[]).filter(
+        (item, index, all) =>
+          all.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index,
+      )
+    : [];
   if (items.length > 1) frame.slots.lines = understood(items.length);
   const item = items[0] ?? {};
   const part = (item.part ?? args.part ?? {}) as Record<string, unknown>;
@@ -400,6 +408,31 @@ function understoodSoFar(
   return text || undefined;
 }
 
+/**
+ * A return's part from its buyer's recent purchases (D186): each part they bought in the last 30 days is looked for
+ * with what the request says of it; exactly one that fits is the part, so "Karim Auto er kalker samner pad" needs no
+ * car. Anything else (no buyer clear yet, none or several fit) leaves the part to be asked as for a sale.
+ */
+async function boughtPart(
+  frame: RequestFrame,
+  turn: WriteTurn,
+  query: PartQuery,
+): Promise<FindPartsResult | null> {
+  const name = str(frame.slots.customer?.value);
+  if (!name || !turn.bought) return null;
+  const match = resolveCustomer(name, [], turn.customers, turn.dictionary);
+  const buyer =
+    match.decision === "understood" || match.decision === "understood_bold"
+      ? match.candidates[0]?.customer
+      : null;
+  if (!buyer) return null;
+  const ids = await turn.bought(buyer.hostId);
+  if (!ids.length) return null;
+  const found = await turn.find({ ...query, part_ids: ids });
+  if (found.kind !== "rows" || found.unmet) return null;
+  return new Set(found.rows.map((row) => row.hostPartId)).size === 1 ? found : null;
+}
+
 export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promise<WriteStep> {
   const capability = turn.capabilities.find((item) => item.id === frame.capabilityId);
   if (!capability) return { kind: "answer", text: resultText("cancelled", "generic") };
@@ -446,7 +479,10 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
           source: full.remembered.has(key) ? "context" : "user",
         };
     }
-    const result = await turn.find(full.query);
+    // A return with its buyer named: the part they bought, when one of their recent buys fits what was said (D186).
+    const result =
+      (slots.has("sale_ref") && !full.query.part_number ? await boughtPart(frame, turn, full.query) : null) ??
+      (await turn.find(full.query));
     if (result.kind === "ask") {
       const listed: Offer[] = result.options.map((option, index) => ({
         id: `opt-${index + 1}`,

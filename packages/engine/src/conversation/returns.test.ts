@@ -99,7 +99,11 @@ async function toPart(
   args: object,
 ): Promise<Reply> {
   let reply = await shop.say(fresh(), { text }, returnCall(args));
-  for (const label of TO_ONE_PART[app]!) reply = await shop.say(reply.state, tap(reply, label));
+  // A named buyer's sale names the part, so nothing is asked (D186); without a buyer the part is asked as for a sale.
+  for (const label of TO_ONE_PART[app]!) {
+    if (!reply.choices?.options.some((option) => label.test(option.label))) break;
+    reply = await shop.say(reply.state, tap(reply, label));
+  }
   return reply;
 }
 
@@ -204,7 +208,7 @@ describe("which sale, how much and how the money goes back (GearGrid, D169)", ()
   it.each(RETURN)("more than the line has left: asks again, saying what it had ($style)", async (said) => {
     const shop = shopWith([sale({ partId: "pad-new", quantity: 2 })]);
     const asked = await toPart(shop, app, said.three, said.threeArgs);
-    expect(asked.reply).toBe("ওই বিক্রিতে ২ সেট ছিল — কয় সেট ফেরত?");
+    expect(asked.reply).toMatch(/ওই বিক্রিতে ২ সেট ছিল — কয় সেট ফেরত\?$/);
     const reply = await shop.say(asked.state, { text: said.one });
     expect(reply.confirm?.text).toMatch(/১ সেট, ১,৬০০ টাকা ফেরত/);
   });

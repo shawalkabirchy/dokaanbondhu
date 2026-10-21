@@ -20,6 +20,8 @@ export interface Trace {
     };
     result: "rows" | "none" | "ask";
     parts: string[][];
+    /** A part found by its number: the cars it is recorded for, as make-model-year (D186). */
+    cars?: string[];
   }[];
   questions: string[];
   answer: string;
@@ -271,6 +273,14 @@ function shown(result: ItemResult): { text: string; numbers: Set<string>; rows: 
   return { text: asciiDigits(texts.join("\n")), numbers, rows };
 }
 
+/** The cars of the last part found by its number, when the trace has them. */
+const carsTraced = (result: ItemResult) =>
+  result.turns
+    .flatMap((turn) => turn.trace?.lookups ?? [])
+    .map((lookup) => lookup.cars)
+    .filter((cars): cars is string[] => Array.isArray(cars))
+    .at(-1);
+
 function readAnswered(expected: ReadExpected, result: ItemResult, notes: string[]): boolean {
   const { text, numbers, rows } = shown(result);
   if (expected.answer === "see_in_app") {
@@ -289,6 +299,14 @@ function readAnswered(expected: ReadExpected, result: ItemResult, notes: string[
       if (!text.includes(value)) {
         ok = false;
         notes.push(`phone ${value} not shown`);
+      }
+    } else if (key === "vehicles" && Array.isArray(value) && carsTraced(result)) {
+      // Which cars a part fits: the cars the answer was made from, against the expected ones (D186).
+      const cars = carsTraced(result)!;
+      const want = new Set(value.map(String));
+      if (cars.length !== want.size || !cars.every((car) => want.has(car))) {
+        ok = false;
+        notes.push(`cars ${cars.join(", ") || "none"}, not ${[...want].join(", ")}`);
       }
     } else if (Array.isArray(value)) {
       // A list: every key named, or a table with exactly that many rows.
@@ -356,18 +374,21 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     const resolved = final?.resolved;
     const params = expected.params;
     // Each expected parameter must be understood as expected; a part number alone is judged by the part found.
+    exactPart =
+      final?.result === "rows" &&
+      final.parts.some((numbers) => numbers.some((number) => partKey(number) === partKey(expected.part_key)));
+    // A quality the card leaves out may be answered by listing every quality with the expected part among them,
+    // instead of asking (the owner's rule, D186); a brand the card names is right when its part is the one found.
+    const listedQualities = item.script.quality !== undefined && exactPart;
     const matches =
       !!resolved &&
       (params.part_type === undefined || same(resolved.part_type, params.part_type)) &&
       (params.vehicle === undefined || same(resolved.vehicle, params.vehicle)) &&
       (params.year === undefined || resolved.year === params.year) &&
       (params.position === undefined || same(resolved.position, params.position)) &&
-      (params.quality === undefined || same(resolved.quality, params.quality)) &&
-      (params.brand === undefined || same(resolved.brand, params.brand));
+      (params.quality === undefined || same(resolved.quality, params.quality) || listedQualities) &&
+      (params.brand === undefined || same(resolved.brand, params.brand) || exactPart);
     if (final && !matches) notes.push(`understood ${JSON.stringify(resolved)}`);
-    exactPart =
-      final?.result === "rows" &&
-      final.parts.some((numbers) => numbers.some((number) => partKey(number) === partKey(expected.part_key)));
     if (final && !exactPart) notes.push(`part ${expected.part_key} not found (${final.result})`);
     correct = matches && (params.part_number === undefined || exactPart) && !acted;
   } else if (item.kind === "other_read") {

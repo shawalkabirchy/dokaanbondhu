@@ -349,6 +349,14 @@ const WRITE_CUES: Record<"sale" | "payment" | "stock_in" | "return", string[]> =
     "bikri",
     "becho",
     "sell",
+    // The polite forms, as staff say them (D186): still a sale only with a customer or a payment word.
+    "দেন",
+    "লিখে দেন",
+    "লিখেন",
+    "লিখুন",
+    "den",
+    "likhe den",
+    "likhen",
   ],
   payment: [
     "জমা নাও",
@@ -363,6 +371,9 @@ const WRITE_CUES: Record<"sale" | "payment" | "stock_in" | "return", string[]> =
   ],
   stock_in: ["কিনলাম", "কিনেছি", "স্টকে তোলো", "স্টক ইন", "kinlam", "kinechi", "stock e tolo", "stock in"],
 };
+
+/** Goods arriving ("…থেকে দশটা এলো", "theke aslo"): a purchase only with its supplier named (D186). */
+const ARRIVED = ["এসেছে", "আসছে", "আসলো", "এলো", "আসল", "eseche", "asche", "aslo", "elo", "ashche", "ashlo"];
 /**
  * Words for on credit, said with a sale or a purchase (spec 9.6: বাকিতে is no payment), with how speech-to-text wrote
  * বাকিতে in the owner's tests (D152): only here, inside a sale or purchase, is বাতিতে ("in the lamp") taken for it.
@@ -490,8 +501,36 @@ const WRITE_WORDS = new Set(
  * (return it) is not heard as পুরাতন (used), nor "ferot nao" as puraton (D169).
  */
 export function isWriteWord(token: string): boolean {
-  return WRITE_WORDS.has(token) || CREDIT_WORDS.has(token);
+  return WRITE_WORDS.has(token) || CREDIT_WORDS.has(token) || GIVE_WORDS.has(token);
 }
+
+/**
+ * The polite ways to say give or write it down, which end a request but ask for nothing by themselves ("দামটা বলে
+ * দেন" is no sale), so they are no write cue; still never a part's detail: "লিখে দেন" is not ডান (right, D186).
+ */
+const GIVE_WORDS = new Set(
+  [
+    "দেন",
+    "দিন",
+    "দাও",
+    "দিবেন",
+    "দেবেন",
+    "দিয়েন",
+    "লিখে",
+    "লিখেন",
+    "লেখেন",
+    "লিখুন",
+    "den",
+    "din",
+    "dao",
+    "diben",
+    "deben",
+    "diyen",
+    "likhe",
+    "likhen",
+    "lekhen",
+  ].flatMap((word) => normalize(word).tokens),
+);
 
 const QUESTION_WORDS = new Set(
   [
@@ -513,6 +552,17 @@ const QUESTION_WORDS = new Set(
     "koy",
     "dekhao",
     "bolo",
+    // Asking to be told or shown, politely ("দামটা বলে দেন", "dam ta bole den"): a question, never a write (D186).
+    "বলে",
+    "বলেন",
+    "বলুন",
+    "জানান",
+    "দেখান",
+    "bole",
+    "bolen",
+    "bolun",
+    "janan",
+    "dekhan",
   ].map((word) => normalize(word).tokens.join(" ")),
 );
 const said = (tokens: string[], phrase: string) =>
@@ -525,7 +575,7 @@ const said = (tokens: string[], phrase: string) =>
  */
 export function writeCueOf(
   text: string,
-  options: { partyNamed: boolean },
+  options: { partyNamed: boolean; supplierNamed?: boolean },
 ):
   | "sale"
   | "payment"
@@ -544,6 +594,7 @@ export function writeCueOf(
   if (WRITE_CUES.return.some((phrase) => said(tokens, phrase))) return "return";
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
   if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
+  if (options.supplierNamed && ARRIVED.some((phrase) => said(tokens, phrase))) return "stock_in";
   if (tokens.some((token) => PRICE_WORDS.has(token))) {
     const sets = SET_PRICE.some((phrase) => said(tokens, phrase));
     const selling = SELLING.some((phrase) => said(tokens, phrase));

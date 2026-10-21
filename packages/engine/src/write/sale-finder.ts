@@ -46,6 +46,42 @@ const taka = (value: unknown) => {
   return amount === null ? null : Number(amount);
 };
 
+/**
+ * The parts a customer bought in the last 30 days, newest first (D186): a return that names its buyer and a part
+ * finds which part from these, so the car need not be asked.
+ */
+export async function boughtParts(
+  read: ReadPath,
+  input: { customerId: string; now: Date; days?: number },
+): Promise<string[]> {
+  const { map, run } = read;
+  if (!NEEDED.every(([concept, field]) => hasField(map, concept, field))) return [];
+  const since = new Date(input.now.getTime() - (input.days ?? SALE_DAYS) * 86_400_000).toISOString();
+  const rows = await run(
+    buildQuery(map, {
+      from: { concept: "SaleItem", alias: "i" },
+      joins: [
+        {
+          entity: { concept: "Sale", alias: "s" },
+          kind: "inner",
+          on: [{ left: { alias: "i", field: "sale_id" }, right: { alias: "s", field: "id" } }],
+        },
+      ],
+      select: [
+        { ref: { alias: "i", field: "part_id" }, as: "bought_part" },
+        { ref: { alias: "s", field: "date_time" }, as: "time" },
+      ],
+      where: [
+        { ref: { alias: "s", field: "customer_id" }, op: "eq", value: input.customerId },
+        { ref: { alias: "s", field: "date_time" }, op: "gte", value: since },
+      ],
+      orderBy: [{ as: "time", direction: "desc" }],
+      limit: 50,
+    }),
+  );
+  return [...new Set(rows.map((row) => String(row.bought_part)))];
+}
+
 export async function findSales(
   read: ReadPath,
   input: { customerId: string | null; partId: string; now: Date; days?: number },

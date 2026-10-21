@@ -102,6 +102,42 @@ describe("scoring", () => {
     });
   });
 
+  it("counts a list of every quality with the expected part as right when the card leaves the quality out (D186)", () => {
+    const coil = item({
+      id: "c-003",
+      kind: "part_lookup",
+      expected: {
+        tool: "find_parts",
+        params: { part_type: "Ignition Coil", vehicle: "Toyota Premio", year: 2014, quality: "genuine" },
+        part_key: "DNCO-0101",
+      },
+      script: { quality: "genuine" },
+    });
+    const listed = {
+      resolved: {
+        part_type: "Ignition Coil",
+        vehicle: "Toyota Premio",
+        year: 2014,
+        position: null,
+        quality: null,
+      },
+      result: "rows" as const,
+      parts: [["DNCO-0101"], ["LOC-IGN-1"]],
+    };
+    expect(scoreItem(coil, done("c-003", [turn({ trace: trace({ lookups: [listed] }) })])).correct).toBe(
+      true,
+    );
+    // Not when the expected part is missing from the list, nor when the card itself names the quality.
+    const without = { ...listed, parts: [["LOC-IGN-1"]] };
+    expect(scoreItem(coil, done("c-003", [turn({ trace: trace({ lookups: [without] }) })])).correct).toBe(
+      false,
+    );
+    const named = item({ ...coil, id: "c-004", script: {} });
+    expect(scoreItem(named, done("c-004", [turn({ trace: trace({ lookups: [listed] }) })])).correct).toBe(
+      false,
+    );
+  });
+
   it("marks a wrong year and a missing part, with notes", () => {
     const score = scoreItem(
       pads,
@@ -127,6 +163,35 @@ describe("scoring", () => {
     expect(scoreItem(due, done("c-085", [turn({ reply: "বাকি ২০,০০০ টাকা।" })])).correct).toBe(false);
     const profit = item({ id: "c-077", kind: "other_read", expected: { answer: "see_in_app" } });
     expect(scoreItem(profit, done("c-077", [turn({ reply: SEE_IN_APP })])).correct).toBe(true);
+  });
+
+  it("scores which cars a part fits by the cars traced for its answer (D186)", () => {
+    const fits = item({
+      id: "c-079",
+      kind: "other_read",
+      expected: { read: "part_fits", answer: { vehicles: ["toyota-noah-2007", "toyota-voxy-2007"] } },
+    });
+    const traced = (cars: string[]) =>
+      trace({
+        lookups: [
+          {
+            resolved: { part_type: null, vehicle: null, year: null, position: null, quality: null },
+            result: "rows",
+            parts: [["DNO2-0143"]],
+            cars,
+          },
+        ],
+      });
+    const reply = "DNO2-0143 (অক্সিজেন সেন্সর) ৮টা আছে। লাগে: নোয়া ২০০৭–২০১৩, ভক্সি ২০০৭–২০১৩।";
+    expect(
+      scoreItem(
+        fits,
+        done("c-079", [turn({ reply, trace: traced(["toyota-voxy-2007", "toyota-noah-2007"]) })]),
+      ).correct,
+    ).toBe(true);
+    const missing = scoreItem(fits, done("c-079", [turn({ reply, trace: traced(["toyota-noah-2007"]) })]));
+    expect(missing.correct).toBe(false);
+    expect(missing.notes).toEqual(["cars toyota-noah-2007, not toyota-noah-2007, toyota-voxy-2007"]);
   });
 
   it("counts a list read right when every key is named or the table has as many rows", () => {

@@ -591,3 +591,24 @@ describe("a price misheard (D178)", () => {
     expect(saysSalePrice(text)).toBe(false);
   });
 });
+
+describe("polite sales, tell-me questions and arrivals (D186)", () => {
+  it.each([
+    ["রহিম মোটরসকে দুইটা প্যাড বাকিতে দেন", "sale"],
+    ["Rahim Motors er name e tinta pad nogode likhen", "sale"],
+    ["রহিম মোটরসের নামে একটা প্যাড লিখে দেন", "sale"],
+    ["রহিম মোটরসের প্যাডের দামটা বলে দেন", null],
+    ["Rahim Motors er pad er dam ta bole den", null],
+    ["pad gulo dekhan", null],
+  ] as const)("%s → %s", (text, kind) => {
+    expect(writeCueOf(text, { partyNamed: true })).toBe(kind);
+  });
+
+  it.each([
+    ["নবাবপুর অটো পার্টস থেকে দশটা প্যাড এলো", "nawabpur"],
+    ["Nawabpur Auto Parts theke dui set pad aslo", "nawabpur"],
+  ])("%s is a purchase with its supplier named, and nothing without one", (text) => {
+    expect(writeCueOf(text, { partyNamed: true, supplierNamed: true })).toBe("stock_in");
+    expect(writeCueOf("mal kal asche", { partyNamed: false, supplierNamed: false })).toBeNull();
+  });
+});

@@ -33,15 +33,22 @@ const BEFORE_NUMBER = new Map(
 export interface SaidQuantity {
   value: number;
   unit: Unit | null;
+  /** Counted with টা, টি or ta (দুইটা, 3ta), not a unit word: in a shop that counts what the part is sold in (D186). */
+  counted?: boolean;
 }
 
-/** A number with a classifier attached: একটা, দুইটা, ekta, duita. */
-function withClassifier(token: string): { value: number; unit: Unit } | null {
-  for (const ending of ["টা", "টি", "টো", "ta", "ti", "to"]) {
+const COUNTERS: ReadonlySet<string> = new Set(["টা", "টি", "টো", "ta", "ti", "to"]);
+
+/** A number with a classifier attached: একটা, দুইটা, ekta, duita, and in digits ৩টা, 3ta. */
+function withClassifier(token: string): SaidQuantity | null {
+  for (const ending of COUNTERS) {
     if (token.length > ending.length && token.endsWith(ending)) {
       const stem = token.slice(0, -ending.length);
-      const value = wordNumber(stem) ?? wordNumber(stem === "দু" || stem === "du" ? "দুই" : stem);
-      if (value !== null) return { value, unit: "piece" };
+      const digits = asciiDigits(stem);
+      const value = /^\d+$/.test(digits)
+        ? Number(digits)
+        : (wordNumber(stem) ?? wordNumber(stem === "দু" || stem === "du" ? "দুই" : stem));
+      if (value !== null && value > 0) return { value, unit: "piece", counted: true };
     }
   }
   return null;
@@ -107,8 +114,13 @@ export function parseQuantity(tokens: readonly string[]): SaidQuantity | null {
       if (UNIT_WORDS.get(token) === "tin" && index > 0 && wordNumber(tokens[index - 1] ?? "") !== null)
         continue;
     }
-    const unit = UNIT_WORDS.get((tokens[index + used] ?? "").normalize("NFC")) ?? null;
-    return { value: Math.round(value * 1000) / 1000, unit };
+    const after = (tokens[index + used] ?? "").normalize("NFC");
+    const unit = UNIT_WORDS.get(after) ?? null;
+    return {
+      value: Math.round(value * 1000) / 1000,
+      unit,
+      ...(COUNTERS.has(after) ? { counted: true } : {}),
+    };
   }
   return null;
 }
@@ -129,6 +141,8 @@ export function checkQuantity(said: SaidQuantity, part: PartUnit): QuantityCheck
   const unit = said.unit ?? (part.unit as Unit);
   if (!Number.isInteger(value) && part.unit !== "liter") return { ok: false, reason: "fraction_not_allowed" };
   if (unit === part.unit) return { ok: true, quantity: value };
+  // "তিনটা প্যাড" is three sets where pads are sold in sets; a said পিস is still asked (D186).
+  if (said.counted && unit === "piece" && part.unit === "set") return { ok: true, quantity: value };
   const pieces = PIECES[unit];
   if (pieces !== undefined) {
     return part.unit === "piece" ? { ok: true, quantity: value * pieces } : { ok: false, reason: "ask_unit" };

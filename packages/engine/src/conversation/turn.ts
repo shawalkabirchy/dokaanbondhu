@@ -1,5 +1,6 @@
 import type { Remembered, ReplyEvent } from "@dokaanbondhu/contracts";
 import {
+  asciiDigits,
   AllowedFacts,
   ASK_AGAIN,
   CANNOT_ANSWER_NOW,
@@ -21,6 +22,7 @@ import {
   partPhrase,
   racksInText,
   rackText,
+  numberAnswer,
   partsAnswer,
   quantity,
   question,
@@ -95,7 +97,7 @@ import { systemPrompt } from "./prompt";
 import type { ConversationState } from "./state";
 import { CANNOT_HELP, readTools } from "./tools";
 import { executeAction } from "../write/execute";
-import { findSales } from "../write/sale-finder";
+import { boughtParts, findSales } from "../write/sale-finder";
 import { fitRecorded } from "../write/verify";
 import { writeTool } from "../write/tool";
 import type { ActionRecord, PendingAction, WriteCapability, WriteHost } from "../write/types";
@@ -230,6 +232,8 @@ export interface TurnTrace {
     result: "rows" | "none" | "ask";
     /** Each part found, as its part numbers (all of them, as the catalog has them). */
     parts: string[][];
+    /** A part found by its number: the cars it is recorded for, as make-model-year (D186). */
+    cars?: string[];
   }[];
   questions: string[];
   answer: string;
@@ -535,6 +539,9 @@ function templateAnswer(facts: Facts): string {
   if (facts.parts) {
     const { result, context } = facts.parts;
     if (result.kind === "rows") {
+      // A part by its number alone: its own sentence, with its cars (D186).
+      if (result.number && result.cars)
+        return numberAnswer(result.rows, result.number, result.cars, context.tier);
       const answer = partsAnswer(result.rows, context, result.pairUsed);
       if (!result.unmet) return answer;
       const asked =
@@ -776,6 +783,7 @@ export async function runTurn(
   const cueKind = text
     ? writeCueOf(text, {
         partyNamed: named.some((name) => name.kind === "customer" || name.kind === "supplier"),
+        supplierNamed: named.some((name) => name.kind === "supplier"),
       })
     : null;
   const cued =
@@ -851,6 +859,13 @@ export async function runTurn(
       },
       result: result.kind,
       parts: result.kind === "rows" ? result.rows.map((row) => numbersOf(row.hostPartId)) : [],
+      ...(result.kind === "rows" && result.cars
+        ? {
+            cars: result.cars.map((car) =>
+              `${car.make}-${car.model}-${car.yearFrom}`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+            ),
+          }
+        : {}),
     });
     return result;
   };
@@ -1069,6 +1084,9 @@ export async function runTurn(
       ? {
           sales: (input: { customerId: string | null; partId: string }) =>
             findSales({ map: deps.host.map!, run: deps.host.run! }, { ...input, now }),
+          // A return's part from what its buyer bought (D186).
+          bought: (customerId: string) =>
+            boughtParts({ map: deps.host.map!, run: deps.host.run! }, { customerId, now }),
         }
       : {}),
     find: async (query) => {
@@ -1162,8 +1180,38 @@ export async function runTurn(
     const single =
       !items && args.part && typeof args.part === "object" ? (args.part as Record<string, unknown>) : null;
     if (!item && !single) return args;
-    const part = { ...(single ?? (item as { part?: Record<string, unknown> }).part ?? {}) };
+    const line = { ...(item as Record<string, unknown> | null) };
+    const part = { ...(single ?? (line.part as Record<string, unknown> | undefined) ?? {}) };
     const missing = (key: string) => part[key] === undefined || part[key] === null || part[key] === "";
+    // A detail the model put beside the part rather than in it ("items": [{ "part_type": … }]) is the part's (D186).
+    for (const key of ["part_type", "vehicle", "year", "position", "quality", "brand"]) {
+      if (line[key] !== undefined && missing(key)) part[key] = line[key];
+      delete line[key];
+    }
+    // What the user did not say is no detail: a quality only when one was heard, a part number only as said (D186).
+    const inText = (value: unknown) =>
+      ` ${normalize(text).tokens.join(" ")} `.includes(` ${normalize(String(value)).tokens.join(" ")} `);
+    if (!missing("quality") && !heardSlots.has("quality") && !inText(part.quality)) delete part.quality;
+    const spoken = asciiDigits(text)
+      .replace(/[\s\-_./]/g, "")
+      .toUpperCase();
+    if (
+      !missing("part_number") &&
+      !spoken.includes(
+        asciiDigits(String(part.part_number))
+          .replace(/[\s\-_./]/g, "")
+          .toUpperCase(),
+      )
+    )
+      delete part.part_number;
+    // A count said with its unit or টা ("ekta", "দুই সেট") is the line's quantity when the model left it out.
+    if (item && (line.quantity === undefined || line.quantity === null || line.quantity === "")) {
+      const tokens = normalize(text, deps.dictionary.variants).tokens;
+      const said = tokens
+        .map((_, index) => parseQuantity(tokens.slice(index, index + 2)))
+        .find((quantity) => quantity?.unit && quantity.value <= 1000);
+      if (said) line.quantity = said.counted ? `${said.value}টা` : `${said.value} ${said.unit}`;
+    }
     // A fitment's request names two cars, so its part takes neither the car nor the year from it (D172).
     const twoCars = Boolean(args.vehicle);
     for (const concept of ["part_type", "vehicle_model", "position", "quality"] as const) {
@@ -1173,7 +1221,7 @@ export async function runTurn(
       if (heard && missing(key)) part[key] = heard;
     }
     if (saidYear && missing("year") && !twoCars) part.year = String(saidYear);
-    return single ? { ...args, part } : { ...args, items: [{ ...item, part }] };
+    return single ? { ...args, part } : { ...args, items: [{ ...line, part }] };
   };
 
   /**
@@ -1258,7 +1306,14 @@ export async function runTurn(
                         ...heardPart(true),
                         ...part,
                       },
-                      ...(quantity ? { quantity: `${quantity.value} ${quantity.unit}` } : {}),
+                      // A count with টা is what the part is sold in, so it goes on as said (D186).
+                      ...(quantity
+                        ? {
+                            quantity: quantity.counted
+                              ? `${quantity.value}টা`
+                              : `${quantity.value} ${quantity.unit}`,
+                          }
+                        : {}),
                       ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
                     },
                   ],
@@ -1496,11 +1551,13 @@ export async function runTurn(
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
         if (capability && deps.host.writes) {
+          // The whole request: an answer to "which Rahim?" carries the request it answers, so the amount said
+          // in it is still said (D186).
           const frame = markGuessed(
-            writeFrame(capability, withHeardPart(withAlsoCar(capability, args)), writeTurn(text)),
+            writeFrame(capability, withHeardPart(withAlsoCar(capability, args)), writeTurn(request)),
           );
           record("write");
-          tookStep(frame, await advanceWrite(frame, writeTurn(text)));
+          tookStep(frame, await advanceWrite(frame, writeTurn(request)));
           return "stop";
         }
         record("unknown_tool");

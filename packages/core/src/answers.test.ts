@@ -47,6 +47,23 @@ describe("template answers (spec 12.2, architecture A.1)", () => {
     );
   });
 
+  it("names each kind's side when the kinds differ by side (D186)", () => {
+    const lights = [
+      row({ quality: "aftermarket", position: "left", stock: 9, retailTaka: 6500n, unit: "piece" }),
+      row({
+        hostPartId: "y",
+        quality: "aftermarket",
+        position: "right",
+        stock: 9,
+        retailTaka: 6500n,
+        unit: "piece",
+      }),
+    ];
+    expect(partsAnswer(lights, { ...axio, year: 2015, partType: "Headlight", position: null })).toBe(
+      "এক্সিও ২০১৫-এর হেডলাইট দুই রকম আছে: বাম নন-জেনুইন ৯টা, ৬,৫০০ টাকা; ডান নন-জেনুইন ৯টা, ৬,৫০০ টাকা। দুটোই B-3 তাকে।",
+    );
+  });
+
   it("names the brand when two kinds share a quality, so they can be told apart", () => {
     const filters = [
       row({

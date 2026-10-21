@@ -93,9 +93,9 @@ describe("engine codes and part numbers (spec 10.5)", () => {
 
 describe("quantities (spec 10.6)", () => {
   it("reads digits, number words, classifiers, fractions and units", () => {
-    expect(parseQuantity(tokens("দুইটা দেন"))).toEqual({ value: 2, unit: "piece" });
+    expect(parseQuantity(tokens("দুইটা দেন"))).toEqual({ value: 2, unit: "piece", counted: true });
     expect(parseQuantity(tokens("২ সেট প্যাড"))).toEqual({ value: 2, unit: "set" });
-    expect(parseQuantity(tokens("ekta pad"))).toEqual({ value: 1, unit: "piece" });
+    expect(parseQuantity(tokens("ekta pad"))).toEqual({ value: 1, unit: "piece", counted: true });
     expect(parseQuantity(tokens("দেড় লিটার মবিল"))).toEqual({ value: 1.5, unit: "liter" });
     expect(parseQuantity(tokens("সাড়ে তিন লিটার"))).toEqual({ value: 3.5, unit: "liter" });
     expect(parseQuantity(tokens("পৌনে দুই লিটার"))).toEqual({ value: 1.75, unit: "liter" });
@@ -126,7 +126,7 @@ describe("quantities (spec 10.6)", () => {
     ["ek-set", 1, "set"], // joined by a hyphen
     ["dui-ta", 2, "piece"],
   ] as const)("reads %s, a number glued to its unit, as %i %s (D170)", (word, value, unit) => {
-    expect(parseQuantity(tokens(`brake pad ${word}`))).toEqual({ value, unit });
+    expect(parseQuantity(tokens(`brake pad ${word}`))).toMatchObject({ value, unit });
   });
 
   it.each([
@@ -151,6 +151,17 @@ describe("quantities (spec 10.6)", () => {
       ok: false,
       reason: "ask_unit",
     });
+    // A count with টা or ta is what the part is sold in; পিস said is asked (D186).
+    for (const said of ["তিনটা", "৩টা", "৩ টা", "tinta", "3ta", "3 ta"]) {
+      const quantity = parseQuantity(tokens(said))!;
+      expect(checkQuantity(quantity, { unit: "set" }), said).toEqual({ ok: true, quantity: 3 });
+      expect(checkQuantity(quantity, { unit: "piece" }), said).toEqual({ ok: true, quantity: 3 });
+    }
+    for (const said of ["৩ পিস", "3 pis"])
+      expect(checkQuantity(parseQuantity(tokens(said))!, { unit: "set" }), said).toEqual({
+        ok: false,
+        reason: "ask_unit",
+      });
     expect(checkQuantity({ value: 1, unit: "pair" }, { unit: "set" })).toEqual({
       ok: false,
       reason: "ask_unit",
