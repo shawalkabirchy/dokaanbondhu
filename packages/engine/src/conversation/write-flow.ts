@@ -25,6 +25,7 @@ import {
   resultText,
   saidMoney,
   salePriceOf,
+  saysSalePrice,
   saidNumbers,
   saysCredit,
   saysDamaged,
@@ -287,6 +288,9 @@ export function writeFrame(
   putSaid("amount", args.amount, parseAmount);
   // A sale's own price, from the request's words (D176, D177); a payment amount the model took from it is dropped.
   const salePrice = capability.template === "sale" ? salePriceOf(turn.request) : null;
+  // A price said but not read (a misheard amount) is asked, never left out (D178).
+  if (!salePrice && capability.template === "sale" && saysSalePrice(turn.request))
+    frame.slots.sale_price_unread = understood(true);
   if (salePrice) {
     frame.slots.sale_price = understood(salePrice);
     if (str(payment.amount) && parseAmount(String(payment.amount)) === salePrice.amount)
@@ -409,7 +413,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
 
   // 0. A sale at a price the user set (D176): refused at once, before any question, to staff the owner has not
   // allowed, and on an app whose sale cannot take a price.
-  if (frame.slots.sale_price && capability.template === "sale") {
+  if ((frame.slots.sale_price || frame.slots.sale_price_unread) && capability.template === "sale") {
     if (!unitPriceParam(capability)) return { kind: "answer", text: NO_CUSTOM_PRICE };
     if (!turn.mayPrice) return { kind: "answer", text: STAFF_PRICE };
   }
@@ -695,6 +699,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
       }
       frame.slots.unit_price = understood(each, { display: money(BigInt(each)) });
     }
+    if (frame.slots.sale_price_unread && !frame.slots.unit_price) return ask("unit_price", { unit });
     const slot = frame.slots.unit_price;
     if (slot && typeof slot.value !== "number") {
       const amount = parseAmount(String(slot.value));

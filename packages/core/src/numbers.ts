@@ -95,7 +95,23 @@ export function parseYearRange(text: string): YearRange | null {
  * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
  * হাজত (custody) is never a number by itself.
  */
-export const MISHEARD_THOUSAND = new Set(["হাজত", "হাজন", "হাজনা"].map(nfc));
+// হাউজার, haujar: তিন হাজার as speech-to-text wrote it in the owner's G21 (D178).
+export const MISHEARD_THOUSAND = new Set(
+  [
+    "হাজত",
+    "হাজন",
+    "হাজনা",
+    "হাজনার",
+    "হাউজার",
+    "হাওজার",
+    "হাউযার",
+    "haujar",
+    "hauzar",
+    "hawzar",
+    "haojar",
+    "hajnar",
+  ].map(nfc),
+);
 /** Thousand said in English, in either script (D157). */
 const ENGLISH_THOUSAND = ["thousand", "থাউজেন্ড", "থাউসেন্ড", "থাউজ্যান্ড"];
 const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...ENGLISH_THOUSAND, ...MISHEARD_THOUSAND].map(nfc));

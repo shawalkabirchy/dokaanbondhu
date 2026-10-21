@@ -48,7 +48,10 @@ export function parseAmount(text: string): number | null {
   // Grouping commas join their digits before the text is split: ১০,০০০ and 1,00,000 are one number each.
   const joined = asciiDigits(text).replace(/(\d)[,،](?=\d{2,3}(\D|$))/g, "$1");
   const tokens = normalize(joined).tokens;
-  const start = tokens.findIndex((token) => valueOf(token) !== null);
+  // A thousand or a lakh said first is one of them: "হাজার পাঁচশ" is 1,500 (D178).
+  const start = tokens.findIndex(
+    (token) => valueOf(token) !== null || (MULTIPLIERS.get(nfc(token)) ?? 0) >= 1_000,
+  );
   if (start < 0) return null;
   let total = 0;
   let current: number | null = null;
@@ -784,10 +787,14 @@ export function refundText(due: bigint, cash: bigint): string {
   return `বাকি থেকে ${money(due)}, নগদ ${money(cash)}`;
 }
 
+/** A word of a said number: digits, a number word, a multiplier, or a misheard thousand (তিন হাউজার, D178). */
+const inNumberRun = (token: string) =>
+  valueOf(token) !== null || MULTIPLIERS.has(nfc(token)) || MISHEARD_THOUSAND.has(nfc(token));
+
 /** Words that make the number before them money, and words that make the number after them a price (D157). */
 // টাকায়, takay: "at a price of" (D177), money as টাকা is.
 const MONEY_AFTER = new Set(
-  ["টাকা", "taka", "tk", "৳", "টাকায়", "টাকাতে", "takay", "takai", "takaye"].map((word) =>
+  ["টাকা", "taka", "tk", "৳", "টাকায়", "টাকাই", "টাকাতে", "takay", "takai", "takaye"].map((word) =>
     normalize(word).tokens.join(" "),
   ),
 );
@@ -806,8 +813,7 @@ export function saidMoney(text: string): Set<number> {
     if (MONEY_AFTER.has(token)) {
       // Only the unbroken run of number words right before টাকা: "পাঁচ সেট … ১২০০ টাকা" is 1,200, never 5.
       let start = index;
-      while (start > 0 && (valueOf(tokens[start - 1]!) !== null || MULTIPLIERS.has(nfc(tokens[start - 1]!))))
-        start--;
+      while (start > 0 && inNumberRun(tokens[start - 1]!)) start--;
       const amount = start < index ? parseAmount(tokens.slice(start, index).join(" ")) : null;
       if (amount !== null) money.add(amount);
     }
@@ -821,7 +827,7 @@ export function saidMoney(text: string): Set<number> {
 
 const word = (text: string) => normalize(text).tokens.join(" ");
 /** The price of what the line says: "৩০০০ টাকায়", "3000 takay", "৩০০০ টাকা দামে" (D176). */
-const LINE_PRICE = new Set(["টাকায়", "টাকাতে", "takay", "takai", "takaye"].map(word));
+const LINE_PRICE = new Set(["টাকায়", "টাকাই", "টাকাতে", "takay", "takai", "takaye"].map(word));
 const PRICE_DAME = new Set(["দামে", "dame"].map(word));
 /** The price of one: "১৫০০ টাকা করে", "1500 taka kore", "প্রতি সেট ১৫০০ টাকা". */
 const EACH_AFTER = new Set(["করে", "kore", "korey", "koira"].map(word));
@@ -838,8 +844,7 @@ export function salePriceOf(text: string): { amount: number; each: boolean } | n
   // The unbroken run of number words right before a token: "৩০০০ টাকায়", "তিন হাজার টাকায়".
   const runBefore = (index: number) => {
     let start = index;
-    while (start > 0 && (valueOf(tokens[start - 1]!) !== null || MULTIPLIERS.has(nfc(tokens[start - 1]!))))
-      start--;
+    while (start > 0 && inNumberRun(tokens[start - 1]!)) start--;
     return start < index ? parseAmount(tokens.slice(start, index).join(" ")) : null;
   };
   for (let index = 0; index < tokens.length; index++) {
@@ -865,6 +870,18 @@ export function salePriceOf(text: string): { amount: number; each: boolean } | n
     }
   }
   return null;
+}
+
+/**
+ * Whether a sale's request sets a price at all, read or not (D178): টাকায় or টাকাতে, or টাকা করে. A price whose
+ * amount was misheard is then asked, never left out.
+ */
+export function saysSalePrice(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return tokens.some(
+    (token, index) =>
+      LINE_PRICE.has(token) || (EACH_AFTER.has(token) && index > 0 && TAKA.has(tokens[index - 1]!)),
+  );
 }
 
 /** Every number a text says, in any form ("২০১৪", "দুই", "dui set", "১০ হাজার", "দুইটা"): what the user said, so a

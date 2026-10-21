@@ -208,6 +208,58 @@ describe("who may set a sale's price, and what is a price (GearGrid, D176, D177)
   });
 });
 
+// The owner's G21 by voice (21 Oct, D178): "তিন হাজার টাকায়" was written "তিন হাউজার টাকায়"; the price was not read,
+// and the sheet had the shop's own 3,200 taka.
+describe("a price misheard (GearGrid, D178)", () => {
+  const part = (style: (typeof STYLES)[number]) =>
+    style === "Bangla" ? PARTS[0]!.bangla : PARTS[0]!.banglish;
+
+  it.each(STYLES)("“তিন হাউজার টাকায়” is 3,000 for the line (%s)", async (style) => {
+    const shop = shopFor(geargrid);
+    const request = said(style, part(style), { bn: "তিন হাউজার টাকায়", en: "tin haujar takay" });
+    const reply = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+    expect(reply.confirm?.text).toMatch(/প্রতি সেট ১,৫০০ টাকা, ৩,০০০ টাকা, বাকিতে/);
+    expect(line(shop)).toMatchObject({ unit_price_taka: 1500 });
+  });
+
+  it.each(STYLES)("“তিন হাউজার টাকাই” and “তিন হাজনার টাকায়” are 3,000 too (%s)", async (style) => {
+    for (const price of style === "Bangla"
+      ? ["তিন হাউজার টাকাই", "তিন হাজনার টাকায়"]
+      : ["tin haujar takai", "tin hajnar takay"]) {
+      const shop = shopFor(geargrid);
+      const request = said(style, part(style), { bn: price, en: price });
+      await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+      expect(line(shop)).toMatchObject({ unit_price_taka: 1500 });
+    }
+  });
+
+  it.each(STYLES)("“হাজার পাঁচশ টাকা” answers the price of one as 1,500 (%s)", async (style) => {
+    const shop = shopFor(geargrid);
+    const request = said(style, part(style), { bn: "ঝাপসা টাকায়", en: "jhapsa takay" });
+    const asked = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+    await shop.say(asked.state, { text: style === "Bangla" ? "হাজার পাঁচশ টাকা" : "hajar pachsho taka" });
+    expect(line(shop)).toMatchObject({ unit_price_taka: 1500 });
+  });
+
+  it.each(STYLES)("a price whose amount is not read is asked, never left out (%s)", async (style) => {
+    const shop = shopFor(geargrid);
+    const request = said(style, part(style), { bn: "ঝাপসা টাকায়", en: "jhapsa takay" });
+    const asked = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+    expect(asked.reply).toMatch(/প্রতি সেট দাম কত\?$/);
+    expect(shop.calls).toHaveLength(0);
+    const reply = await shop.say(asked.state, { text: style === "Bangla" ? "১৫০০ টাকা" : "1500 taka" });
+    expect(line(shop)).toMatchObject({ quantity: 2, unit_price_taka: 1500 });
+    expect(reply.confirm?.text).toMatch(/প্রতি সেট ১,৫০০ টাকা/);
+  });
+
+  it.each(STYLES)("staff are refused for it too (%s)", async (style) => {
+    const shop = shopFor(geargrid, { role: "staff" });
+    const request = said(style, part(style), { bn: "ঝাপসা টাকায়", en: "jhapsa takay" });
+    const reply = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+    expect(reply.reply).toBe("অন্য দামে বেচতে পারেন শুধু দোকানের মালিক।");
+  });
+});
+
 describe("the sale's tool (D176)", () => {
   it("has a place for a price the user sets, apart from the payment", () => {
     const parameters = writeTool(appCapability("record_sale")).function.parameters as {

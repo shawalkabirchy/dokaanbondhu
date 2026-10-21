@@ -16,6 +16,7 @@ import {
   saidMoney,
   saidNumbers,
   salePriceOf,
+  saysSalePrice,
   saysDamaged,
   saysNewParty,
   saysWalkIn,
@@ -535,5 +536,58 @@ describe("a sale's price said (D176, D177)", () => {
   it("takes টাকায় as money", () => {
     expect([...saidMoney("১২০০ টাকায় কিনলাম")]).toEqual([1200]);
     expect([...saidMoney("1200 takay kinlam")]).toEqual([1200]);
+  });
+});
+
+describe("a price misheard (D178)", () => {
+  it.each([
+    [
+      "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইসেট তিন হাউজার টাকায় বাকিতে দাও",
+      3000,
+    ],
+    ["Rahim Motors ke axio 2014 er brake pad dui set tin haujar takay bakite dao", 3000],
+  ] as const)("%s sets %d", (text, amount) => {
+    expect(salePriceOf(text)).toEqual({ amount, each: false });
+  });
+
+  // The owner's next tries (21 Oct): হাজনার for হাজার, টাকাই for টাকায়, and the answer "হাজার পাঁচশ টাকা".
+  it.each([
+    [
+      "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইশে তিন হাজনার টাকায় বাকিতে দাও",
+      3000,
+    ],
+    [
+      "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইসেট তিন হাউজার টাকাই বাকিতে দাও",
+      3000,
+    ],
+    ["Rahim Motors ke axio 2014 er brake pad dui set tin hajnar takai bakite dao", 3000],
+  ] as const)("%s sets %d too", (text, amount) => {
+    expect(salePriceOf(text)).toEqual({ amount, each: false });
+  });
+
+  it.each([
+    ["হাজার পাঁচশ টাকা", 1500],
+    ["hajar pachsho taka", 1500],
+    ["হাজার টাকা", 1000],
+    ["লাখ টাকা", 100000],
+    ["দেড় হাজার", 1500],
+  ] as const)("“%s” is %d: a thousand said first is one", (text, amount) => {
+    expect(parseAmount(text)).toBe(amount);
+  });
+
+  it("takes হাউজার for হাজার only after a number", () => {
+    expect(parseAmount("তিন হাউজার")).toBe(3000);
+    expect(salePriceOf("হাউজার টাকায় দাও")).toBeNull();
+  });
+
+  it.each(["দুই সেট ঝাপসা টাকায় দাও", "dui set jhapsa takay dao", "১৫০০ টাকা করে দাও"])(
+    "%s says a price",
+    (text) => {
+      expect(saysSalePrice(text)).toBe(true);
+    },
+  );
+
+  it.each(["দুই সেট দাও, ২০০০ টাকা নগদ দিল", "dui set bakite dao"])("%s says none", (text) => {
+    expect(saysSalePrice(text)).toBe(false);
   });
 });
