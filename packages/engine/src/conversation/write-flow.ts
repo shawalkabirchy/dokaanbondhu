@@ -145,6 +145,8 @@ export interface WriteTurn {
   newId: () => string;
   /** The request as first said, for its payment word when the tool call left it out. */
   request: string;
+  /** The request as speech-to-text wrote it, before any clean-up: a price is read from it too (D178). */
+  heard?: string;
   /** Buttons for a car or part question: the shop's values near what was said, else its common ones (D154). */
   offersFor?: (slot: string) => Offer[];
   find: (query: PartQuery) => Promise<FindPartsResult>;
@@ -287,7 +289,10 @@ export function writeFrame(
   put("trx_id", payment.trx_id);
   putSaid("amount", args.amount, parseAmount);
   // A sale's own price, from the request's words (D176, D177); a payment amount the model took from it is dropped.
-  const salePrice = capability.template === "sale" ? salePriceOf(turn.request) : null;
+  const salePrice =
+    capability.template === "sale"
+      ? (salePriceOf(turn.request) ?? (turn.heard ? salePriceOf(turn.heard) : null))
+      : null;
   // A price said but not read (a misheard amount) is asked, never left out (D178).
   if (!salePrice && capability.template === "sale" && saysSalePrice(turn.request))
     frame.slots.sale_price_unread = understood(true);

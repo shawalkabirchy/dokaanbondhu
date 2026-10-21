@@ -27,15 +27,37 @@ export function wordNumber(token: string): number | null {
   return NUMBER_WORDS.get(nfc(token)) ?? null;
 }
 
+// হাউজার, haujar: তিন হাজার as speech-to-text wrote it in the owner's G21, and its other guesses then (D178).
+export const MISHEARD_THOUSAND = new Set(
+  [
+    "হাইজার",
+    "হাসার",
+    "হাঝার",
+    "haijar",
+    "hasar",
+    "হাজত",
+    "হাজন",
+    "হাজনা",
+    "হাজনার",
+    "হাউজার",
+    "হাওজার",
+    "হাউযার",
+    "haujar",
+    "hauzar",
+    "hawzar",
+    "haojar",
+    "hajnar",
+  ].map(nfc),
+);
+
 /** Words that go with numbers: thousand, hundred, lakh, and the year words (model, sal). */
 const NUMBER_CONTEXT = new Set(
   [
     "হাজার",
     "hajar",
     "hazar",
-    "হাজত",
-    "হাজন",
-    "হাজনা",
+    // never a name: the clean-up must not rewrite a misheard thousand (D178)
+    ...MISHEARD_THOUSAND,
     "thousand",
     "থাউজেন্ড",
     "থাউসেন্ড",
@@ -95,23 +117,6 @@ export function parseYearRange(text: string): YearRange | null {
  * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
  * হাজত (custody) is never a number by itself.
  */
-// হাউজার, haujar: তিন হাজার as speech-to-text wrote it in the owner's G21 (D178).
-export const MISHEARD_THOUSAND = new Set(
-  [
-    "হাজত",
-    "হাজন",
-    "হাজনা",
-    "হাজনার",
-    "হাউজার",
-    "হাওজার",
-    "হাউযার",
-    "haujar",
-    "hauzar",
-    "hawzar",
-    "haojar",
-    "hajnar",
-  ].map(nfc),
-);
 /** Thousand said in English, in either script (D157). */
 const ENGLISH_THOUSAND = ["thousand", "থাউজেন্ড", "থাউসেন্ড", "থাউজ্যান্ড"];
 const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...ENGLISH_THOUSAND, ...MISHEARD_THOUSAND].map(nfc));

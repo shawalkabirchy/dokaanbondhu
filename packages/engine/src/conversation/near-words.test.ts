@@ -145,3 +145,17 @@ describe("the LLM's choice", () => {
     expect(message).toMatch(/"নওয়াপুর অটোপাস" \(\w[\w ]*\): Nawabpur Auto Parts Ltd\. \(/);
   });
 });
+
+// The owner's G21 on the phone (21 Oct, D178): "তিন হাজার টাকায়" written "তিন হাউজার টাকায়" (and হাইজার, হাসার in the
+// other guesses) was taken for a misheard name, and the clean-up rewrote the price away.
+describe("a misheard thousand is a number, never a name (D178)", () => {
+  it.each([
+    "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইসেট তিন হাউজার টাকায় বাকিতে দাও",
+    "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইসেট তিন হাইজার টাকায় বাকিতে দাও",
+    "রহিম মোটরসকে একজিও দুই হাজার চৌদ্দ এর সামনের নন জেনুইন ব্রেক প্যাড দুইসেট তিন হাসার টাকায় বাকিতে দাও",
+    "Rahim Motors ke axio 2014 er samner non genuine brake pad dui set tin haujar takay bakite dao",
+  ])("%s", (text) => {
+    const heard = hintsOf(text).map((hint) => hint.heard);
+    expect(heard.filter((words) => /হাউজার|হাইজার|হাসার|haujar/.test(words))).toEqual([]);
+  });
+});

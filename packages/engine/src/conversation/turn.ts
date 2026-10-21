@@ -988,6 +988,8 @@ export async function runTurn(
     now,
     newId: deps.newId,
     request: said,
+    // The transcript before the clean-up step rewrote it (D153), when it did.
+    ...(input.text && input.text.trim() !== text ? { heard: input.text.trim() } : {}),
     offersFor: nearOffers,
     // The car a write names is remembered like a search's (D125).
     // A return's sale, through the read path (D169).
