@@ -122,6 +122,18 @@ export function catalogEntries(
       add("vehicle_model", value, named.join(" "));
   }
 
+  // The app's brands the glossary does not have ("KYB", "Denso"), so one said by name is the brand asked for (D188);
+  // never a word the glossary already has for something else (a car, a part, a grade).
+  const brands = new Set<string>();
+  for (const part of catalog.parts) {
+    const brand = part.brand?.trim().replace(/\s+/g, " ");
+    if (!brand || brand.length < 2 || brands.has(brand.toLowerCase())) continue;
+    brands.add(brand.toLowerCase());
+    const words = tokensOf(brand).join(" ");
+    if (!words || base.terms.some((term) => term.text === words)) continue;
+    add("brand", brand, brand);
+  }
+
   // A kind or category as a part type: a glossary type when it is one, a plural allowed ("Brake Pads"), never only by
   // sound ("Brakes" is not Brake Shoe); else its own.
   const exactType = (phrase: string) => {

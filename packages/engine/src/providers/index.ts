@@ -3,6 +3,7 @@ export { llmStream, NothingLeftError, type FallbackOptions } from "./fallback";
 export { recentHealth, recordProviderCall, speechHealth, type SpeechHealth } from "./health";
 export {
   openAiCompatibleProvider,
+  toolCallsInText,
   type ChatMessage,
   type LlmDelta,
   type LlmProvider,

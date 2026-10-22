@@ -417,6 +417,7 @@ function catalogOf(shop: Shop): Catalog {
       nameBn: null,
       partNumbers: [part.id.toUpperCase()],
       category: part.category ?? null,
+      brand: part.brand,
       attrs: {},
     })),
     vehicles: shop.vehicles,

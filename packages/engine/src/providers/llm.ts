@@ -43,6 +43,43 @@ export interface OpenAiCompatibleConfig {
   extraBody?: Record<string, unknown>; // options.extra_body, e.g. chat_template_kwargs
 }
 
+// DeepSeek's own tool-call markup, when it writes a call as text instead of sending it: <｜DSML｜invoke name="…">
+// with <｜DSML｜parameter name="…" string="true">…</｜DSML｜parameter> inside, in a <｜DSML｜calls> block (D188).
+const BAR = "[｜|]+";
+const MARK = `<${BAR}DSML${BAR}\\s*`;
+const CLOSE = `</${BAR}DSML${BAR}\\s*`;
+const INVOKE = new RegExp(`${MARK}invoke\\s+name="([^"]+)"\\s*>([\\s\\S]*?)${CLOSE}invoke\\s*>`, "g");
+const PARAMETER = new RegExp(
+  `${MARK}parameter\\s+name="([^"]+)"(?:\\s+string="(true|false)")?\\s*>([\\s\\S]*?)${CLOSE}parameter\\s*>`,
+  "g",
+);
+const MARKUP = new RegExp(`${MARK}[\\s\\S]*$`);
+
+/**
+ * The tool calls a model wrote as text, and the text without them; null when it wrote none. A call written out is
+ * still a call: it runs as one, and its markup is never an answer (D188).
+ */
+export function toolCallsInText(text: string): { calls: ToolCall[]; text: string } | null {
+  if (!MARKUP.test(text)) return null;
+  const calls = [...text.matchAll(INVOKE)].map((invoke, index) => {
+    const args: Record<string, unknown> = {};
+    for (const [, name, isString, value] of invoke[2]!.matchAll(PARAMETER)) {
+      const raw = value!.trim();
+      if (isString === "false") {
+        try {
+          args[name!] = JSON.parse(raw) as unknown;
+          continue;
+        } catch {
+          // kept as text
+        }
+      }
+      args[name!] = raw;
+    }
+    return { id: `text-call-${index + 1}`, name: invoke[1]!, arguments: JSON.stringify(args) };
+  });
+  return { calls, text: text.replace(MARKUP, "").trim() };
+}
+
 export function openAiCompatibleProvider(config: OpenAiCompatibleConfig): LlmProvider {
   const client = new OpenAI({ baseURL: config.baseUrl, apiKey: config.apiKey, maxRetries: 0 });
   return {

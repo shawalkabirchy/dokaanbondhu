@@ -394,6 +394,7 @@ export function toCatalog(rows: (CatalogRow & { syncedAt?: Date })[]): Catalog {
         nameBn: row.displayNameBn,
         partNumbers: row.partNumbers ?? [],
         category: typeof attrs.category === "string" ? attrs.category : null,
+        brand: typeof attrs.brand === "string" ? attrs.brand : null,
         attrs,
       });
     } else if (row.concept === "vehicle") {

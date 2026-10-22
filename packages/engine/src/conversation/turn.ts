@@ -77,7 +77,14 @@ import {
 import { hostReport, reportNamesOf, syncNote } from "../host/host-features";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
 import type { SchemaMap } from "../host/schema-map";
-import { llmStream, NothingLeftError, type ChatMessage, type LlmProvider, type ToolCall } from "../providers";
+import {
+  llmStream,
+  NothingLeftError,
+  toolCallsInText,
+  type ChatMessage,
+  type LlmProvider,
+  type ToolCall,
+} from "../providers";
 import {
   answeredSlots,
   answerFrame,
@@ -396,6 +403,9 @@ async function collect(
     if (delta.type === "text") text += delta.text;
     if (delta.type === "tool_calls") calls.push(...delta.calls);
   }
+  // A call the model wrote as text is a call, and its markup is never the answer (D188).
+  const written = toolCallsInText(text);
+  if (written) return { text: written.text, calls: [...calls, ...written.calls] };
   return { text: text.trim(), calls };
 }
 
@@ -1204,8 +1214,15 @@ export async function runTurn(
       )
     )
       delete part.part_number;
-    // A count said with its unit or টা ("ekta", "দুই সেট") is the line's quantity when the model left it out.
-    if (item && (line.quantity === undefined || line.quantity === null || line.quantity === "")) {
+    // A count said with its unit or টা ("ekta", "দুই সেট") is the line's quantity when the model left it out, or put
+    // a number nobody said ("tinta …" as 1, D188).
+    const unsaid = (value: unknown) => {
+      if (value === undefined || value === null || value === "") return true;
+      const number =
+        parseQuantity(normalize(String(value)).tokens)?.value ?? Number(asciiDigits(String(value)));
+      return !Number.isFinite(number) || !saidNumbers(text).has(number);
+    };
+    if (item && unsaid(line.quantity)) {
       const tokens = normalize(text, deps.dictionary.variants).tokens;
       const said = tokens
         .map((_, index) => parseQuantity(tokens.slice(index, index + 2)))
@@ -1256,6 +1273,21 @@ export async function runTurn(
       vehicle:
         carOf(model) === also ? vehicle : { model: also, ...(year !== null ? { year: String(year) } : {}) },
     };
+  };
+
+  /** The shop's own part number the request says, written however ("an 136 wk"), the longest one; null if none. */
+  const numberSaid = (): string | null => {
+    const squash = (value: string) =>
+      asciiDigits(value)
+        .replace(/[\s\-_./]/g, "")
+        .toUpperCase();
+    const spoken = squash(text);
+    return (
+      deps.host.catalog.parts
+        .flatMap((part) => part.partNumbers)
+        .filter((number) => squash(number).length >= 5 && spoken.includes(squash(number)))
+        .sort((a, b) => squash(b).length - squash(a).length)[0] ?? null
+    );
   };
 
   const startCued = async (capability: WriteCapability, part: Record<string, unknown>, customer?: string) => {
@@ -1367,8 +1399,22 @@ export async function runTurn(
           record("no_connection");
           return JSON.stringify({ error: "no shop database connected" });
         }
+        // A part said by its number, read from the part's own tables only (no sale, purchase, payment or party):
+        // the part search answers it, with its stock, price, rack and the cars the app records (D186, D188).
+        const number = numberSaid();
+        const sql = String(args.sql ?? "");
+        const elsewhere = (
+          ["Customer", "Sale", "SaleItem", "Return", "Payment", "Supplier", "Purchase"] as const
+        )
+          .map((concept) => deps.host.map?.entities[concept]?.hostTable)
+          .filter((table): table is string => Boolean(table))
+          .some((table) =>
+            new RegExp(`\\b${table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(sql),
+          );
+        if (number && !cued && !elsewhere)
+          return partsTool({ part_number: number }, (result) => record(`part_search: ${result}`));
         try {
-          const result = await runReadQuery(deps.host.map, deps.host.run, String(args.sql ?? ""));
+          const result = await runReadQuery(deps.host.map, deps.host.run, sql);
           facts.read = result;
           facts.allowed.addResult(result.rows).addNumber(result.rows.length);
           emit(tableOf(result, str(args.purpose) ?? ""));
@@ -1934,8 +1980,35 @@ export async function runTurn(
       // Bangla words, and never claims a fit (D88, D95). The LLM phrases the other reads and report figures.
       if (!final && llmText === null && !facts.parts && (facts.read || facts.report?.kind === "figure")) {
         messages.push({ role: "user", content: PHRASING });
-        const phrasing = await collect(deps.llm, messages, [], note);
+        let phrasing = await collect(deps.llm, messages, [], note);
         trace.llm_calls++;
+        // Asked to phrase, the model wrote one more read as text ("which cars" after finding the part by its
+        // number): that read runs, and the model phrases both (D188).
+        const more = phrasing.calls.filter((call) => call.name === "run_read_query").slice(0, 1);
+        if (more.length && trace.llm_calls < LLM_CALLS) {
+          messages.push({
+            role: "assistant",
+            content: null,
+            tool_calls: more.map((call) => ({
+              id: call.id,
+              type: "function" as const,
+              function: { name: call.name, arguments: call.arguments },
+            })),
+          });
+          const result = await runTool(more[0]!);
+          if (result !== "stop" && !final) {
+            messages.push(
+              {
+                role: "tool",
+                tool_call_id: more[0]!.id,
+                content: `<tool_result name="${more[0]!.name}">${result}</tool_result>`,
+              },
+              { role: "user", content: PHRASING },
+            );
+            phrasing = await collect(deps.llm, messages, [], note);
+            trace.llm_calls++;
+          }
+        }
         llmText = phrasing.text;
       }
     } catch (error) {

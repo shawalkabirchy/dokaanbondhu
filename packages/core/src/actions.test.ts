@@ -332,6 +332,9 @@ describe("a price change said (D171)", () => {
     "axio r brake pad er paikari dam 1400 kore dao",
     "ব্রেক প্যাডের দাম আট হাজার পাঁচশো রাখো",
     "brake pad er dam 8500 rakho",
+    // The polite forms (D188).
+    "AN-136WK এর খুচরা দাম ১৭০০ করে দেন",
+    "AN-136WK er khuchra dam 1700 kore den",
   ])("%s is a price change", (text) => {
     expect(writeCueOf(text, { partyNamed: false })).toBe("price_update");
   });

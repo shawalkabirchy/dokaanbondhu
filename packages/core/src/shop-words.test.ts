@@ -51,6 +51,26 @@ const values = (concept: string) =>
   ].sort();
 
 describe("the shop's own vocabulary", () => {
+  it("adds the app's brands the glossary lacks, so one said is that brand (D188)", () => {
+    const branded = catalogEntries({
+      vehicles: [],
+      parts: [
+        { ...part("b1", "Shock absorber front"), brand: "KYB" },
+        { ...part("b2", "Spark plug"), brand: "NGK" }, // the glossary's
+        { ...part("b3", "Brake pad"), brand: "Toyota" }, // the glossary's car make and brand
+      ],
+    });
+    expect(branded.filter((entry) => entry.target_concept === "brand")).toEqual([
+      { target_concept: "brand", target_value: "KYB", bn: [], latin: ["KYB"] },
+    ]);
+    const words = buildDictionary([...GLOSSARY, ...branded]);
+    for (const said of ["KYB", "kyb"])
+      expect(matchConcept("brand", said, [], words).candidates[0]).toMatchObject({
+        value: "KYB",
+        exact: true,
+      });
+  });
+
   it("adds the cars the glossary lacks, without codes, and with a short name; known cars stay the glossary's", () => {
     expect(values("vehicle_model")).toEqual(["Bajaj Pulsar 150", "Haval H6", "Toyota Crown", "Tucson"]);
     for (const said of ["tucson", "toyota crown", "crown", "pulsar 150", "pulsar"]) {

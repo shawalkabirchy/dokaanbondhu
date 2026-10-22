@@ -24,6 +24,8 @@ export interface CatalogPart {
   partNumbers: string[];
   /** The app's category or group, when it has one ("Brake Pad", "AC Compressor"); counts like the name (D122). */
   category?: string | null;
+  /** The app's brand of the part, when it keeps one ("KYB", "Denso"): a brand said by name is known (D188). */
+  brand?: string | null;
 }
 
 export interface CatalogCustomer {

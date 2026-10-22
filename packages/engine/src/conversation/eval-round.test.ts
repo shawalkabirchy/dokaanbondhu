@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connect, fresh, geargrid, ownWords, shopB, type Shop } from "../../test/sale-apps";
+import { connect, fresh, geargrid, ownWords, shopB, tap, type Shop } from "../../test/sale-apps";
 import type { Step } from "../../test/scripted-llm";
 
 // The evaluation round's first findings (D186): what the open half of the chat cards showed the assistant get wrong,
@@ -414,4 +414,116 @@ describe("the second trial run's findings (D187)", () => {
     );
     expect(asked.asked, asked.reply).toBe("quality");
   });
+});
+
+describe("the third trial run's findings (D188)", () => {
+  /** A brand each app keeps, on a part that fits the car said; Zimco is no word list's. */
+  const BRANDS = [
+    {
+      app: geargrid,
+      bn: { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০০৮" },
+      en: { part_type: "brake pad", vehicle: "fielder", year: "2008" },
+      brand: "Akebono",
+      part: "pad-old-copy",
+    },
+    { app: shopB, bn: APPS[1]!.bn, en: APPS[1]!.en, brand: "Toyota", part: "1" },
+    {
+      app: ownWords,
+      bn: { part_type: "ব্রেক প্যাড", vehicle: "Tucson" },
+      en: { part_type: "brake pad", vehicle: "tucson" },
+      brand: "Zimco",
+      part: "tc-silver-zimco",
+    },
+  ];
+  it.each(BRANDS)(
+    "a brand the app keeps is the brand asked for ($app.name: $brand)",
+    async ({ app, bn, en, brand, part }) => {
+      for (const [text, args] of [
+        [`${words(bn)} এ ${brand} হবে?`, { ...bn, brand }],
+        [`${words(en)} e ${brand} hobe?`, { ...en, brand }],
+      ] as const) {
+        const shop = connect(app, { evalMode: true });
+        const answer = await shop.say(fresh(), { text }, [...call("find_parts", args), { text: "" }]);
+        expect(answer.trace.lookups.at(-1)?.resolved.brand, `${text}: ${answer.reply}`).toBe(brand);
+        expect(answer.found).toEqual([part.toUpperCase()]);
+      }
+    },
+  );
+
+  /** The buttons that lead each app's request to one part (as in prices.test.ts). */
+  const TO_ONE_PART: Record<string, RegExp[]> = {
+    GearGrid: [/ফিল্ডার/, /^2012–2017$/],
+    "shop B": [/^Axio$/, /^2012–2017$/, /নন-জেনুইন/],
+    "an app with its own words": [/Tucson/i, /Platinum/i],
+  };
+  it.each(APPS)(
+    "…দাম ১৭০০ করে দেন / …dam 1700 kore den changes the price, though the model searches ($app.name)",
+    async ({ app }) => {
+      for (const [text, part] of [
+        ["ব্রেক প্যাডের খুচরা দাম ১৭০০ করে দেন", { part_type: "ব্রেক প্যাড" }],
+        ["brake pad er khuchra dam 1700 kore den", { part_type: "brake pad" }],
+      ] as const) {
+        const shop = connect(app, { role: "owner" });
+        let reply = await shop.say(fresh(), { text }, call("find_parts", part));
+        for (const label of TO_ONE_PART[app.name]!) reply = await shop.say(reply.state, tap(reply, label));
+        expect(reply.confirm?.text, `${text}: ${reply.reply}`).toMatch(/১,৬০০ টাকা থেকে ১,৭০০ টাকা/);
+      }
+    },
+  );
+
+  it.each(APPS)(
+    "tinta / তিনটা said, the model's 1 is not: three sets ($app.name)",
+    async ({ app, bn, en }) => {
+      for (const [text, part, word] of [
+        [`তিনটা ${words(bn)} রহিম মোটরসের নামে নগদে লিখেন`, bn, "নগদে"],
+        [`tinta ${words(en)} rahim motors er name e nogode likhen`, en, "nogode"],
+      ] as const) {
+        const shop = connect(app);
+        const sheet = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", {
+            customer: "Rahim Motors",
+            items: [{ part, quantity: "1" }],
+            payment: { method_word: word },
+          }),
+        );
+        expect(sheet.asked, `${text}: ${sheet.reply}`).toBeUndefined();
+        expect(sheet.confirm?.text).toMatch(/৩ সেট/);
+      }
+    },
+  );
+
+  const markup = (sql: string) =>
+    `<｜｜DSML｜｜ calls> <｜｜DSML｜｜ invoke name="run_read_query"> <｜｜DSML｜｜ parameter name="sql" ` +
+    `string="true">${sql}</｜｜DSML｜｜ parameter> </｜｜DSML｜｜ invoke> </｜｜DSML｜｜ calls>`;
+  it.each([
+    { style: "Bangla", text: "PAD-NEW কোন গাড়ির মাল?" },
+    { style: "Banglish", text: "PAD-NEW kon garir mal?" },
+  ])(
+    "a part said by its number and read by query is the part search, with its cars ($style)",
+    async ({ text }) => {
+      const shop = connect(geargrid, { evalMode: true });
+      const answer = await shop.say(fresh(), { text }, [
+        {
+          calls: [
+            {
+              name: "run_read_query",
+              arguments: {
+                sql: "SELECT p.id, p.name FROM parts p JOIN part_numbers pn ON pn.part_id = p.id",
+              },
+            },
+          ],
+        },
+        { text: markup("SELECT v.model FROM part_fitments pf JOIN vehicles v ON v.id = pf.vehicle_id") },
+      ]);
+      expect(answer.reply).toMatch(/^PAD-NEW \(.+\) .+ আছে/);
+      expect(answer.reply).not.toMatch(/DSML/);
+      expect(answer.trace.lookups.at(-1)?.cars).toEqual([
+        "toyota-axio-2012",
+        "toyota-fielder-2012",
+        "toyota-premio-2012",
+      ]);
+    },
+  );
 });
