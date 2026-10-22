@@ -93,33 +93,40 @@ export function ResultTable({ table, language }: { table: TableEvent; language: 
       return kind === "money" ? takaText(value, language) : numberText(value, language);
     return value;
   };
+  // Laid out column by column, so each column is as wide as its widest cell and every row lines up; a cell never
+  // wraps, so the rows keep one height. Numbers sit on the right, under a header on the right.
   return (
     <View style={styles.table} testID="result-table">
       {table.title ? <Text style={styles.tableTitle}>{table.title}</Text> : null}
       <ScrollView horizontal>
-        <View>
-          <View style={[styles.tableRow, styles.tableHeadRow]}>
-            {table.columns.map((column) => (
-              <Text key={column.key} style={[styles.tableCell, styles.tableHead]}>
-                {column.label}
-              </Text>
-            ))}
-          </View>
-          {table.rows.map((row, index) => (
-            <View key={index} style={[styles.tableRow, index % 2 === 1 && styles.tableStripe]}>
-              {table.columns.map((column, at) => (
+        <View style={styles.tableGrid}>
+          {table.columns.map((column, at) => {
+            const numeric = column.kind !== "text" && column.kind !== "date";
+            return (
+              <View key={column.key}>
                 <Text
-                  key={column.key}
-                  style={[
-                    styles.tableCell,
-                    column.kind !== "text" && column.kind !== "date" && styles.number,
-                  ]}
+                  numberOfLines={1}
+                  style={[styles.tableCell, styles.tableHead, numeric && styles.numberHead]}
                 >
-                  {cell(row[at] ?? null, column.kind)}
+                  {column.label}
                 </Text>
-              ))}
-            </View>
-          ))}
+                {table.rows.map((row, index) => (
+                  <Text
+                    key={index}
+                    numberOfLines={1}
+                    style={[
+                      styles.tableCell,
+                      styles.tableBody,
+                      index % 2 === 1 && styles.tableStripe,
+                      numeric && styles.number,
+                    ]}
+                  >
+                    {cell(row[at] ?? null, column.kind)}
+                  </Text>
+                ))}
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
       {table.truncated ? <Text style={styles.tableMore}>{t("chat.more_rows")}</Text> : null}
@@ -511,19 +518,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: colors.line,
   },
-  tableRow: { flexDirection: "row", borderTopWidth: 1, borderColor: colors.line },
-  tableHeadRow: { backgroundColor: "#f1f4f2", borderTopWidth: 0 },
+  tableGrid: { flexDirection: "row" },
   tableStripe: { backgroundColor: "#fafbfa" },
   tableCell: {
-    minWidth: 120,
+    minWidth: 96,
     paddingVertical: 9,
     paddingHorizontal: space.md,
     fontSize: type.body - 1,
+    lineHeight: 22,
     color: colors.ink,
   },
-  tableHead: { fontSize: 14, fontWeight: "600", color: colors.muted },
+  tableHead: { fontSize: 14, fontWeight: "600", color: colors.muted, backgroundColor: "#f1f4f2" },
+  tableBody: { borderTopWidth: 1, borderColor: colors.line },
   tableMore: { fontSize: type.small, color: colors.muted, padding: space.md },
-  number: { textAlign: "right", fontWeight: "600" },
+  // Digits of one width, so the numbers of a column line up under each other.
+  number: { textAlign: "right", fontWeight: "600", fontVariant: ["tabular-nums"] },
+  numberHead: { textAlign: "right" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm + 2 },
   options: { gap: space.sm },
   chip: {

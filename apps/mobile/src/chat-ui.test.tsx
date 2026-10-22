@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 import { AssistantBubble, ConfirmSheet, PartCards, ResultTable } from "./chat-ui";
 import type { AssistantMessage, ConfirmEvent } from "./lib/chat-store";
 
@@ -26,6 +27,35 @@ describe("reply content", () => {
     );
     expect(screen.getByText("Rahim Motors")).toBeTruthy();
     expect(screen.getByText("১৯,২০০ টাকা")).toBeTruthy();
+  });
+
+  // Your report of 23 Oct: a reminder table's numbers did not line up. Each column is one block, its numbers and their
+  // header on the right with digits of one width.
+  it("lines up each number column, header and cells on the right", async () => {
+    await render(
+      <ResultTable
+        language="bn"
+        table={{
+          type: "table",
+          title: "পুরোনো বাকি",
+          columns: [
+            { key: "customer", label: "কাস্টমার", kind: "text" },
+            { key: "due", label: "মোট বাকি", kind: "money" },
+          ],
+          rows: [
+            ["রহিম মোটরস", 21900],
+            ["করিম অটো অ্যান্ড সন্স", 400],
+          ],
+          truncated: false,
+        }}
+      />,
+    );
+    const align = (text: string) => StyleSheet.flatten(screen.getByText(text).props.style).textAlign;
+    for (const text of ["মোট বাকি", "২১,৯০০ টাকা", "৪০০ টাকা"]) expect(align(text)).toBe("right");
+    expect(align("কাস্টমার")).toBeUndefined();
+    expect(StyleSheet.flatten(screen.getByText("৪০০ টাকা").props.style).fontVariant).toEqual([
+      "tabular-nums",
+    ]);
   });
 
   it("shows money in taka in English too, and notes a table cut short", async () => {
