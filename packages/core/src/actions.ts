@@ -1,6 +1,7 @@
 import numbers from "../data/bn-numbers.json";
 import { banglaOf, carLabel, possessive } from "./answers";
 import { money } from "./format";
+import { rackSaid } from "./names";
 import { MISHEARD_THOUSAND, wordNumber } from "./numbers";
 import { parseQuantity } from "./quantity";
 import { asciiDigits, banglaDigits, normalize } from "./text";
@@ -129,6 +130,7 @@ export type ActionTemplate =
   | "stock_in"
   | "return"
   | "price_update"
+  | "rack_update"
   | "add_fitment"
   | "add_customer"
   | "add_supplier"
@@ -163,6 +165,9 @@ export interface ActionFields {
   oldPrice?: bigint | null;
   newPrice?: bigint | null;
   years?: string | null;
+  /** A rack change (D195): the rack the part goes on, and the one it is on now. */
+  rack?: string | null;
+  oldRack?: string | null;
   /** A new customer or supplier (D173): the name as said, a customer's price kind, the phone (11 digits). */
   name?: string | null;
   kind?: "retail" | "paikari" | null;
@@ -252,6 +257,10 @@ export function confirmationText(kind: ActionTemplate, fields: ActionFields): st
       const tier = TIER_BN[fields.tier ?? "retail"];
       const from = fields.oldPrice != null ? `${money(fields.oldPrice)} থেকে ` : "";
       return `${possessive(part)} ${tier} দাম ${from}${fields.newPrice != null ? money(fields.newPrice) : ""}। ঠিক আছে?`;
+    }
+    case "rack_update": {
+      const part = fields.lines?.[0]?.part ?? "";
+      return `${part} রাখা হবে ${fields.rack ?? ""}-এ${fields.oldRack ? ` (এখন ${fields.oldRack})` : ""}। ঠিক আছে?`;
     }
     case "add_fitment": {
       const line = fields.lines?.[0];
@@ -466,6 +475,48 @@ const SET_PRICE = [
 const SELLING = ["বিক্রি", "বেচো", "bikri", "becho", "sell"];
 
 /**
+ * A rack change (D195): a rack label said ("বি-৩", "B-3", "c dui") with a word that puts the part there ("রাখো", "rakho",
+ * "সরাও"), or with a rack word and one that sets it ("র‍্যাক বি-৩ করো", "rack D-14 koro").
+ */
+const PUT_ON_RACK = new Set(
+  [
+    "রাখো",
+    "রাখ",
+    "রাখেন",
+    "রাখুন",
+    "রাখবা",
+    "রেখে",
+    "সরাও",
+    "সরিয়ে",
+    "rakho",
+    "rakh",
+    "rakhen",
+    "rakhun",
+    "rakhba",
+    "rekhe",
+    "sorao",
+    "shorao",
+    "soriye",
+    "shoriye",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
+const RACK_NAMES = new Set(
+  ["র‍্যাক", "র‍্যাকে", "র‍্যাকের", "তাক", "তাকে", "তাকের", "rack", "racke", "tak", "take", "taker"].map(
+    (word) => normalize(word).tokens.join(" "),
+  ),
+);
+const SET_RACK = new Set(
+  ["করো", "করেন", "করুন", "বদলাও", "বদলে", "koro", "koren", "korun", "bodlao", "bodle", "change"].map(
+    (word) => normalize(word).tokens.join(" "),
+  ),
+);
+function saysRack(text: string, tokens: string[]): boolean {
+  if (!rackSaid(text)) return false;
+  if (tokens.some((token) => PUT_ON_RACK.has(token))) return true;
+  return tokens.some((token) => RACK_NAMES.has(token)) && tokens.some((token) => SET_RACK.has(token));
+}
+
+/**
  * A fitment said (D172): লাগে with "also" on the car ("প্রিমিওতেও লাগে", "premio teo lage") or with a word that records
  * it ("লাগে, লিখে রাখো", "lage jog koro"). লাগবে and কিনা ask, so they are never one.
  */
@@ -597,8 +648,8 @@ const said = (tokens: string[], phrase: string) =>
 
 /**
  * The kind of write a sentence asks for, or null: a sale ("দাও", "dao" with a payment word or a named customer), a
- * received payment ("জমা নাও", "joma nao"), a purchase ("কিনলাম", "kinlam"), a return ("ফেরত", "ferot") or a
- * price change ("দাম ৮৫০০ করো", "dam 8500 koro"). A question is never one.
+ * received payment ("জমা নাও", "joma nao"), a purchase ("কিনলাম", "kinlam"), a return ("ফেরত", "ferot"), a
+ * price change ("দাম ৮৫০০ করো", "dam 8500 koro") or a rack change ("বি-৩ এ রাখো", "B-3 e rakho"). A question is never one.
  */
 export function writeCueOf(
   text: string,
@@ -609,6 +660,7 @@ export function writeCueOf(
   | "stock_in"
   | "return"
   | "price_update"
+  | "rack_update"
   | "add_fitment"
   | "add_customer"
   | "add_supplier"
@@ -622,6 +674,7 @@ export function writeCueOf(
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
   if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
   if (options.supplierNamed && ARRIVED.some((phrase) => said(tokens, phrase))) return "stock_in";
+  if (saysRack(text, tokens)) return "rack_update";
   if (tokens.some((token) => PRICE_WORDS.has(token))) {
     const sets = SET_PRICE.some((phrase) => said(tokens, phrase));
     const selling = SELLING.some((phrase) => said(tokens, phrase));

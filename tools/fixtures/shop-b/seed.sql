@@ -29,13 +29,14 @@ INSERT INTO items (item_id, item_name, group_id, grade, side, uom, remarks, is_d
   -- "R" may be rear or right: the owner says which in setup.
   (7, 'Brake Pad R Copy', 1, 'Copy', 'R', 'set', NULL, 0),
   (8, 'Brake Pad F old stock', 1, 'Copy', 'F', 'set', NULL, 1),
-  -- Run out (D194): no reorder level and no sales here, so a part at or below zero is low.
+  -- Run out (D194): no reorder level and no sales here, so a part at or below zero is low. On no shelf yet (D199).
   (9, 'Clutch Plate 200mm', 6, 'Copy', NULL, 'pcs', NULL, 0);
 
 INSERT INTO item_codes (code_id, item_id, code) VALUES
   (1, 1, '04465-12610'),
   (2, 2, 'BP-141F'),
-  (3, 7, 'BP-141R');
+  (3, 7, 'BP-141R'),
+  (4, 9, 'CP-200');
 
 INSERT INTO item_cars (item_id, model_id) VALUES
   (1, 1),
@@ -60,7 +61,7 @@ INSERT INTO branch_stock (stock_id, item_id, branch_id, qty, shelf) VALUES
   (6, 5, 1, 1.00, 'C-2'),
   (7, 6, 1, 12.50, 'A-1'),
   (8, 7, 1, 3.00, 'B-4'),
-  (9, 9, 1, 0.00, 'B-5');
+  (9, 9, 1, 0.00, NULL);
 
 -- Item 1 has a price history: the newest row (August) is the price now.
 INSERT INTO item_prices (price_id, item_id, sale_rate, workshop_rate, dealer_rate, cost_rate, effective_from) VALUES

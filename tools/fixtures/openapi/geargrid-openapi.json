@@ -963,6 +963,17 @@
           }
         }
       },
+      "RackInput": {
+        "type": "object",
+        "properties": {
+          "rack_location": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 20
+          }
+        },
+        "required": ["rack_location"]
+      },
       "FitmentInput": {
         "type": "object",
         "properties": {
@@ -2997,6 +3008,125 @@
                         }
                       },
                       "required": ["retail_price_taka", "garage_price_taka"]
+                    }
+                  },
+                  "required": ["part", "previous"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No valid key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/parts/{id}/rack": {
+      "patch": {
+        "operationId": "updateRack",
+        "summary": "Change the rack a part is kept on, or clear it; the answer keeps the previous rack for an undo",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-compensating-operation": {
+          "operation": "updateRack",
+          "id_from": "part.id",
+          "body": {
+            "rack_location": "{previous.rack_location}"
+          }
+        },
+        "x-read-back": {
+          "operation": "getPart",
+          "id_from": "part.id"
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RackInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new rack and the previous one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "type": "object",
+                      "properties": {
+                        "rack_location": {
+                          "type": ["string", "null"]
+                        },
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": ["rack_location", "id"]
+                    },
+                    "previous": {
+                      "type": "object",
+                      "properties": {
+                        "rack_location": {
+                          "type": ["string", "null"]
+                        }
+                      },
+                      "required": ["rack_location"]
                     }
                   },
                   "required": ["part", "previous"]

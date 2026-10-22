@@ -72,6 +72,7 @@ import {
   type Resolved,
 } from "../host/find-parts";
 import { customerTier, rackLabels, type AppWords, type Catalog } from "../host/catalog";
+import { HostCallFailed } from "../host/api";
 import type { RunQuery } from "../host/pool";
 import {
   READ_ONLY_REFUSAL,
@@ -120,6 +121,8 @@ import {
   advanceWrite,
   clearAdding,
   correctWrite,
+  OWN_RACK_ID,
+  ownRackCapability,
   writeFrame,
   type AddedRecord,
   type WriteStep,
@@ -349,7 +352,19 @@ export interface TurnOutcome {
   actions: ActionRecord[];
   /** Customers and suppliers the app saved in this turn: the server puts them in the catalog cache at once (D173). */
   added: AddedRecord[];
+  /** Racks the user said yes to keeping in DokaanBondhu's own list (D195, D199): the server saves them in rack_extra. */
+  racks: { hostPartId: string; rack: string }[];
 }
+
+/** The host of a shop app without writes, for DokaanBondhu's own rack list (D199), which never calls an app. */
+const NO_WRITES: WriteHost = {
+  capabilities: [],
+  operations: {},
+  features: {},
+  call: async () => {
+    throw new HostCallFailed("the shop's app takes no writes", "network");
+  },
+};
 
 /** Tool names the read path already uses: a capability named like one is not offered. */
 const READ_TOOL_NAMES = new Set([
@@ -669,6 +684,9 @@ export async function runTurn(
     state.context = { ...state.context };
     delete state.context.customer;
   }
+  // DokaanBondhu's own rack action has no capability row, so its saved frame comes back without the ID (D199).
+  if (state.frame && !state.frame.capabilityId && state.frame.intent === ownRackCapability().name)
+    state.frame = { ...state.frame, capabilityId: OWN_RACK_ID };
   const frameOpen = isOpen(state.frame, now);
   if (state.frame && !frameOpen && state.frame.status === "active")
     state.frame = { ...state.frame, status: "expired" };
@@ -851,6 +869,14 @@ export async function runTurn(
     | null = null;
   const role = deps.role ?? "staff";
   const offered = offeredWrites(deps.host.writes, role);
+  // An app without a rack action: a rack goes in DokaanBondhu's own list, asked with Yes and No (D195, D199).
+  if (
+    deps.host.map &&
+    deps.host.run &&
+    !deps.host.writes?.capabilities.some((capability) => capability.template === "rack_update")
+  )
+    offered.push(ownRackCapability());
+  const racks: TurnOutcome["racks"] = [];
   /** A waiting action's capability, by name, for the trace. */
   const capabilityName = (pending: PendingAction) =>
     deps.host.writes?.capabilities.find((item) => item.id === pending.capabilityId)?.name ?? "";
@@ -864,8 +890,7 @@ export async function runTurn(
         supplierNamed: named.some((name) => name.kind === "supplier"),
       })
     : null;
-  const cued =
-    cueKind && deps.host.writes ? (offered.find((item) => item.template === cueKind) ?? null) : null;
+  const cued = cueKind ? (offered.find((item) => item.template === cueKind) ?? null) : null;
 
   // Prices are said at retail unless the question itself names a level ("পাইকারি দাম", "garage price"); a
   // remembered customer never changes them, and a question's answer keeps the level of the request it answers (D141).
@@ -1124,7 +1149,7 @@ export async function runTurn(
   /** The write flow's view of this turn (spec 9.6, 11.9). */
   const writeTurn = (said: string): WriteTurn => ({
     capabilities: offered,
-    host: deps.host.writes!,
+    host: deps.host.writes ?? NO_WRITES,
     dictionary: deps.dictionary,
     customers: deps.host.catalog.customers,
     suppliers: deps.host.catalog.suppliers.map((supplier) => ({
@@ -1137,6 +1162,9 @@ export async function runTurn(
     tier: billTier,
     mayPrice: role === "owner" || deps.staffPriceOverride === true,
     paikari: deps.host.paikari ?? null,
+    // A rack as the shop writes its labels, and DokaanBondhu's own racks told from the app's (D195, D199).
+    racks: rackLabels(deps.host.catalog),
+    ownRacks: deps.host.rackExtra,
     // A fitment's car among the app's vehicles, and whether the fit is recorded already (D172).
     cars: (query) =>
       resolveCar({ query, catalog: deps.host.catalog, dictionary: deps.dictionary, hypotheses: others, now }),
@@ -1235,6 +1263,11 @@ export async function runTurn(
       return;
     }
     frame.status = "done";
+    if (step.kind === "own_rack") {
+      racks.push({ hostPartId: step.hostPartId, rack: step.rack });
+      final = { kind: "answer", text: step.text };
+      return;
+    }
     if (step.kind === "parts") {
       if (step.result.kind !== "ask") partsFacts(step.query, step.result);
       return;
@@ -1382,42 +1415,44 @@ export async function runTurn(
         : // A fitment names two cars: its part takes none of them from the words (D172, D174).
           capability.template === "add_fitment"
           ? withAlsoCar(capability, { part: heardPart(false) })
-          : capability.template === "price_update"
-            ? {
-                part: {
-                  ...heardPart(true),
-                  ...part,
-                },
-                ...(price !== undefined
-                  ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } }
-                  : {}),
-              }
-            : capability.template === "payment"
+          : capability.template === "rack_update"
+            ? { part: { ...heardPart(true), ...part } }
+            : capability.template === "price_update"
               ? {
-                  ...(who ? { customer: who } : {}),
-                  ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+                  part: {
+                    ...heardPart(true),
+                    ...part,
+                  },
+                  ...(price !== undefined
+                    ? { prices: { [priceLevelIn(text) ?? "retail"]: String(price) } }
+                    : {}),
                 }
-              : {
-                  ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
-                  ...(party("supplier") ? { supplier: party("supplier") } : {}),
-                  items: [
-                    {
-                      part: {
-                        ...heardPart(true),
-                        ...part,
+              : capability.template === "payment"
+                ? {
+                    ...(who ? { customer: who } : {}),
+                    ...(parseAmount(text) !== null ? { amount: String(parseAmount(text)) } : {}),
+                  }
+                : {
+                    ...(who && capability.template !== "stock_in" ? { customer: who } : {}),
+                    ...(party("supplier") ? { supplier: party("supplier") } : {}),
+                    items: [
+                      {
+                        part: {
+                          ...heardPart(true),
+                          ...part,
+                        },
+                        // A count with টা is what the part is sold in, so it goes on as said (D186).
+                        ...(quantity
+                          ? {
+                              quantity: quantity.counted
+                                ? `${quantity.value}টা`
+                                : `${quantity.value} ${quantity.unit}`,
+                            }
+                          : {}),
+                        ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
                       },
-                      // A count with টা is what the part is sold in, so it goes on as said (D186).
-                      ...(quantity
-                        ? {
-                            quantity: quantity.counted
-                              ? `${quantity.value}টা`
-                              : `${quantity.value} ${quantity.unit}`,
-                          }
-                        : {}),
-                      ...(unitCost !== null ? { unit_cost: String(unitCost) } : {}),
-                    },
-                  ],
-                };
+                    ],
+                  };
     const frame = markGuessed(writeFrame(capability, args, writeTurn(text)));
     tookStep(frame, await advanceWrite(frame, writeTurn(text)));
     return "stop" as const;
@@ -1693,7 +1728,7 @@ export async function runTurn(
       default: {
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
-        if (capability && deps.host.writes) {
+        if (capability) {
           // The whole request: an answer to "which Rahim?" carries the request it answers, so the amount said
           // in it is still said (D186).
           const frame = markGuessed(
@@ -1881,7 +1916,11 @@ export async function runTurn(
       // The new-name button adds the name as heard (D173).
       if (answer?.value !== NEW_PARTY) delete frame.slots[`said_${filled}`];
     }
-    if ((filled || correction) && frame.capabilityId && deps.host.writes) {
+    if (
+      (filled || correction) &&
+      frame.capabilityId &&
+      (deps.host.writes || frame.capabilityId === OWN_RACK_ID)
+    ) {
       // A write's answer, or "না, X" for a part detail: the write goes on from where it was (spec 9.3 rule 3).
       if (correction) {
         frame.slots[correction.slot] = { value: correction.value, status: "understood", source: "user" };
@@ -2238,6 +2277,7 @@ export async function runTurn(
     learned,
     actions,
     added,
+    racks,
   };
 }
 

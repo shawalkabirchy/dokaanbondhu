@@ -154,6 +154,7 @@ describe.skipIf(!allLocal)("safety of the read path", () => {
       "get_report",
       "resolve_customer",
       "ask_user",
+      "keep_rack", // a database connection without a rack action (D199)
     ]);
     expect(phrasing?.tools).toBeUndefined(); // the phrasing call offers no tools at all
     const system = phrasing?.messages[0] as { content: string };

@@ -609,4 +609,38 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     expect(dues.reply).toBe("এটা আপনার অ্যাপে দেখুন।");
     expect(dues.outcome.trace.llm_calls).toBe(0);
   });
+
+  // D195, D199: shop B has no write API, so a rack is kept in DokaanBondhu's own list, asked with Yes and No, for a part
+  // on no shelf in the app (the run-out clutch plate, CP-200); a part on one of its shelves (BP-141F on B-3) is changed
+  // in the app. Both are said by their numbers: a part that fits no car is found only so.
+  it.each([
+    {
+      style: "Bangla",
+      clutch: "CP-200 পার্টটা সি-২ এ রাখো",
+      pad: "BP-141F পার্টটা সি-২ এ রাখো",
+      yes: "হ্যাঁ",
+    },
+    {
+      style: "Banglish",
+      clutch: "CP-200 part ta C-2 te rakho",
+      pad: "BP-141F part ta C-2 te rakho",
+      yes: "ha",
+    },
+  ])(
+    "keeps a rack in its own list for a part on no shelf; the app's shelf is changed in the app ($style)",
+    async (said) => {
+      const keep = (part_number: string) => ({
+        calls: [{ name: "keep_rack", arguments: { part: { part_number } } }],
+      });
+      const clutch = await turn(said.clutch, fresh(), keep("CP-200"));
+      expect(clutch.reply).toMatch(/রাখা হবে C-2-এ। ঠিক আছে\?$/);
+      expect(clutch.choices?.options.map((option) => option.label)).toEqual(["হ্যাঁ", "না"]);
+      const kept = await turn(said.yes, clutch.outcome.state, {});
+      expect(kept.reply).toMatch(/^রাখা হলো: .+ এখন C-2-এ।$/);
+      expect(kept.outcome.racks).toEqual([{ hostPartId: "9", rack: "C-2" }]);
+      const pad = await turn(said.pad, fresh(), keep("BP-141F"));
+      expect(pad.reply).toMatch(/র‍্যাক অ্যাপে লেখা আছে: B-3। বদলাতে অ্যাপেই বদলান।$/);
+      expect(pad.outcome.racks).toEqual([]);
+    },
+  );
 });

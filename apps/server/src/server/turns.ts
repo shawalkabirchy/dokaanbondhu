@@ -33,14 +33,16 @@ import {
   aliasSuggestions,
   conversations,
   messages,
+  rackExtra,
   requestFrames,
   users,
   type Tx,
 } from "@dokaanbondhu/platform-db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { z } from "zod";
 import { serverEnv } from "../env";
 import { appError } from "./errors";
-import { shopHost } from "./host";
+import { keepRack, shopHost } from "./host";
 import type { Caller } from "./route";
 import { clipPath, clipStore } from "./recordings";
 import { loadShop, settingsOf, shopLlm, shopSpeech } from "./shop";
@@ -248,7 +250,9 @@ export async function loadConversation(caller: Caller, conversationId: string): 
 async function saveFrame(tx: Tx, shopId: string, conversationId: string, frame: RequestFrame): Promise<void> {
   const values = {
     intent: frame.intent,
-    capabilityId: frame.capabilityId ?? null,
+    // Only an app action is a capability row: DokaanBondhu's own rack action is saved without one (D199).
+    capabilityId:
+      frame.capabilityId && z.uuid().safeParse(frame.capabilityId).success ? frame.capabilityId : null,
     slots: frame.slots,
     asking: frame.asking ?? null,
     offers: frame.offers ?? [],
@@ -413,6 +417,21 @@ async function answer(
     const connectionId = shopHostValue.connectionId;
     if (connectionId)
       for (const record of outcome.added) await addToCatalog(tx, caller.shopId, connectionId, record);
+    // A rack the user kept in DokaanBondhu's own list, for an app without a rack action (D195, D199).
+    if (connectionId)
+      for (const kept of outcome.racks)
+        await tx
+          .insert(rackExtra)
+          .values({
+            shopId: caller.shopId,
+            connectionId,
+            hostPartId: kept.hostPartId,
+            rackLocation: kept.rack,
+          })
+          .onConflictDoUpdate({
+            target: [rackExtra.connectionId, rackExtra.hostPartId],
+            set: { rackLocation: kept.rack, updatedAt: now },
+          });
     // Words learned from an answered question (D102 B): counted, and shown to the owner once seen twice.
     for (const word of outcome.learned) {
       await tx
@@ -434,6 +453,9 @@ async function answer(
         });
     }
   });
+  // Saved: the kept racks are in the cached host too, so the next answer says them (D199).
+  if (shopHostValue.connectionId)
+    for (const kept of outcome.racks) keepRack(shopHostValue, kept.hostPartId, kept.rack);
   if (speaker) await speaker.drain();
   const done = held as DoneEvent | null;
   if (done) {

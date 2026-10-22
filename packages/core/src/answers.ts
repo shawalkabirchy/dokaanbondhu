@@ -273,6 +273,7 @@ export type QuestionSlot =
   | "phone"
   | "sale_ref"
   | "new_price"
+  | "rack"
   | "quantity"
   | "unit_cost"
   | "unit_price"
@@ -297,6 +298,7 @@ export const QUESTION_ORDER: QuestionSlot[] = [
   "phone",
   "sale_ref",
   "new_price",
+  "rack",
   "quantity",
   "unit_cost",
   "unit_price",
@@ -374,6 +376,9 @@ export function question(input: QuestionInput): string {
       break;
     case "new_price":
       text = `নতুন ${input.tier === "paikari" ? "পাইকারি" : "খুচরা"} দাম কত?`;
+      break;
+    case "rack":
+      text = "কোন র‍্যাকে রাখব?";
       break;
     case "amount":
       text = "কত টাকা?";

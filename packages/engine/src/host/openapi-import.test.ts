@@ -21,7 +21,7 @@ describe("OpenAPI importer", () => {
   it("makes every operation a capability, named by its operationId in snake_case, reads and writes apart", () => {
     expect(snakeCase("recordSale")).toBe("record_sale");
     expect(snakeCase("getHealth")).toBe("get_health");
-    expect(imported.capabilities).toHaveLength(23);
+    expect(imported.capabilities).toHaveLength(24);
     const writes = imported.capabilities.filter((item) => item.kind === "write").map((item) => item.name);
     expect(writes.sort()).toEqual(
       [
@@ -33,6 +33,7 @@ describe("OpenAPI importer", () => {
         "reverse_purchase",
         "record_return",
         "update_price",
+        "update_rack",
         "add_fitment",
         "update_fitment",
         "add_customer",
@@ -134,6 +135,15 @@ describe("OpenAPI importer", () => {
       location: "path",
       semanticSlot: null,
     });
+    // A rack change (D195): the part in the path, the rack in the body; staff may, and its undo puts the old rack back.
+    const rack = byName(imported.capabilities, "update_rack");
+    expect(rack).toMatchObject({
+      httpMethod: "PATCH",
+      template: "rack_update",
+      requiredRole: "staff",
+      compensation: { operation: "update_rack", body: { rack_location: "{previous.rack_location}" } },
+    });
+    expect(slots(rack)).toMatchObject({ rack_location: "rack" });
     expect(byName(imported.capabilities, "add_fitment")).toMatchObject({
       template: "add_fitment",
       compensation: { operation: "update_fitment", body: { deleted: true } },

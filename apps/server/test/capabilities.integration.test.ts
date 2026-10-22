@@ -216,7 +216,7 @@ describe.skipIf(!allLocal || !apiLocal)("setup endpoints, API half", () => {
     const tested = await call(routes.test!.POST, { method: "POST", params: { id: connectionId } });
     expect(tested.body).toMatchObject({
       ok: true,
-      operations: 23,
+      operations: 24, // with the rack action (D195)
       key: "accepted",
       connection: { status: "active", auth_header: "X-Api-Key", last_error: null },
     });
@@ -248,7 +248,7 @@ describe.skipIf(!allLocal || !apiLocal)("setup endpoints, API half", () => {
     });
     expect(answer.status).toBe(200);
     const result = answer.body as unknown as DiscoverResult;
-    expect(result.added).toHaveLength(23);
+    expect(result.added).toHaveLength(24);
     expect(result).toMatchObject({
       changed: [],
       kept: [],
@@ -359,7 +359,7 @@ describe.skipIf(!allLocal || !apiLocal)("setup endpoints, API half", () => {
     const result = (
       await call(routes.discover!.POST, { method: "POST", body: { connection_id: connectionId } })
     ).body as unknown as DiscoverResult;
-    expect(result.kept).toHaveLength(23);
+    expect(result.kept).toHaveLength(24);
     expect(result).toMatchObject({ added: [], changed: [], removed: [] });
     expect(byName(result.capabilities, "record_sale")).toEqual(sale);
   });

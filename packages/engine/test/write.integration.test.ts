@@ -49,6 +49,7 @@ const ENABLED = new Set([
   "stock_in",
   "record_return",
   "update_price",
+  "update_rack",
   "add_fitment",
   "add_customer",
   "add_supplier",
@@ -225,6 +226,14 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
     return BigInt(String(row!.retail_price));
   }
 
+  /** A part's rack as the host has it now. */
+  async function rackOf(partId: string): Promise<string | null> {
+    const [row] = await pools.readOnly(db, (run) =>
+      run({ text: "select rack_location from parts where id = $1", values: [partId] }),
+    );
+    return (row!.rack_location as string | null) ?? null;
+  }
+
   /** Every call sent so far went as a dry run, or was a read: nothing was saved. */
   const nothingSent = () => calls.every((call) => call.method === "GET" || call.query?.dry_run === "true");
 
@@ -289,6 +298,7 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       "record_return",
       "record_sale",
       "stock_in",
+      "update_rack",
     ]);
     expect(writesOf(owner.offered[0]!).sort()).toEqual([
       "add_customer",
@@ -299,6 +309,7 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       "record_sale",
       "stock_in",
       "update_price",
+      "update_rack",
     ]);
   });
 
@@ -568,6 +579,51 @@ describe.skipIf(!ready)("the write path on the test host's API", () => {
       const undone = await undo(done.outcome.actions[0]!, { preview: pending.preview! });
       expect(undone).toMatchObject({ status: "undone" });
       expect(await retailOf(partId)).toBe(before);
+    },
+  );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "এক্সিওর সামনের ব্রেক প্যাডটা জেড নয় এ রাখো",
+      args: {
+        part: { part_type: "সামনের ব্রেক প্যাড", vehicle: "এক্সিও", position: "সামনের" },
+        rack: "জেড নয়",
+      },
+      answers: ["২০১৪", "নন-জেনুইন", "হ্যাঁ"],
+    },
+    {
+      style: "Banglish",
+      text: "axio r samner brake pad ta Z-9 e rakho",
+      args: { part: { part_type: "brake pad", vehicle: "axio", position: "samner" }, rack: "Z-9" },
+      answers: ["2014", "non genuine", "ha"],
+    },
+  ])(
+    "D195: staff put a part on a rack; it is saved, read back and undone ($style)",
+    async ({ text, args, answers }) => {
+      const [year, quality, yes] = answers as [string, string, string];
+      calls.length = 0;
+      const first = await say(fresh(), text, [
+        scripted([{ calls: [{ name: "update_rack", arguments: args }] }]),
+      ]);
+      expect(first.reply).toMatch(/কোন বছরের এক্সিও\?$/);
+      const sheet = await say((await say(first.state, year)).state, quality);
+      expect(sheet.reply).toMatch(/^এক্সিওর সামনের ব্রেক প্যাড রাখা হবে Z-9-এ( \(এখন [^)]+\))?। ঠিক আছে\?$/);
+      const pending = sheet.outcome.actions[0]!;
+      const partId = pending.request!.path.split("/").at(-2)!;
+      const before = await rackOf(partId);
+      expect(pending.request).toMatchObject({ method: "PATCH", body: { rack_location: "Z-9" } });
+      expect(calls).toHaveLength(0); // no dry run for racks: nothing is sent before yes
+      const done = await say(sheet.state, yes);
+      expect(done.reply).toBe("হয়ে গেছে।");
+      expect(done.events.find((event) => event.type === "action_result")).toMatchObject({
+        status: "done",
+        undo_available: true,
+      });
+      expect(await rackOf(partId)).toBe("Z-9");
+      const undone = await undo(done.outcome.actions[0]!, { preview: pending.preview! });
+      expect(undone).toMatchObject({ status: "undone" });
+      expect(await rackOf(partId)).toBe(before);
     },
   );
 

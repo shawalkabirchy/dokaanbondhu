@@ -272,6 +272,8 @@ function slotOf(path: string, linesWithParts: Set<string>): string | null {
   if (/^(method|payment_method|trx_?id)$/i.test(leaf)) return "payment";
   if (/^(retail|garage|wholesale)_price/i.test(leaf)) return "prices";
   if (/^refund_(due|cash)/i.test(leaf)) return "refund";
+  // Where a part is kept (D195): rack, rack_location, shelf, bin.
+  if (/^(rack|shelf|bin)(_?(location|no|number|code|label))?$/i.test(leaf)) return "rack";
   if (/^amount/i.test(leaf)) return "amount";
   if (/^reason$/i.test(leaf)) return "reason";
   if (/^note$/i.test(leaf)) return "note";
@@ -318,6 +320,13 @@ function templateOf(
   if (slots.has("supplier") && slots.has("items")) return "stock_in";
   if (slots.has("customer") && slots.has("amount")) return "payment";
   if (slots.has("prices")) return "price_update";
+  // A part's rack, the part in the body or in the path ("/parts/{id}/rack"), and no lines (D195).
+  if (
+    slots.has("rack") &&
+    !slots.has("items") &&
+    (slots.has("part") || /\/parts?\/\{[^}]+\}/i.test(operation.path))
+  )
+    return "rack_update";
   if (slots.has("part") && slots.has("vehicle")) return "add_fitment";
   // A new record is a POST with a name and nothing it is about (D173); its edit or removal is not one.
   if (operation.method === "post" && slots.has("name") && !slots.has("part") && !slots.has("items"))

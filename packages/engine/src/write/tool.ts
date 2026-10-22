@@ -27,6 +27,8 @@ const PURPOSE: Record<string, string> = {
   stock_in: "Record parts bought from a supplier (stock in).",
   return: "Take back parts a customer returns from an earlier sale.",
   price_update: "Change a part's price.",
+  rack_update:
+    "Put a part on a rack or shelf, recording where it is kept, when the user says so (ei pad ta B-3 e rakho): part is the part as known; rack is the rack as said.",
   add_fitment:
     "Record that a part also fits another car, when the user says so (ei pad ta premio teo lage): part is the part as known, with its own car; vehicle is the other car.",
   add_customer:
@@ -110,6 +112,8 @@ export function writeTool(capability: WriteCapability): ToolDef {
       additionalProperties: false,
     };
   }
+  // A rack change (D195): the rack as said; the system reads it from the user's words.
+  if (slots.has("rack")) properties.rack = said("the rack or shelf as said, e.g. বি-৩, B-3, c dui");
   // A new customer or supplier (D173): the name exactly as said, and only what the user says of the rest.
   if (slots.has("name"))
     properties.name = said("the new name exactly as said, e.g. রহিম গ্যারেজ, Rahim Garage");

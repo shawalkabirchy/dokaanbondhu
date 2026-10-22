@@ -78,6 +78,8 @@ export interface ResolvedWrite {
   verified?: boolean;
   /** A price change's new prices, whole taka: only the kind that changes is set (D171). */
   prices?: { retail?: number | null; paikari?: number | null } | null;
+  /** A rack change's rack, as the shop writes its labels (D195). */
+  rack?: string | null;
   /** Which trade price is the shop's paikari price, as the owner chose (D146); null: garage, else wholesale. */
   paikariField?: "garage_price" | "wholesale_price" | null;
   /** A new customer or supplier (D173): the name as said, the app's own type value, the phone (11 digits). */
@@ -200,6 +202,8 @@ function valueFor(
       return resolved.part?.hostId ?? resolved.line?.hostPartId;
     case "vehicle":
       return resolved.vehicle?.hostId;
+    case "rack":
+      return resolved.rack ?? undefined;
     case "prices": {
       const prices = resolved.prices;
       if (!prices) return undefined;

@@ -324,6 +324,45 @@ describe("a quantity glued as speech-to-text writes it (D170)", () => {
   });
 });
 
+describe("a rack change said (D195)", () => {
+  it.each([
+    "এই প্যাডটা বি-৩ এ রাখো",
+    "ei padta B-3 e rakho",
+    "ফিল্ডারের ব্রেক প্যাড সি দুই তাকে রাখো",
+    "fielder er brake pad c dui take rakho",
+    "এক্সিওর প্যাডের র‍্যাক ডি ১৪ করো",
+    "axio pad er rack D-14 koro",
+    "প্যাডটা বি-৩ থেকে সি-২ তে সরাও",
+    "pad ta B-3 theke C-2 te sorao",
+  ])("%s is a rack change", (text) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBe("rack_update");
+  });
+
+  it.each([
+    "বি-৩ এ কী কী আছে?", // a question
+    "B-3 te ki ki ache",
+    "এই প্যাডটা রাখো", // no rack
+    "ei padta rakho",
+    "রহিম মোটরসকে ২ সেট প্যাড বাকিতে দাও", // a sale
+    "rahim motors ke 2 set pad bakite dao",
+  ])("%s is no rack change", (text) => {
+    expect(writeCueOf(text, { partyNamed: true })).not.toBe("rack_update");
+  });
+
+  it("confirms the rack from and to, or to alone", () => {
+    expect(
+      confirmationText("rack_update", {
+        lines: [{ part: "ফিল্ডারের সামনের ব্রেক প্যাড" }],
+        rack: "C-2",
+        oldRack: "B-3",
+      }),
+    ).toBe("ফিল্ডারের সামনের ব্রেক প্যাড রাখা হবে C-2-এ (এখন B-3)। ঠিক আছে?");
+    expect(
+      confirmationText("rack_update", { lines: [{ part: "হর্ন সেট" }], rack: "A-1", oldRack: null }),
+    ).toBe("হর্ন সেট রাখা হবে A-1-এ। ঠিক আছে?");
+  });
+});
+
 describe("a price change said (D171)", () => {
   it.each([
     "নোয়ার সেলফ মোটরের দাম ৮৫০০ টাকা করো",

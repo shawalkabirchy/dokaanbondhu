@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDictionary } from "./glossary";
-import { namesInText, racksInText } from "./names";
+import { namesInText, rackSaid, racksInText } from "./names";
 
 // The shop's own names said inside a request (D95, D108), in Bangla and Banglish (D96).
 
@@ -49,6 +49,35 @@ describe("a company's name said without its Ltd (D189)", () => {
 
   it("a name that is only its company word is not cut to nothing", () => {
     expect(namesInText("ltd er dam koto", [{ kind: "supplier", name: "Ltd" }], dictionary)).toHaveLength(1);
+  });
+});
+
+// D195: the rack a request puts a part on, new or known, written or said sign by sign.
+describe("a rack to put a part on", () => {
+  it.each([
+    { style: "Bangla", text: "এই প্যাডটা বি-৩ এ রাখো", rack: "B-3" },
+    { style: "Bangla", text: "ফিল্ডারের ব্রেক প্যাড সি দুই তাকে রাখো", rack: "C-2" },
+    { style: "Bangla", text: "এক্সিওর প্যাড জি বারো নম্বর র‍্যাকে রাখো", rack: "G-12" },
+    { style: "Bangla", text: "প্যাডটা বি-৩ থেকে ডি ১৪ তে সরাও", rack: "D-14" },
+    { style: "Banglish", text: "ei padta B-3 e rakho", rack: "B-3" },
+    { style: "Banglish", text: "ei 2 ta pad c2 te rakho", rack: "C-2" },
+    { style: "Banglish", text: "fielder er brake pad c dui take rakho", rack: "C-2" },
+    { style: "Banglish", text: "AN-136WK er rack d 14 koro", rack: "D-14" },
+  ])("reads $rack ($style: $text)", ({ text, rack }) => {
+    expect(rackSaid(text)).toBe(rack);
+  });
+
+  it("writes a known rack as the shop does, and a new one in the shop's style", () => {
+    expect(rackSaid("ei padta c2 te rakho", ["C-2", "B-3"])).toBe("C-2");
+    expect(rackSaid("ei padta b 3 e rakho", ["A1", "B3"])).toBe("B3");
+    expect(rackSaid("ei padta d 4 e rakho", ["A1", "C2"])).toBe("D4");
+    expect(rackSaid("ei padta d 4 e rakho", ["A-1"])).toBe("D-4");
+  });
+
+  it("reads none where no rack is said", () => {
+    expect(rackSaid("এই প্যাডটা রাখো")).toBeNull();
+    expect(rackSaid("fielder er pad rakho")).toBeNull();
+    expect(rackSaid("AN-136WK pad 2 set dao")).toBeNull();
   });
 });
 

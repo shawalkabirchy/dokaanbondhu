@@ -275,6 +275,7 @@ export const TEMPLATE_KINDS = [
   "stock_in",
   "return",
   "price_update",
+  "rack_update",
   "add_fitment",
   "add_customer",
   "add_supplier",

@@ -4,10 +4,11 @@ import {
   conversations,
   createPlatform,
   messages,
+  rackExtra,
   requestFrames,
   type Platform,
 } from "@dokaanbondhu/platform-db";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   allLocal,
@@ -130,6 +131,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       "get_report",
       "resolve_customer",
       "ask_user",
+      "keep_rack", // a database connection without a rack action (D199)
     ]);
 
     const saved = await admin.withAdmin(async (tx) => ({
@@ -388,6 +390,53 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       expect(card.low_stock!.names.length).toBe(Math.min(lows, 3));
       expect(card.old_dues!.count).toBeGreaterThan(0);
       expect(card.old_dues!.old_taka).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps a rack in its own list for a part the app has none for, and says it next time (D195, D199)", async () => {
+    // Every part of the seed has a rack: one is taken off for this test, and put back after it.
+    const gearGrid = createPlatform(urls.host, { max: 1 });
+    const found = await gearGrid.withAdmin((tx) =>
+      tx.execute(sql`select p.id, p.rack_location, pn.number from parts p
+        join part_numbers pn on pn.part_id = p.id and pn.deleted_at is null
+        where p.deleted_at is null and p.is_active
+          and (select count(*) from part_numbers x where x.number = pn.number and x.deleted_at is null) = 1
+        order by pn.number limit 1`),
+    );
+    const part = found.rows[0] as { id: string; rack_location: string; number: string };
+    await gearGrid.withAdmin((tx) =>
+      tx.execute(sql`update parts set rack_location = null where id = ${part.id}`),
+    );
+    try {
+      const conversationId = await newConversation();
+      llm.script.push({ calls: [{ name: "keep_rack", arguments: { part: { part_number: part.number } } }] });
+      const asked = await chat({
+        conversation_id: conversationId,
+        text: `${part.number} part ta Z-8 e rakho`,
+      });
+      expect(asked.reply).toMatch(/রাখা হবে Z-8-এ। ঠিক আছে\?$/);
+      const kept = await chat({
+        conversation_id: conversationId,
+        choice: { slot: "own_ok", option_id: "opt-yes" },
+      });
+      expect(kept.reply).toMatch(/^রাখা হলো: .+ এখন Z-8-এ।$/);
+      const saved = await admin.withAdmin((tx) =>
+        tx
+          .select()
+          .from(rackExtra)
+          .where(and(eq(rackExtra.connectionId, shop.connectionId), eq(rackExtra.hostPartId, part.id))),
+      );
+      expect(saved).toMatchObject([
+        { shopId: shop.shopId, connectionId: shop.connectionId, rackLocation: "Z-8" },
+      ]);
+      llm.script.push({ calls: [{ name: "find_parts", arguments: { part_number: part.number } }] });
+      const where = await chat({ conversation_id: conversationId, text: `${part.number} kothay ache?` });
+      expect(where.reply).toContain("Z-8");
+    } finally {
+      await gearGrid.withAdmin((tx) =>
+        tx.execute(sql`update parts set rack_location = ${part.rack_location} where id = ${part.id}`),
+      );
+      await gearGrid.end();
     }
   });
 

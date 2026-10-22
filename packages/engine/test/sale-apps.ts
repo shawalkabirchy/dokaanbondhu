@@ -56,6 +56,8 @@ export interface Shop {
   customerDue?: number;
   /** Each part's stock, when a test's app sells from it (D181); four sets by default. */
   stock?: Record<string, number>;
+  /** Each part's racks in the app (D195); B-3 by default, none for an empty list. */
+  racks?: Record<string, string[]>;
   /** Each part's reorder level, for the low-stock reminder (D194); none (0) by default. */
   reorder?: Record<string, number>;
   /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
@@ -181,6 +183,10 @@ export interface Api {
   writes?: WriteHost;
   /** The user's name, for an app with an acting-user header. */
   actingUser?: string;
+  /** An app without a rack action: racks go in DokaanBondhu's own list (D195, D199). */
+  noRackAction?: boolean;
+  /** DokaanBondhu's own racks by part (rack_extra). */
+  ownRacks?: Map<string, string>;
 }
 
 /** The app's new fitment as GearGrid answers it (D172). */
@@ -223,6 +229,22 @@ const priceAnswer: ApiAnswer = async (request) => {
   };
 };
 
+/** The app's rack change as GearGrid answers it: the new rack, and the previous one for an undo (D195). */
+function rackAnswer(shop: Shop): ApiAnswer {
+  return async (request) => {
+    const id = decodeURIComponent(request.path.split("/").at(-2) ?? "");
+    const body = (request.body ?? {}) as { rack_location?: string | null };
+    return {
+      status: 200,
+      headers: new Headers(),
+      body: {
+        part: { id, rack_location: body.rack_location ?? null },
+        previous: { rack_location: shop.racks?.[id]?.[0] ?? (shop.racks?.[id] ? null : "B-3") },
+      },
+    };
+  };
+}
+
 /** The app's return as GearGrid answers it: the total from the sold line, the customer's due after the refund. */
 function returnAnswer(shop: Shop): ApiAnswer {
   return async (request) => {
@@ -253,6 +275,7 @@ const IDS: Record<string, string> = {
   stock_in: "stock",
   record_return: "return",
   update_price: "price",
+  update_rack: "rack",
   add_fitment: "fit",
   add_customer: "add-customer",
   add_supplier: "add-supplier",
@@ -263,7 +286,12 @@ const IDS: Record<string, string> = {
 function appCapabilities(api: Api = {}, shop?: Shop): WriteCapability[] {
   const imported = importOpenApi(openapi);
   return imported.capabilities
-    .filter((capability) => capability.kind === "write" && IDS[capability.name])
+    .filter(
+      (capability) =>
+        capability.kind === "write" &&
+        IDS[capability.name] &&
+        !(api.noRackAction && capability.name === "update_rack"),
+    )
     .map((capability) => ({
       id: IDS[capability.name]!,
       name: capability.name,
@@ -312,11 +340,13 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
           ? returnAnswer(shop)
           : request.path.endsWith("/price")
             ? priceAnswer
-            : request.path.endsWith("/fitments")
-              ? fitAnswer
-              : /\/(customers|suppliers)$/.test(request.path)
-                ? partyAnswer
-                : answered);
+            : request.path.endsWith("/rack")
+              ? rackAnswer(shop)
+              : request.path.endsWith("/fitments")
+                ? fitAnswer
+                : /\/(customers|suppliers)$/.test(request.path)
+                  ? partyAnswer
+                  : answered);
       return answer(request, options);
     },
     wake: () => {
@@ -421,7 +451,7 @@ function runner(shop: Shop) {
         stock: String(shop.stock?.[part.id] ?? 4),
         // as the stock check after a write reads it (D181)
         quantity: String(shop.stock?.[part.id] ?? 4),
-        racks: ["B-3"],
+        racks: shop.racks?.[part.id] ?? ["B-3"],
       }));
     if (query.text.includes('"retail_price"'))
       return parts.map((part) => ({ part_id: part.id, retail_price: "1600", garage_price: "1500" }));
@@ -492,7 +522,7 @@ export function connect(shop: Shop, api: Api = {}) {
       run: runner(shop),
       catalog,
       fitmentExtra: [],
-      rackExtra: new Map(),
+      rackExtra: api.ownRacks ?? new Map(),
       formulas: [],
       hostReports: [],
       writes: api.writes ?? salesApi(shop, calls, wakes, api),
@@ -528,6 +558,7 @@ export function connect(shop: Shop, api: Api = {}) {
       undoable: events.flatMap((event) => (event.type === "action_result" ? [event.undo_available] : [])),
       tables: events.flatMap((event) => (event.type === "table" ? [event] : [])),
       added: outcome.added,
+      racks: outcome.racks,
       state: outcome.state,
       trace: outcome.trace,
     };

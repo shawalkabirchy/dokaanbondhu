@@ -1,7 +1,9 @@
 import {
+  decisionOf,
   matchConcept,
   normalize,
   parseAmount,
+  rackSaid,
   parseQuantity,
   parseYear,
   parseYearRange,
@@ -226,6 +228,10 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   } else if (slot === "quantity") {
     const quantity = parseQuantity(tokens);
     if (quantity) value = quantity;
+  } else if (slot === "new_rack") {
+    value = rackSaid(text); // a rack change's rack (D195): only a label, so anything else is not its answer
+  } else if (slot === "own_ok") {
+    value = decisionOf(text); // yes or no to a rack in DokaanBondhu's own list (D199)
   } else if (slot === "amount" || slot === "unit_cost" || slot === "new_price" || slot === "unit_price") {
     const amount = parseAmount(text);
     if (amount !== null) value = amount;

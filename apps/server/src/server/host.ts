@@ -156,6 +156,11 @@ async function load(shopId: string): Promise<Entry> {
   });
 }
 
+/** A rack kept in DokaanBondhu's own list (D195, D199), in the cached host at once: the next answer says it. */
+export function keepRack(value: ShopHost, hostPartId: string, rack: string): void {
+  (value.host.rackExtra as Map<string, string>).set(hostPartId, rack);
+}
+
 export async function shopHost(shopId: string): Promise<ShopHost> {
   const entry = cache.get(shopId);
   const now = Date.now();

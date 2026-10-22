@@ -6,10 +6,12 @@ import {
   dayText,
   daysAgoSaid,
   daysBefore,
+  decisionOf,
   levelPrice,
   methodText,
   money,
   normalize,
+  normalizePartNumber,
   parseAmount,
   parseQuantity,
   parseYear,
@@ -20,6 +22,7 @@ import {
   priceLevelIn,
   question,
   quantity as quantityText,
+  rackSaid,
   refundText,
   resolveCustomer,
   resultText,
@@ -107,6 +110,53 @@ const NO_KINDS = "এই অ্যাপের কাস্টমারের �
 /** A customer or supplier as the write path sees it; the catalog keeps its phone among the attributes (D173). */
 type Party = CatalogCustomer & { attrs?: Record<string, unknown> };
 
+/** The rack kept in DokaanBondhu's own list for an app without a rack action (D195, D199): its built-in action. */
+export const OWN_RACK_ID = "own-rack";
+
+/**
+ * The built-in action behind DokaanBondhu's own rack list: the part in the path and the rack, like an app's rack
+ * action, so the part and rack are asked the same way; it ends in Yes and No in the conversation, never at an app (D199).
+ */
+export function ownRackCapability(): WriteCapability {
+  return {
+    id: OWN_RACK_ID,
+    name: "keep_rack",
+    description: "Kept in DokaanBondhu's own rack list, since the shop's app has no rack action.",
+    template: "rack_update",
+    requiredRole: "staff",
+    httpMethod: "PATCH",
+    path: "/parts/{id}/rack",
+    dryRun: false,
+    params: [
+      {
+        path: "id",
+        location: "path",
+        type: "string",
+        required: true,
+        enumValues: null,
+        entityConcept: "Part",
+        semanticSlot: null,
+        spokenMap: null,
+      },
+      {
+        path: "rack_location",
+        location: "body",
+        type: "string",
+        required: true,
+        enumValues: null,
+        entityConcept: null,
+        semanticSlot: "rack",
+        spokenMap: null,
+      },
+    ],
+    compensation: null,
+    readBack: null,
+  };
+}
+
+/** Two rack labels that are the same rack: "B-3", "b3", "B 3". */
+const sameRack = (a: string, b: string) => normalizePartNumber(a) === normalizePartNumber(b);
+
 /** A record the app saved that the catalog takes at once, before the next sync (D173). */
 export interface AddedRecord {
   concept: "customer" | "supplier";
@@ -137,6 +187,10 @@ export interface WriteTurn {
   tier: "retail" | "paikari";
   /** Whether the user may set a sale's price: the owner, or staff the owner allows (D176). */
   mayPrice?: boolean;
+  /** The shop's rack labels, so a rack said is written as the shop writes it (D195). */
+  racks?: readonly string[];
+  /** DokaanBondhu's own racks by part (rack_extra), told apart from the app's own (D195, D199). */
+  ownRacks?: ReadonlyMap<string, string>;
   /** Which trade price is the shop's paikari price (D146), for a price change (D171). */
   paikari?: "garage_price" | "wholesale_price" | null;
   /** The remembered customer (spec 9.8): used only where the action needs one and none was named. */
@@ -177,7 +231,9 @@ export type WriteStep =
   | { kind: "confirm"; action: PendingAction; text: string }
   | { kind: "answer"; text: string }
   /** The part is not there as asked: the parts answer says what there is. */
-  | { kind: "parts"; result: FindPartsResult; query: PartQuery };
+  | { kind: "parts"; result: FindPartsResult; query: PartQuery }
+  /** Yes to a rack in DokaanBondhu's own list (D199): the server keeps it; the text says so. */
+  | { kind: "own_rack"; hostPartId: string; rack: string; text: string };
 
 /** The part found for the action, with what its confirmation says; kept in the frame, so plain JSON (no bigint). */
 interface ChosenPart {
@@ -325,6 +381,13 @@ export function writeFrame(
     if (frame.slots.new_price) break;
     putSaid("new_price", prices[tier], parseAmount, money);
     if (frame.slots.new_price) frame.slots.price_tier = understood(tier);
+  }
+  // A rack change's rack, as the request says it (D195): never one the model puts in that was not said.
+  if (capability.template === "rack_update") {
+    const rack =
+      rackSaid(turn.request, turn.racks ?? []) ??
+      (turn.heard ? rackSaid(turn.heard, turn.racks ?? []) : null);
+    if (rack) frame.slots.new_rack = understood(rack);
   }
   // A returned part said to be damaged stays out of stock (D169).
   if (capability.template === "return" && saysDamaged(turn.request)) frame.slots.damaged = understood(true);
@@ -791,6 +854,23 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     frame.slots.new_price = understood(price, { display: money(BigInt(price)) });
   }
 
+  // 4c. A rack change (D195): the rack as said, asked when none was; a rack the part is on already is said so.
+  if (slots.has("rack") && chosen) {
+    const slot = frame.slots.new_rack;
+    const rack = slot ? rackSaid(String(slot.value), turn.racks ?? []) : null;
+    if (!rack) {
+      delete frame.slots.new_rack;
+      return askSlot(
+        "new_rack",
+        question({ slot: "rack", ...(first ? { understood: understoodSoFar(frame) } : {}) }),
+      );
+    }
+    frame.slots.new_rack = understood(rack, { display: rack });
+    if (chosen.rack && sameRack(chosen.rack, rack))
+      return { kind: "answer", text: `${partPhrase(chosen)} এখনই ${chosen.rack}-এ আছে।` };
+    if (capability.id === OWN_RACK_ID) return ownRack(frame, chosen, rack, turn, askSlot);
+  }
+
   // 5. How it is paid: বাকিতে, নগদে or a method (a received payment with no word is cash, spec 9.6).
   if (slots.has("payment")) {
     const slot = frame.slots.payment;
@@ -847,6 +927,45 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   }
 
   return prepareWrite(frame, capability, chosen, turn);
+}
+
+/**
+ * A rack in DokaanBondhu's own list (D195, D199): only for a part the app keeps no rack for (the app's own comes first,
+ * spec 11.5), confirmed with Yes and No in the conversation; yes hands it to the server to keep.
+ */
+function ownRack(
+  frame: RequestFrame,
+  chosen: ChosenPart,
+  rack: string,
+  turn: WriteTurn,
+  askSlot: (slot: string, text: string, offers?: Offer[]) => { kind: "asked" },
+): WriteStep {
+  const own = turn.ownRacks?.get(chosen.hostPartId) ?? null;
+  if (chosen.rack && (!own || !sameRack(chosen.rack, own)))
+    return {
+      kind: "answer",
+      text: `${possessive(partPhrase(chosen))} র‍্যাক অ্যাপে লেখা আছে: ${chosen.rack}। বদলাতে অ্যাপেই বদলান।`,
+    };
+  const answer = frame.slots.own_ok?.value;
+  const decision =
+    answer === "yes" || answer === "no" ? answer : typeof answer === "string" ? decisionOf(answer) : null;
+  if (decision === "yes")
+    return {
+      kind: "own_rack",
+      hostPartId: chosen.hostPartId,
+      rack,
+      text: `রাখা হলো: ${partPhrase(chosen)} এখন ${rack}-এ।`,
+    };
+  if (decision === "no") return { kind: "answer", text: resultText("cancelled", "rack_update") };
+  delete frame.slots.own_ok;
+  return askSlot(
+    "own_ok",
+    confirmationText("rack_update", { lines: [{ part: partPhrase(chosen) }], rack, oldRack: own }),
+    [
+      { id: "opt-yes", label: "হ্যাঁ", value: "yes" },
+      { id: "opt-no", label: "না", value: "no" },
+    ],
+  );
 }
 
 /** A fitment's car: the vehicle row and the model it is, or the step that asks or answers instead (D172). */
@@ -1208,6 +1327,7 @@ function resolvedOf(frame: RequestFrame, chosen: ChosenPart | null): ResolvedWri
     refund: null,
     damaged: Boolean(frame.slots.damaged),
     part: chosen ? { hostId: chosen.hostPartId } : null,
+    rack: str(frame.slots.new_rack?.value),
     prices:
       typeof frame.slots.new_price?.value === "number"
         ? {
@@ -1353,6 +1473,9 @@ async function prepareWrite(
         }
       : null;
   const before = change && chosen ? (change.tier === "paikari" ? chosen.paikari : chosen.retail) : null;
+  // A rack change (D195): the rack the part goes on, and the one it is on now.
+  const rackChange =
+    slots.has("rack") && resolved.rack && chosen ? { rack: resolved.rack, old: chosen.rack } : null;
   const lines: ActionLine[] =
     fitCar && chosen
       ? [
@@ -1363,7 +1486,7 @@ async function prepareWrite(
             vehicle: fitCar.model,
           },
         ]
-      : change && chosen
+      : (change || rackChange) && chosen
         ? [{ part: partPhrase(chosen) }]
         : chosen
           ? [
@@ -1406,6 +1529,7 @@ async function prepareWrite(
           newPrice: BigInt(change.price),
         }
       : {}),
+    ...(rackChange ? { rack: rackChange.rack, oldRack: rackChange.old } : {}),
     // A return says its sale's day and how the money goes back (spec 11.10; D169).
     ...(sale
       ? {
@@ -1472,6 +1596,12 @@ async function prepareWrite(
             ? [{ label: "আগে", value: money(BigInt(before)), highlight: false }]
             : []),
           { label: "নতুন", value: money(BigInt(change.price)), highlight: false },
+        ]
+      : []),
+    ...(rackChange
+      ? [
+          { label: "র‍্যাক", value: rackChange.rack, highlight: false },
+          ...(rackChange.old ? [{ label: "আগে", value: rackChange.old, highlight: false }] : []),
         ]
       : []),
     ...(fields.amount != null ? [{ label: "টাকা", value: money(fields.amount), highlight: false }] : []),

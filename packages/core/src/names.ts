@@ -232,3 +232,48 @@ export function racksInText(text: string, racks: readonly string[]): NamedInText
   }
   return [...found.values()];
 }
+
+/**
+ * Words of everyday speech that the spelling table also reads as a letter: "ei" (this), "এ" and "e" (in), "ke" (to),
+ * "ar" (and). Next to a number they are taken as a rack's letter only when nothing else is (D195).
+ */
+const EVERYDAY_LETTERS = new Set(
+  ["ei", "এ", "e", "ke", "কে", "ar", "আর", "ও", "o", "je", "জে", "ee", "ই", "i", "ai", "আই"].map((word) =>
+    normalize(word).tokens.join(" "),
+  ),
+);
+
+/**
+ * The rack a request says to put a part on (D195), new or known: written ("B-3", "b3") or said sign by sign ("বি তিন",
+ * "c dui", "জি ১২"), a letter or two and then a number up to three digits. Of several, the last one said that is not an
+ * everyday word ("B-3 থেকে C-2 তে রাখো" is C-2). A label the shop has is given as the shop writes it; a new one with a
+ * dash between letter and number, unless the shop's labels mostly have none. Null when none is said.
+ */
+export function rackSaid(text: string, racks: readonly string[] = []): string | null {
+  const tokens = normalize(text).tokens;
+  const candidates: { key: string; everyday: boolean }[] = [];
+  tokens.forEach((token, index) => {
+    const written = rackKey(asciiDigits(token));
+    if (/^[A-Z]{1,2}\d{1,3}$/.test(written) && /^[a-z]/i.test(token)) {
+      candidates.push({ key: written, everyday: false });
+      return;
+    }
+    const letter = spokenSign(token) ?? (/^[a-z]$/.test(token) ? token : null);
+    if (!letter || !/^[a-z]$/.test(letter)) return;
+    let digits = "";
+    for (let next = index + 1; next < tokens.length; next += 1) {
+      const sign = rackSign(tokens[next]!);
+      if (sign === null || !/^\d+$/.test(sign)) break;
+      digits += sign;
+    }
+    if (digits && digits.length <= 3)
+      candidates.push({ key: `${letter.toUpperCase()}${digits}`, everyday: EVERYDAY_LETTERS.has(token) });
+  });
+  const chosen = [...candidates].reverse().find((candidate) => !candidate.everyday) ?? candidates.at(-1);
+  if (!chosen) return null;
+  const known = racks.find((rack) => rackKey(rack) === chosen.key);
+  if (known) return known;
+  const [, letters, number] = /^([A-Z]+)(\d+)$/.exec(chosen.key)!;
+  const dashed = !racks.length || racks.filter((rack) => rack.includes("-")).length * 2 >= racks.length;
+  return dashed ? `${letters}-${number}` : `${letters}${number}`;
+}
