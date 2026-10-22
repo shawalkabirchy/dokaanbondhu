@@ -116,6 +116,25 @@ async function retailOf(read: ReadPath, partId: string): Promise<number | null> 
   return taka === null ? null : Number(taka);
 }
 
+/** The rack the sandbox puts its sample part on (D195). */
+const SANDBOX_RACK = "Z-99";
+
+/** A part's rack as the host has it now; undefined when the map cannot tell (D195). */
+async function rackOf(read: ReadPath, partId: string): Promise<string | null | undefined> {
+  const { map, run } = read;
+  if (!hasField(map, "StockItem", "part_id") || !hasField(map, "StockItem", "rack_location"))
+    return undefined;
+  const [row] = await run(
+    buildQuery(map, {
+      from: { concept: "StockItem", alias: "s" },
+      select: [{ ref: { alias: "s", field: "rack_location" }, as: "rack" }],
+      where: [{ ref: { alias: "s", field: "part_id" }, op: "eq", value: partId }],
+      limit: 1,
+    }),
+  );
+  return (row?.rack as string | null | undefined) ?? null;
+}
+
 /** Sample values from the host's own data: the customer with the largest due, a supplier, the part with most stock. */
 async function samplesOf(read: ReadPath, catalog: Catalog): Promise<Samples> {
   const { map, run } = read;
@@ -258,6 +277,9 @@ function sampleOf(capability: WriteCapability, samples: Samples, now: Date): Res
       verified: true,
       payments: [],
     };
+  // A rack change puts the part on a rack of its own, and its undo puts the old one back (D195).
+  if (capability.template === "rack_update" && part)
+    return { part: { hostId: part.hostId }, rack: SANDBOX_RACK, payments: [] };
   // A price change raises the retail price by one taka, and its undo puts it back (D171).
   if (capability.template === "price_update" && part && part.retail !== null)
     return { part: { hostId: part.hostId }, prices: { retail: part.retail + 1 }, payments: [] };
@@ -386,6 +408,11 @@ export async function verifyCapabilities(input: {
       amount: payment.amount ?? resolved.amount ?? null,
     }));
     let before = await snapshot(read, preview);
+    // A rack change: the rack the part is on before, which the undo must put back (D195).
+    const rackBefore =
+      capability.template === "rack_update" && resolved.part
+        ? await rackOf(read, resolved.part.hostId)
+        : undefined;
     let total: number | null = null;
     if (capability.template === "return") {
       // A return needs a sale to take back: one unit sold on credit to the sample customer, found through the read
@@ -466,6 +493,8 @@ export async function verifyCapabilities(input: {
       now: input.now,
     });
     checks.push({ name: "saved", ok: execution.status === "done", detail: execution.text });
+    if (rackBefore !== undefined && resolved.part)
+      checks.push({ name: "rack_set", ok: (await rackOf(read, resolved.part.hostId)) === SANDBOX_RACK });
     checks.push({
       name: "read_back_stock_and_balance",
       ok: execution.verifyStatus === "ok",
@@ -483,6 +512,10 @@ export async function verifyCapabilities(input: {
       const priceBack =
         capability.template === "price_update" && resolved.part
           ? (await retailOf(read, resolved.part.hostId)) === samples.part?.retail
+          : true;
+      const rackBack =
+        rackBefore !== undefined && resolved.part
+          ? (await rackOf(read, resolved.part.hostId)) === rackBefore
           : true;
       const fitGone =
         capability.template === "add_fitment" && resolved.part && resolved.vehicle
@@ -504,6 +537,7 @@ export async function verifyCapabilities(input: {
         undo?.status === "undone" &&
         same(before, await snapshot(read, preview)) &&
         priceBack &&
+        rackBack &&
         fitGone &&
         recordGone;
       checks.push({ name: "undo_puts_everything_back", ok: undone, detail: undo?.text });

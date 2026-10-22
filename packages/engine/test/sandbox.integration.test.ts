@@ -89,6 +89,7 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
       reverse_purchase: "pass",
       record_return: "pass",
       update_price: "pass",
+      update_rack: "pass",
       add_fitment: "pass",
       update_fitment: "pass",
       add_customer: "pass",
@@ -117,6 +118,15 @@ describe.skipIf(!ready)("the sandbox check on the test host", () => {
     expect(price).toHaveLength(1);
     expect(price[0]!.checks.map((check) => [check.name, check.ok])).toEqual([
       ["saved", true],
+      ["read_back_stock_and_balance", true],
+      ["undo_puts_everything_back", true],
+    ]);
+    // A rack change is its own undo too: the rack is set, and put back as it was (D195).
+    const rack = report.capabilities.filter((entry) => entry.name === "update_rack");
+    expect(rack).toHaveLength(1);
+    expect(rack[0]!.checks.map((check) => [check.name, check.ok])).toEqual([
+      ["saved", true],
+      ["rack_set", true],
       ["read_back_stock_and_balance", true],
       ["undo_puts_everything_back", true],
     ]);
