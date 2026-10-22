@@ -5,6 +5,7 @@ import { readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
 import { findParts, type FindPartsInput } from "../src/host/find-parts";
 import { introspect } from "../src/host/introspect";
 import { runReadQuery } from "../src/host/read-query";
+import { lowStock, oldDues } from "../src/host/reminders";
 import { stockValue } from "../src/host/reports";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { buildQuery } from "../src/host/sql";
@@ -241,5 +242,53 @@ describe.skipIf(!isLocal)("host integration on GearGrid's seed", () => {
       }),
     );
     expect(value).toBe(BigInt(String(direct?.taka)));
+  });
+
+  // D194: the reminders on GearGrid's 60 days of seeded history, against the same rules written as plain SQL.
+  it("lists the parts running low: at or below the reorder level, or empty and sold in the last 90 days", async () => {
+    const run: FindPartsInput["run"] = (built) => pools.readOnly(db, (query) => query(built));
+    const now = new Date();
+    const low = await lowStock({ map: geargridMap, run }, catalog, now);
+    const direct = await pools.readOnly(db, (query) =>
+      query({
+        text: `SELECT s.part_id FROM stock_levels s JOIN parts p ON p.id = s.part_id
+          GROUP BY s.part_id, p.reorder_level
+          HAVING (p.reorder_level > 0 AND SUM(s.quantity) <= p.reorder_level)
+              OR (COALESCE(p.reorder_level, 0) <= 0 AND SUM(s.quantity) <= 0 AND s.part_id IN (
+                SELECT i.part_id FROM sale_items i JOIN sales x ON x.id = i.sale_id
+                WHERE x.status <> 'void' AND x.deleted_at IS NULL AND i.deleted_at IS NULL
+                  AND x.sale_time >= $1::timestamptz - interval '90 days'))`,
+        values: [now.toISOString()],
+      }),
+    );
+    const listed = new Set(catalog.parts.map((part) => part.hostId));
+    const expected = direct.map((row) => String(row.part_id)).filter((id) => listed.has(id));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(low?.map((line) => line.hostPartId).sort()).toEqual(expected.sort());
+  });
+
+  it("lists the customers whose due is partly from sales over 30 days old, laid on the newest sales first", async () => {
+    const run: FindPartsInput["run"] = (built) => pools.readOnly(db, (query) => query(built));
+    const now = new Date();
+    const old = await oldDues({ map: geargridMap, run }, catalog, now);
+    // Laid on the newest first, the recent sales take what they can: the rest of the due is old.
+    const direct = await pools.readOnly(db, (query) =>
+      query({
+        text: `SELECT c.id, c.due_balance AS due, GREATEST(c.due_balance - COALESCE((
+            SELECT SUM(x.due) FROM sales x WHERE x.customer_id = c.id AND x.due > 0 AND x.status <> 'void'
+              AND x.deleted_at IS NULL AND x.sale_time >= $1::timestamptz - interval '30 days'), 0), 0) AS old
+          FROM customers c WHERE c.deleted_at IS NULL AND c.due_balance > 0`,
+        values: [now.toISOString()],
+      }),
+    );
+    const listed = new Set(catalog.customers.map((customer) => customer.hostId));
+    const expected = direct
+      .filter((row) => Number(row.old) > 0 && listed.has(String(row.id)))
+      .map((row) => [String(row.id), BigInt(String(row.due)), BigInt(String(row.old))]);
+    expect(expected.length).toBeGreaterThan(0);
+    const byId = (a: unknown[], b: unknown[]) => String(a[0]).localeCompare(String(b[0]));
+    expect(old?.map((line) => [line.hostId, line.due, line.old]).sort(byId)).toEqual(expected.sort(byId));
+    for (const line of old ?? [])
+      if (line.since) expect(now.getTime() - line.since.getTime()).toBeGreaterThan(30 * 86_400_000);
   });
 });

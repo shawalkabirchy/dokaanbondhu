@@ -5,7 +5,8 @@ INSERT INTO item_groups (group_id, title) VALUES
   (2, 'Shock Absorber'),
   (3, 'AC Compressor'),
   (4, 'Engine Oil'),
-  (5, 'Power Steering Pump');
+  (5, 'Power Steering Pump'),
+  (6, 'Clutch Plate');
 
 -- No make column; chassis codes in the model name; years written as text.
 INSERT INTO car_models (model_id, model_name, years, engine) VALUES
@@ -27,7 +28,9 @@ INSERT INTO items (item_id, item_name, group_id, grade, side, uom, remarks, is_d
   (6, 'Engine Oil 5W-30 4L', 4, 'OEM', NULL, 'ltr', NULL, 0),
   -- "R" may be rear or right: the owner says which in setup.
   (7, 'Brake Pad R Copy', 1, 'Copy', 'R', 'set', NULL, 0),
-  (8, 'Brake Pad F old stock', 1, 'Copy', 'F', 'set', NULL, 1);
+  (8, 'Brake Pad F old stock', 1, 'Copy', 'F', 'set', NULL, 1),
+  -- Run out (D194): no reorder level and no sales here, so a part at or below zero is low.
+  (9, 'Clutch Plate 200mm', 6, 'Copy', NULL, 'pcs', NULL, 0);
 
 INSERT INTO item_codes (code_id, item_id, code) VALUES
   (1, 1, '04465-12610'),
@@ -56,7 +59,8 @@ INSERT INTO branch_stock (stock_id, item_id, branch_id, qty, shelf) VALUES
   (5, 4, 1, 1.00, 'C-2'),
   (6, 5, 1, 1.00, 'C-2'),
   (7, 6, 1, 12.50, 'A-1'),
-  (8, 7, 1, 3.00, 'B-4');
+  (8, 7, 1, 3.00, 'B-4'),
+  (9, 9, 1, 0.00, 'B-5');
 
 -- Item 1 has a price history: the newest row (August) is the price now.
 INSERT INTO item_prices (price_id, item_id, sale_rate, workshop_rate, dealer_rate, cost_rate, effective_from) VALUES
@@ -68,7 +72,8 @@ INSERT INTO item_prices (price_id, item_id, sale_rate, workshop_rate, dealer_rat
   (6, 5, 9000.00, 8500.00, NULL, 7000.00, '2026-03-01'),
   (7, 6, 950.00, NULL, NULL, 700.00, '2026-03-01'),
   (8, 7, 1500.00, 1400.00, NULL, 1100.00, '2026-03-01'),
-  (9, 8, 1000.00, NULL, NULL, 800.00, '2026-03-01');
+  (9, 8, 1000.00, NULL, NULL, 800.00, '2026-03-01'),
+  (10, 9, 2500.00, 2300.00, NULL, 1800.00, '2026-03-01');
 
 INSERT INTO parties (party_id, party_name, party_name_bn, party_kind, mobile, balance, is_deleted) VALUES
   (1, 'Rahman Auto Works', 'রহমান অটো ওয়ার্কস', 'Mechanic', '01700-000001', 12500.00, 0),

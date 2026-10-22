@@ -150,6 +150,7 @@ describe.skipIf(!allLocal)("safety of the read path", () => {
     expect(first?.tools?.map((tool) => tool.function.name)).toEqual([
       "find_parts",
       "run_read_query",
+      "get_reminders",
       "get_report",
       "resolve_customer",
       "ask_user",

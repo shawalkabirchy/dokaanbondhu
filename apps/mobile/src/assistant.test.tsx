@@ -29,6 +29,8 @@ jest.mock("expo-crypto", () => {
 });
 jest.mock("./lib/supabase", () => ({ supabase: { auth: { getSession: jest.fn() } } }));
 jest.mock("./lib/haptics", () => ({ buzz: jest.fn() }));
+// The reminders card has its own tests (reminders-card.test.tsx).
+jest.mock("./reminders-card", () => ({ RemindersCard: () => null }));
 const mockHealth = {
   health: { speech: "unknown" },
   online: true,

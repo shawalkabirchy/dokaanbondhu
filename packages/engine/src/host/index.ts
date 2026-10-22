@@ -27,6 +27,7 @@ export {
   type Resolved,
 } from "./find-parts";
 export { introspect, type IntrospectedTable } from "./introspect";
+export { lowStock, oldDues, REMINDER_ROWS, type LowStock, type OldDue } from "./reminders";
 export { checkProposal, proposalSchema, proposeSchemaMap, spokenSamples, type Proposal } from "./mapper";
 export { repairProposal } from "./repair";
 export { HostConnectionError, HostPools, tlsOptions, type HostDb, type Row, type RunQuery } from "./pool";

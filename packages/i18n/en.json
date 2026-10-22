@@ -98,6 +98,13 @@
     "held": "{{seconds}} / 0:30",
     "release": "Let go to send"
   },
+  "reminders": {
+    "title": "Reminders",
+    "low": "{{count}} parts running low",
+    "old": "{{count}} customers owe from over 30 days ago, {{taka}} in all",
+    "low_ask": "ki ki kom ache?",
+    "old_ask": "kar baki purono?"
+  },
   "memory": {
     "title": "Remembered:",
     "forget_vehicle": "Forget the car",

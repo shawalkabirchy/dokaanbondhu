@@ -26,6 +26,7 @@ import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useMe } from "../../src/lib/session";
 import { useDeviceSettings } from "../../src/lib/settings-store";
 import { usePushToTalk } from "../../src/lib/use-push-to-talk";
+import { RemindersCard } from "../../src/reminders-card";
 import { colors, radius, space, type } from "../../src/theme";
 import { AppBar, Badge, Icon, IconButton, KeyboardRoom, OfflineBanner, type Tone } from "../../src/ui";
 
@@ -35,7 +36,8 @@ import { AppBar, Badge, Icon, IconButton, KeyboardRoom, OfflineBanner, type Tone
 // understanding, searching, speaking (with a stop button), and the notes of D111 and D164. While the speech worker
 // wakes the page says voice is getting ready (the button still works), then that it is ready; while the page is in
 // front it keeps the worker awake (D164). Typed questions are spoken only while the speaker is on (D88); a choice or
-// Yes and No is answered the way the last question was asked.
+// Yes and No is answered the way the last question was asked. Before a conversation starts, the reminders card sits at
+// the top (D194); a tap asks its question as if typed.
 
 /** While the page is in front the speech worker is woken this often, since Modal sleeps after 5 idle minutes (D164). */
 const KEEP_AWAKE_MS = 4 * 60_000;
@@ -321,6 +323,12 @@ export default function Assistant() {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
+              <RemindersCard
+                onAsk={(question) => {
+                  lastAsked.current = "typed";
+                  void send({ text: question }, typedOptions());
+                }}
+              />
               <View style={styles.welcome}>
                 <View style={styles.welcomeIcon}>
                   <Icon name="microphone" size={32} color={colors.greenInk} />

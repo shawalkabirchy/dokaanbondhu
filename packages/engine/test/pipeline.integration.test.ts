@@ -806,9 +806,10 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
+  // "কোন কোন মাল অর্ডার দিতে হবে?" is a reminder question now, answered without the LLM (D194); this one is a read.
   it.each([
-    { style: "Bangla", text: "কোন কোন মাল অর্ডার দিতে হবে?" },
-    { style: "Banglish", text: "kon kon mal order dite hobe?" },
+    { style: "Bangla", text: "রিঅর্ডার লেভেলের নিচের পার্টগুলোর স্টক আর দাম দেখাও" },
+    { style: "Banglish", text: "reorder level er nicher part gulor stock ar dam dekhao" },
   ])(
     "shows a read query's rows as a table, money in whole taka and quantities as numbers, and says to look at it ($style)",
     async ({ text }) => {

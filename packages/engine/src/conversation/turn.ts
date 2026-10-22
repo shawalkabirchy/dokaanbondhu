@@ -54,6 +54,12 @@ import {
   yearRangeText,
   NEW_PARTY,
   alsoCarWords,
+  banglaDigits,
+  daysBefore,
+  lowStockAnswer,
+  oldDuesAnswer,
+  reminderCueOf,
+  type ReminderKind,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
@@ -76,6 +82,7 @@ import {
 } from "../host/read-query";
 import { hostReport, reportNamesOf, syncNote } from "../host/host-features";
 import { getReport, type ReportFormula, type ReportName, type ReportResult } from "../host/reports";
+import { lowStock, oldDues, REMINDER_ROWS, type LowStock, type OldDue } from "../host/reminders";
 import type { SchemaMap } from "../host/schema-map";
 import {
   llmStream,
@@ -348,6 +355,7 @@ export interface TurnOutcome {
 const READ_TOOL_NAMES = new Set([
   "find_parts",
   "run_read_query",
+  "get_reminders",
   "get_report",
   "resolve_customer",
   "ask_user",
@@ -506,12 +514,71 @@ function tableOf(result: ReadQueryResult, title: string): ReplyEvent {
   };
 }
 
+/** A reminder's list (D194); null when the app does not keep what it needs. */
+type ReminderFacts =
+  { kind: "low_stock"; lines: LowStock[] | null } | { kind: "old_dues"; lines: OldDue[] | null };
+
 /** The facts gathered so far, for the grounding check and the template answer. */
 interface Facts {
   allowed: AllowedFacts;
   parts?: { result: Extract<FindPartsResult, { kind: "rows" | "none" }>; context: PartsContext };
   read?: ReadQueryResult;
   report?: ReportResult;
+  reminders?: ReminderFacts[];
+}
+
+/** The reminders' answer (D194): each list's sentence, "see the screen" said once at the end. */
+function remindersAnswer(reminders: ReminderFacts[]): string {
+  const sentences = reminders.map((reminder) =>
+    reminder.lines === null
+      ? SEE_IN_APP
+      : reminder.kind === "low_stock"
+        ? lowStockAnswer(reminder.lines)
+        : oldDuesAnswer(reminder.lines),
+  );
+  const last = sentences.length - 1;
+  return [
+    ...new Set(
+      sentences.map((sentence, index) =>
+        index < last ? sentence.replace(` ${SEE_ON_SCREEN}`, "") : sentence,
+      ),
+    ),
+  ].join(" ");
+}
+
+/** A reminder's list as a table on the screen (D194). */
+function reminderTable(reminder: ReminderFacts, now: Date): ReplyEvent | null {
+  if (!reminder.lines?.length) return null;
+  if (reminder.kind === "low_stock")
+    return {
+      type: "table",
+      title: "কম স্টক",
+      columns: [
+        { key: "part", label: "পার্ট", kind: "text" },
+        { key: "stock", label: "স্টক", kind: "number" },
+        { key: "reorder", label: "কমপক্ষে", kind: "number" },
+      ],
+      rows: reminder.lines.map((line) => [line.nameBn ?? line.name, line.stock, line.reorderLevel]),
+      truncated: reminder.lines.length >= REMINDER_ROWS,
+    };
+  return {
+    type: "table",
+    title: "পুরোনো বাকি",
+    columns: [
+      { key: "customer", label: "কাস্টমার", kind: "text" },
+      { key: "due", label: "মোট বাকি", kind: "money" },
+      { key: "old", label: "পুরোনো বাকি", kind: "money" },
+      { key: "age", label: "কত দিনের", kind: "text" },
+    ],
+    // An opening due (from before every sale) has no day: "শুরুর বাকি".
+    rows: reminder.lines.map((line) => [
+      line.nameBn ?? line.name,
+      Number(line.due),
+      Number(line.old),
+      line.since ? `${banglaDigits(String(daysBefore(line.since, now)))} দিন` : "শুরুর বাকি",
+    ]),
+    truncated: reminder.lines.length >= REMINDER_ROWS,
+  };
 }
 
 /** A read's list of at most this many different names has them said, not only "see the screen" (D160). */
@@ -538,6 +605,7 @@ function readAnswer(result: ReadQueryResult): string {
 }
 
 function templateAnswer(facts: Facts): string {
+  if (facts.reminders?.length) return remindersAnswer(facts.reminders);
   if (facts.report) {
     if (facts.report.kind === "see_in_app") return SEE_IN_APP;
     // Each report its own sentence: an app's own profit or cash figure, or the stock value (D181).
@@ -1377,6 +1445,24 @@ export async function runTurn(
         });
   };
 
+  /** A reminder's list read from the app (D194), kept as a fact and shown as a table. */
+  const remind = async (kind: ReminderKind): Promise<ReminderFacts> => {
+    const read = { map: deps.host.map!, run: deps.host.run! };
+    const reminder: ReminderFacts =
+      kind === "low_stock"
+        ? { kind, lines: await lowStock(read, deps.host.catalog, now) }
+        : { kind, lines: await oldDues(read, deps.host.catalog, now) };
+    (facts.reminders ??= []).push(reminder);
+    for (const line of reminder.lines ?? []) {
+      if ("old" in line) facts.allowed.addMoney(line.due).addMoney(line.old);
+      else facts.allowed.addNumber(line.stock);
+    }
+    facts.allowed.addNumber(reminder.lines?.length ?? 0);
+    const table = reminderTable(reminder, now);
+    if (table) emit(table);
+    return reminder;
+  };
+
   /** Runs one tool call; returns the tool result for the LLM, or "stop" when the turn has its reply. */
   const runTool = async (call: ToolCall): Promise<string | "stop"> => {
     const args = parseArgs(call);
@@ -1480,6 +1566,17 @@ export async function runTurn(
           from: result.from,
           to: result.to,
         });
+      }
+      case "get_reminders": {
+        const kind = args.kind === "old_dues" ? "old_dues" : "low_stock";
+        if (!deps.host.map || !deps.host.run) {
+          record("no_connection");
+          return JSON.stringify({ error: "no shop database connected" });
+        }
+        const reminder = await remind(kind);
+        record(reminder.lines === null ? "see_in_app" : `rows:${reminder.lines.length}`);
+        // The answer is the template's (counts, names only when few and in Bangla); the list is on the screen.
+        return "stop";
       }
       case "resolve_customer": {
         if (cued) {
@@ -1890,9 +1987,29 @@ export async function runTurn(
     final = { kind: "answer", text: ownerOnlyText(ownersOnly.template) };
   }
 
+  // A clear reminder question ("কী কী কম আছে?", "kar baki purono?") is answered at once, without the LLM (D194). One
+  // that names a part, a car or a customer is about that one, and goes on as before.
+  const reminderCue =
+    text && !final && !facts.parts && !facts.report && !cueKind && deps.host.map && deps.host.run
+      ? reminderCueOf(text)
+      : null;
+  if (
+    reminderCue &&
+    !heardSlots.has("part_type") &&
+    !heardSlots.has("vehicle_model") &&
+    !named.some((name) => name.kind === "customer" || name.kind === "supplier")
+  ) {
+    const reminder = await remind(reminderCue);
+    trace.tool_calls.push({
+      name: "get_reminders",
+      arguments: { kind: reminderCue },
+      result: reminder.lines === null ? "see_in_app" : `rows:${reminder.lines.length}`,
+    });
+  }
+
   // Stage 5: the LLM tool loop, unless the frame already has the reply or the facts.
   let llmText: string | null = null;
-  const needLlm = !final && !facts.parts && !facts.report && request;
+  const needLlm = !final && !facts.parts && !facts.report && !facts.reminders && request;
   since = Date.now();
   if (needLlm) {
     const openRequest =
@@ -2014,7 +2131,7 @@ export async function runTurn(
     } catch (error) {
       if (!(error instanceof NothingLeftError)) throw error;
       llmText = null; // the provider chain is out: the template answer for the facts we have
-      if (!facts.parts && !facts.read && !facts.report && !final)
+      if (!facts.parts && !facts.read && !facts.report && !facts.reminders && !final)
         final = { kind: "answer", text: CANNOT_ANSWER_NOW };
     }
   }
@@ -2033,6 +2150,10 @@ export async function runTurn(
     state.state = "RESPONDING";
   } else if (facts.report?.kind === "see_in_app") {
     reply = SEE_IN_APP;
+    state.state = "RESPONDING";
+  } else if (facts.reminders) {
+    // Counts and names from the lists themselves, never the LLM's words (D194).
+    reply = templateAnswer(facts);
     state.state = "RESPONDING";
   } else {
     state.state = "RESPONDING";
@@ -2067,7 +2188,7 @@ export async function runTurn(
   if (
     state.state === "RESPONDING" &&
     !final &&
-    (facts.parts || facts.read || facts.report?.kind === "figure") &&
+    (facts.parts || facts.read || facts.report?.kind === "figure" || facts.reminders?.some((r) => r.lines)) &&
     deps.host.writes
   ) {
     const note = await syncNote(deps.host.writes, deps.now());

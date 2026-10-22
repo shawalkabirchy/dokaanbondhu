@@ -56,6 +56,8 @@ export interface Shop {
   customerDue?: number;
   /** Each part's stock, when a test's app sells from it (D181); four sets by default. */
   stock?: Record<string, number>;
+  /** Each part's reorder level, for the low-stock reminder (D194); none (0) by default. */
+  reorder?: Record<string, number>;
   /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
   customerTypes?: string[];
   /** What the app stores about Rahim Motors besides the phone: a price level, a type (D183). */
@@ -327,6 +329,36 @@ function salesApi(shop: Shop, calls: HostRequest[], wakes: { count: number }, ap
 function runner(shop: Shop) {
   const lists = (values: unknown[]) => values.map((value) => (Array.isArray(value) ? value.map(String) : []));
   return async (query: { text: string; values: unknown[] }) => {
+    const timeOf = (sale: ShopSale) => new Date(NOW.getTime() - sale.daysAgo * DAY_MS);
+    // The reminders (D194): each part's stock and reorder level; the parts sold since a day; who owes; their sales'
+    // dues, newest first.
+    if (query.text.includes('"low_part"'))
+      return shop.parts.map((part) => ({
+        low_part: part.id,
+        stock: String(shop.stock?.[part.id] ?? 4),
+        reorder: String(shop.reorder?.[part.id] ?? 0),
+      }));
+    if (query.text.includes('"sold_part"')) {
+      const since = query.values.find(
+        (value) => typeof value === "string" && /^\d{4}-\d\d-\d\dT/.test(value),
+      );
+      return [
+        ...new Set(
+          (shop.sales ?? [])
+            .filter((sale) => timeOf(sale) >= new Date(since as string))
+            .map((sale) => sale.partId),
+        ),
+      ].map((part) => ({ sold_part: part }));
+    }
+    if (query.text.includes('"owing_customer"'))
+      return shop.customerDue ? [{ owing_customer: "c1", due: String(shop.customerDue) }] : [];
+    if (query.text.includes('"due_customer"'))
+      return (shop.sales ?? [])
+        .filter(
+          (sale) => sale.customerId !== null && query.values.flat().includes(sale.customerId) && sale.due > 0,
+        )
+        .sort((a, b) => a.daysAgo - b.daysAgo)
+        .map((sale) => ({ due_customer: sale.customerId, time: timeOf(sale), sale_due: String(sale.due) }));
     // What a customer bought in the last 30 days, newest first (D186).
     if (query.text.includes('"bought_part"'))
       return (shop.sales ?? [])
@@ -494,6 +526,7 @@ export function connect(shop: Shop, api: Api = {}) {
       statuses: events.flatMap((event) => (event.type === "status" ? [event.label_key] : [])),
       results: events.flatMap((event) => (event.type === "action_result" ? [event.status] : [])),
       undoable: events.flatMap((event) => (event.type === "action_result" ? [event.undo_available] : [])),
+      tables: events.flatMap((event) => (event.type === "table" ? [event] : [])),
       added: outcome.added,
       state: outcome.state,
       trace: outcome.trace,

@@ -1,5 +1,5 @@
-import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
+import { remindersSchema, type ReplyEvent } from "@dokaanbondhu/contracts";
+import { banglaDigits, CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
 import {
   conversations,
   createPlatform,
@@ -32,7 +32,12 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
   let admin: Platform;
   let llm: StubLlm;
   let shop: HostShop;
-  let routes: { conversations: { POST: unknown }; chat: { POST: unknown }; context: { DELETE: unknown } };
+  let routes: {
+    conversations: { POST: unknown };
+    chat: { POST: unknown };
+    context: { DELETE: unknown };
+    reminders: { GET: unknown };
+  };
 
   async function newConversation(auth = shop.owner.auth): Promise<string> {
     const response = await post(routes.conversations.POST, auth, { channel: "chat" });
@@ -67,6 +72,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
       conversations: await import("../app/api/v1/conversations/route"),
       chat: await import("../app/api/v1/chat/messages/route"),
       context: await import("../app/api/v1/conversations/[conversationId]/context/[key]/route"),
+      reminders: await import("../app/api/v1/reminders/route"),
     };
   });
 
@@ -120,6 +126,7 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     expect(llm.received[0]?.tools?.map((tool) => tool.function.name)).toEqual([
       "find_parts",
       "run_read_query",
+      "get_reminders",
       "get_report",
       "resolve_customer",
       "ask_user",
@@ -348,6 +355,40 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     const outage = await chat({ conversation_id: conversationId, text: "এক্সিওর প্যাড আছে?" });
     expect(outage.reply).toBe(CANNOT_ANSWER_NOW);
     expect(outage.events.at(-1)).toMatchObject({ type: "done", state: "IDLE" });
+  });
+
+  it("answers a reminder question at once with its list, and gives the card the same counts, owner and staff (D194)", async () => {
+    const conversationId = await newConversation();
+    const evalKey = { "x-eval-key": EVAL_KEY };
+    const low = await chat({ conversation_id: conversationId, text: "ki ki kom ache?" }, evalKey);
+    expect(low.response.status).toBe(200);
+    expect(low.events.at(-1)).toMatchObject({
+      trace: { llm_calls: 0, tool_calls: [{ name: "get_reminders" }] },
+    });
+    const table = low.events.find((event) => event.type === "table");
+    expect(table).toMatchObject({ title: "কম স্টক" });
+    const lows = table?.type === "table" ? table.rows.length : 0;
+    expect(low.reply).toMatch(new RegExp(`^${banglaDigits(String(lows))}টি পার্ট কম আছে`));
+    const old = await chat({ conversation_id: conversationId, text: "কার বাকি পুরোনো?" }, evalKey);
+    expect(old.reply).toMatch(/জনের বাকি ৩০ দিনের বেশি পুরোনো, মোট [০-৯,]+ টাকা/);
+    expect(old.events.find((event) => event.type === "table")).toMatchObject({ title: "পুরোনো বাকি" });
+
+    for (const auth of [shop.owner.auth, shop.staff.auth]) {
+      const request = new Request("http://localhost:3100/api/v1/reminders", {
+        headers: { authorization: `Bearer ${await token(auth)}` },
+      });
+      type Handler = (
+        request: Request,
+        context: { params: Promise<Record<string, string>> },
+      ) => Promise<Response>;
+      const response = await (routes.reminders.GET as Handler)(request, { params: Promise.resolve({}) });
+      expect(response.status).toBe(200);
+      const card = remindersSchema.parse(await response.json());
+      expect(card.low_stock).toMatchObject({ count: lows, more: false });
+      expect(card.low_stock!.names.length).toBe(Math.min(lows, 3));
+      expect(card.old_dues!.count).toBeGreaterThan(0);
+      expect(card.old_dues!.old_taka).toBeGreaterThan(0);
+    }
   });
 
   it("refuses another user's conversation and a message with neither text nor choice", async () => {

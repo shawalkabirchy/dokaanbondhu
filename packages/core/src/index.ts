@@ -12,6 +12,7 @@ export * from "./names";
 export * from "./numbers";
 export * from "./phonetic";
 export * from "./quantity";
+export * from "./reminders";
 export * from "./resolve";
 export * from "./shop-words";
 export * from "./text";

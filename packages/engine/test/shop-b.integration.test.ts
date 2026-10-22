@@ -22,6 +22,7 @@ import { columnHint, proposeSchemaMap } from "../src/host/mapper";
 import { paikariOptions } from "../src/host/paikari";
 import { HostPools, type HostDb } from "../src/host/pool";
 import { ReadQueryRejected, runReadQuery } from "../src/host/read-query";
+import { lowStock, oldDues } from "../src/host/reminders";
 import { stockValue } from "../src/host/reports";
 import { fittedParts } from "../src/host/sync";
 import { scripted, type Step } from "./scripted-llm";
@@ -146,7 +147,7 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
   });
 
   it("reads the catalog without deleted rows: parts with their group, all their racks, cars and customers", () => {
-    expect(catalog.parts).toHaveLength(7);
+    expect(catalog.parts).toHaveLength(8);
     expect(catalog.vehicles).toHaveLength(5);
     expect(catalog.customers).toHaveLength(4);
     expect(catalog.suppliers).toHaveLength(1);
@@ -584,5 +585,28 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
     const deleted = await read("SELECT COUNT(*) AS n FROM parties WHERE party_name = 'Old Party'");
     expect(deleted.rows[0]?.n).toBe(0); // a deleted party is never read
     await expect(read("DELETE FROM parties")).rejects.toBeInstanceOf(ReadQueryRejected);
+  });
+
+  // D194: shop B keeps no reorder level and no sales, so a part at or below zero is low, over both branches; with no
+  // sales dues it has no old-due reminder, and says so.
+  it("reminds of its run-out part, and has no old dues to remind", async () => {
+    const run: FindPartsInput["run"] = (built) => pools.readOnly(db, (query) => query(built));
+    const low = await lowStock({ map: shopBMap, run }, catalog, new Date());
+    expect(low?.map((line) => [line.name, line.stock, line.reorderLevel])).toEqual([
+      ["Clutch Plate 200mm", 0, null],
+    ]);
+    expect(await oldDues({ map: shopBMap, run }, catalog, new Date())).toBeNull();
+  });
+
+  it.each([
+    { style: "Bangla", low: "কী কী কম আছে?", old: "কার বাকি পুরোনো?" },
+    { style: "Banglish", low: "ki ki kom ache?", old: "kar baki purono?" },
+  ])("answers the reminder questions at once, without the LLM ($style)", async ({ low, old }) => {
+    const parts = await turn(low, fresh(), {});
+    expect(parts.reply).toBe("১টি পার্ট কম আছে। বিস্তারিত স্ক্রিনে দেখুন।");
+    expect(parts.outcome.trace.llm_calls).toBe(0);
+    const dues = await turn(old, fresh(), {});
+    expect(dues.reply).toBe("এটা আপনার অ্যাপে দেখুন।");
+    expect(dues.outcome.trace.llm_calls).toBe(0);
   });
 });

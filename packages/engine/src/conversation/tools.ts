@@ -46,6 +46,17 @@ export const GET_REPORT = fn(
   },
 );
 
+export const GET_REMINDERS = fn(
+  "get_reminders",
+  "Parts running low in stock, or customers whose due is old (D194). Use it for these instead of SQL.",
+  {
+    type: "object",
+    properties: { kind: { type: "string", enum: ["low_stock", "old_dues"] } },
+    required: ["kind"],
+    additionalProperties: false,
+  },
+);
+
 export const RESOLVE_CUSTOMER = fn("resolve_customer", "Find a customer by the name as said.", {
   type: "object",
   properties: { name: { type: "string" } },
@@ -113,7 +124,7 @@ export function readQueryTool(map: SchemaMap): ToolDef {
     .join("; ");
   return fn(
     "run_read_query",
-    `Answer any other question about this shop's own records (its customers and suppliers with their phones, dues, payables and limits; sales, payments, purchases, stock and low stock; which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you. ${DAYS[map.dialect]}`,
+    `Answer any other question about this shop's own records (its customers and suppliers with their phones, dues, payables and limits; sales, payments, purchases and stock; which cars a part fits) with one SELECT over these tables and columns only: ${schema}. Deleted, voided and reversed rows are left out for you. ${DAYS[map.dialect]}`,
     {
       type: "object",
       properties: { sql: { type: "string" }, purpose: { type: "string" } },
@@ -124,5 +135,11 @@ export function readQueryTool(map: SchemaMap): ToolDef {
 }
 
 export function readTools(map: SchemaMap | null): ToolDef[] {
-  return [FIND_PARTS, ...(map ? [readQueryTool(map)] : []), GET_REPORT, RESOLVE_CUSTOMER, ASK_USER];
+  return [
+    FIND_PARTS,
+    ...(map ? [readQueryTool(map), GET_REMINDERS] : []),
+    GET_REPORT,
+    RESOLVE_CUSTOMER,
+    ASK_USER,
+  ];
 }
