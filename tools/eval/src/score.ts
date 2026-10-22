@@ -225,6 +225,14 @@ export function writeMatches(expected: WriteExpected, action: ActionTrace, notes
       sameName(action.new_party?.name, slots.name, slots.name_bn),
       `name ${action.new_party?.name ?? "none"}, not ${slots.name}`,
     );
+  // A rack change sends the rack as the shop writes its labels: "D-2" and "d2" are the same rack (D195).
+  if (typeof slots.rack === "string")
+    check(
+      body.some(
+        (leaf) => typeof leaf.value === "string" && partKey(leaf.value) === partKey(String(slots.rack)),
+      ),
+      `rack not ${slots.rack}`,
+    );
   if (slots.party_type)
     check(
       same(action.new_party?.type, slots.party_type) || carries(slots.party_type),

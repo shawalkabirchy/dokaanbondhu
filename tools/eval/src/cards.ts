@@ -32,6 +32,7 @@ export function expectedText(item: Item): string {
   if (write.action === "add_customer")
     return `add_customer → ${slots.name} (${slots.party_type}, ${slots.phone})`;
   if (write.action === "add_supplier") return `add_supplier → ${slots.name}`;
+  if (write.action === "rack_update") return `rack_update → \`${write.part_key}\` on ${slots.rack}`;
   const price = slots.unit_price !== undefined ? ` at ${slots.unit_price} each` : "";
   return `${write.action} → \`${write.part_key}\`${price}`;
 }
@@ -109,6 +110,8 @@ export function cardsMarkdown(items: Item[], refreshed: string): string {
     '"Needs a question" means the card leaves out one thing (year, quality, position, which Rahim, a new supplier\'s',
     "phone) and the assistant should ask; the scripted answer is in `items.jsonl`. Writes: sales (some at a price the",
     "owner names, D176), payments, stock-in, returns, price changes, fitments, new customers and suppliers (D173).",
+    "Items 201 to 212 of each channel are step 10's extras (D196, D201), added after the 400 with new IDs: reminders",
+    "(reads of the parts running low and the old dues, D194) and rack changes (writes, D195). The mix above counts them.",
     "",
     "## Voice items",
     "",
@@ -163,8 +166,13 @@ function mixed(items: Item[]): Item[] {
 
 /** A speaker's cards, in the order they are recorded. */
 export function sheetCards(items: Item[], speaker: string): Item[] {
-  return mixed(items.filter((item) => item.channel === "voice" && item.speaker === speaker));
+  const own = items.filter((item) => item.channel === "voice" && item.speaker === speaker);
+  // The cards added after the 400 come last, so a speaker part-way through the first sheet keeps their place (D201).
+  return [...mixed(own.filter((item) => !isAdded(item))), ...mixed(own.filter(isAdded))];
 }
+
+/** A card added after the 400 (step 10's extras, D196, D201): numbered from 201 in its channel. */
+export const isAdded = (item: Pick<Item, "id">) => Number(item.id.slice(2)) > 200;
 
 const html = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -177,9 +185,14 @@ export function speakerSheet(items: Item[], speaker: string): string {
   const where = IN_SHOP.includes(speaker)
     ? "দোকানের স্টাফ। <b>দোকানে, বেচাকেনার সময়ে</b> রেকর্ড করুন, দোকানের স্বাভাবিক আওয়াজসহ।"
     : "যেকোনো জায়গায় রেকর্ড করুন, যেখানে স্বাভাবিকভাবে কথা বলা যায়।";
+  const firstAdded = cards.findIndex(isAdded);
   const rows = cards
     .map(
-      (item, index) => `      <tr>
+      (item, index) => `${
+        index === firstAdded
+          ? `      <tr class="added"><td colspan="4">নতুন কার্ড (২৩ অক্টোবর যোগ হয়েছে): আগের কার্ডগুলোর পরে এগুলো রেকর্ড করুন</td></tr>\n`
+          : ""
+      }      <tr>
         <td class="n">${bnDigits(index + 1)}</td>
         <td class="id">${item.id}</td>
         <td>${html(item.task_card_bn ?? item.task_card)}</td>
@@ -210,6 +223,7 @@ export function speakerSheet(items: Item[], speaker: string): string {
   .n { width: 8mm; text-align: right; }
   .id { width: 15mm; font-family: Consolas, monospace; font-size: 10pt; }
   .box { width: 12mm; }
+  .added td { background: #eee; font-weight: 700; }
 </style>
 </head>
 <body>

@@ -392,6 +392,27 @@ describe("scoring", () => {
     });
     expect(run(price, changed)).toMatchObject({ correct: true, exactPart: true });
 
+    // A rack change (D195): its part, and the rack sent as the shop writes it.
+    const rack = item({
+      id: "c-201",
+      kind: "write",
+      expected: { action: "rack_update", slots: { rack: "E-1" }, part_key: "28100-10010" },
+    });
+    const racked = saleAction({
+      template: "rack_update",
+      customer: null,
+      lines: [],
+      parts: [["28100-10010"]],
+      request: { method: "PATCH", path: "/api/v1/parts/p3/rack", body: { rack_location: "E-1" } },
+    });
+    expect(run(rack, racked)).toMatchObject({ correct: true, exactPart: true });
+    const wrongRack = run(rack, {
+      ...racked,
+      request: { ...racked.request, body: { rack_location: "E-7" } },
+    });
+    expect(wrongRack.correct).toBe(false);
+    expect(wrongRack.notes).toContain("rack not E-1");
+
     const fitment = item({
       id: "c-127",
       kind: "write",
