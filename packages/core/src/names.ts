@@ -28,6 +28,20 @@ function readings(forms: readonly string[][], start: number, size: number): stri
   return combos.map((combo) => combo.join(" "));
 }
 
+/** The words that end a company's name and are seldom said ("Nawabpur Auto Parts Ltd.", D189). */
+const COMPANY_ENDINGS = new Set(
+  ["ltd", "limited", "pvt", "private", "plc", "inc", "লিমিটেড", "লিঃ", "লি"].flatMap(
+    (word) => normalize(word).tokens,
+  ),
+);
+
+/** A name as said: in full, and without the company words it ends with, when two words or more are left. */
+function spokenForms(tokens: string[]): string[][] {
+  let end = tokens.length;
+  while (end > 2 && COMPANY_ENDINGS.has(tokens[end - 1]!)) end -= 1;
+  return end < tokens.length ? [tokens, tokens.slice(0, end)] : [tokens];
+}
+
 /**
  * The names said in the text: a run of as many words as the name, the same after normalizing or sounding alike (key
  * similarity 0.8 or more). The best `limit` of each kind, best first.
@@ -41,22 +55,23 @@ export function namesInText(
   const said = normalize(text, dictionary.variants);
   const found: NamedInText[] = [];
   for (const { kind, name } of names) {
-    const tokens = normalize(name, dictionary.variants).tokens;
-    if (!tokens.length || tokens.length > said.tokens.length) continue;
-    const nameText = tokens.join(" ");
-    const nameKey = phoneticKey(nameText);
     let best: NamedInText | null = null;
-    for (let start = 0; start + tokens.length <= said.tokens.length; start += 1) {
-      for (const reading of readings(said.forms, start, tokens.length)) {
-        const key = phoneticKey(reading);
-        const score =
-          reading === nameText
-            ? 1
-            : Math.min(key.length, nameKey.length) >= 3
-              ? keySimilarity(key, nameKey)
-              : 0;
-        if (score < NAME_SIMILARITY || (best && best.score >= score)) continue;
-        best = { kind, name, heard: said.tokens.slice(start, start + tokens.length).join(" "), score };
+    for (const tokens of spokenForms(normalize(name, dictionary.variants).tokens)) {
+      if (!tokens.length || tokens.length > said.tokens.length) continue;
+      const nameText = tokens.join(" ");
+      const nameKey = phoneticKey(nameText);
+      for (let start = 0; start + tokens.length <= said.tokens.length; start += 1) {
+        for (const reading of readings(said.forms, start, tokens.length)) {
+          const key = phoneticKey(reading);
+          const score =
+            reading === nameText
+              ? 1
+              : Math.min(key.length, nameKey.length) >= 3
+                ? keySimilarity(key, nameKey)
+                : 0;
+          if (score < NAME_SIMILARITY || (best && best.score >= score)) continue;
+          best = { kind, name, heard: said.tokens.slice(start, start + tokens.length).join(" "), score };
+        }
       }
     }
     if (best) found.push(best);

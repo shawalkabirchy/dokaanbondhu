@@ -34,6 +34,24 @@ describe("names in a request", () => {
   });
 });
 
+describe("a company's name said without its Ltd (D189)", () => {
+  const suppliers = [
+    { kind: "supplier", name: "Nawabpur Auto Parts Ltd." },
+    { kind: "supplier", name: "Bangshal Motor Supply" },
+  ];
+  it.each([
+    "নবাবপুর অটো পার্টসের ফোন নাম্বারটা কত?",
+    "nawabpur auto parts er phone number ta koto?",
+    "Nawabpur Auto Parts Ltd. er phone number koto?",
+  ])("%s names Nawabpur Auto Parts Ltd.", (text) => {
+    expect(namesInText(text, suppliers, dictionary)[0]).toMatchObject({ name: "Nawabpur Auto Parts Ltd." });
+  });
+
+  it("a name that is only its company word is not cut to nothing", () => {
+    expect(namesInText("ltd er dam koto", [{ kind: "supplier", name: "Ltd" }], dictionary)).toHaveLength(1);
+  });
+});
+
 describe("racks in a request", () => {
   const racks = ["C-2", "B-3", "A1", "Top shelf"];
 
