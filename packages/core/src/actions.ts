@@ -373,7 +373,26 @@ const WRITE_CUES: Record<"sale" | "payment" | "stock_in" | "return", string[]> =
 };
 
 /** Goods arriving ("…থেকে দশটা এলো", "theke aslo"): a purchase only with its supplier named (D186). */
-const ARRIVED = ["এসেছে", "আসছে", "আসলো", "এলো", "আসল", "eseche", "asche", "aslo", "elo", "ashche", "ashlo"];
+const ARRIVED = ["এসেছে", "আসছে", "আসলো", "এলো", "eseche", "asche", "aslo", "elo", "ashche", "ashlo"];
+/** Never a part's detail: "aslo" (it came) is not আসল (genuine), D187. */
+const ARRIVED_WORDS = new Set(ARRIVED.flatMap((word) => normalize(word).tokens));
+/** Asking for a customer's number, phone or address: "…er number ta den" is a question, never a sale (D187). */
+const INFO_WORDS = new Set(
+  [
+    "নম্বর",
+    "নাম্বার",
+    "নম্বরটা",
+    "ফোন",
+    "ঠিকানা",
+    "number",
+    "nombor",
+    "nambar",
+    "phone",
+    "fon",
+    "address",
+    "thikana",
+  ].flatMap((word) => normalize(word).tokens),
+);
 /**
  * Words for on credit, said with a sale or a purchase (spec 9.6: বাকিতে is no payment), with how speech-to-text wrote
  * বাকিতে in the owner's tests (D152): only here, inside a sale or purchase, is বাতিতে ("in the lamp") taken for it.
@@ -501,7 +520,9 @@ const WRITE_WORDS = new Set(
  * (return it) is not heard as পুরাতন (used), nor "ferot nao" as puraton (D169).
  */
 export function isWriteWord(token: string): boolean {
-  return WRITE_WORDS.has(token) || CREDIT_WORDS.has(token) || GIVE_WORDS.has(token);
+  return (
+    WRITE_WORDS.has(token) || CREDIT_WORDS.has(token) || GIVE_WORDS.has(token) || ARRIVED_WORDS.has(token)
+  );
 }
 
 /**
@@ -605,6 +626,7 @@ export function writeCueOf(
   if (party && !PAYMENT_WORDS.some((phrase) => said(tokens, phrase))) return party;
   if (
     WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
+    !tokens.some((token) => INFO_WORDS.has(token)) &&
     (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))
   )
     return "sale";

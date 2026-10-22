@@ -600,6 +600,9 @@ describe("polite sales, tell-me questions and arrivals (D186)", () => {
     ["রহিম মোটরসের প্যাডের দামটা বলে দেন", null],
     ["Rahim Motors er pad er dam ta bole den", null],
     ["pad gulo dekhan", null],
+    ["tejgaon auto care er number ta den", null],
+    ["তেজগাঁও অটো কেয়ারের নম্বরটা দেন", null],
+    ["রহিম মোটরসের ফোন নম্বর দেন", null],
   ] as const)("%s → %s", (text, kind) => {
     expect(writeCueOf(text, { partyNamed: true })).toBe(kind);
   });

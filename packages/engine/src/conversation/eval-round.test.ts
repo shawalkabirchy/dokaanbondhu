@@ -376,3 +376,42 @@ describe("the read query tool says how its database writes days (D186)", () => {
     expect(readQueryTool(shopBMap).function.description).toMatch(/MySQL.*CURDATE\(\) - INTERVAL 1 DAY/);
   });
 });
+
+describe("the second trial run's findings (D187)", () => {
+  it.each([
+    { style: "Bangla", text: "রহিম মোটরসের নম্বরটা দেন", name: "রহিম মোটরস" },
+    { style: "Banglish", text: "rahim motors er number ta den", name: "rahim motors" },
+  ])("asking for a customer's number is no sale ($style)", async ({ text, name }) => {
+    const shop = connect(geargrid);
+    const answer = await shop.say(fresh(), { text }, [
+      { calls: [{ name: "resolve_customer", arguments: { name } }] },
+      { text: "" },
+    ]);
+    expect(answer.confirm).toBeUndefined();
+    expect(answer.asked).not.toBe("part_type");
+  });
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "নবাবপুর অটো পার্টস থেকে ফিল্ডার ২০১০-এর ব্রেক প্যাড দুই সেট এলো, প্রতি সেট ১২০০ টাকা",
+      part: { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০১০" },
+    },
+    {
+      style: "Banglish",
+      text: "Nawabpur Auto Parts theke fielder 2010 er brake pad dui set aslo, proti set 1200 taka",
+      part: { part_type: "brake pad", vehicle: "fielder", year: "2010" },
+    },
+  ])("aslo (it came) is never আসল (genuine): the quality is asked ($style)", async ({ text, part }) => {
+    const shop = connect(geargrid);
+    const asked = await shop.say(
+      fresh(),
+      { text },
+      call("stock_in", {
+        supplier: "Nawabpur Auto Parts",
+        items: [{ part, quantity: "2 set", unit_cost: "1200" }],
+      }),
+    );
+    expect(asked.asked, asked.reply).toBe("quality");
+  });
+});
