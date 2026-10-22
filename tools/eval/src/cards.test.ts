@@ -41,7 +41,7 @@ describe("speaker sheets", () => {
       expect(item.task_card_bn, item.id).toBeTruthy();
     }
     expect(sheet).toContain("নিজের ভাষায়");
-    expect(sheet).toContain("সম্মতিপত্রে সই");
+    expect(sheet).not.toContain("সম্মতিপত্র");
   });
 });
 
