@@ -26,6 +26,7 @@ import {
   aiProviders,
   connections,
   createPlatform,
+  messages,
   newSetupToken,
   SETUP_TOKEN_MS,
   setupTokenHash,
@@ -35,7 +36,8 @@ import {
   type Platform,
 } from "@dokaanbondhu/platform-db";
 import { createClient } from "@supabase/supabase-js";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 // npm run admin -- <command> (spec 7.5): shops, owners, consent and AI providers, as platform_admin. On the laptop
@@ -117,6 +119,26 @@ function supabaseAdmin() {
 }
 
 type Command = (platform: Platform, args: string[]) => Promise<void>;
+
+/** The stages of a turn in the order they run (spec 9.1); any other timing follows them. */
+const STAGES = [
+  "asr",
+  "normalize",
+  "cleanup",
+  "frame",
+  "candidates",
+  "resolve",
+  "llm",
+  "first_audio",
+  "total",
+];
+
+/** The value below which a share of the sorted values lies (nearest rank). */
+function percentile(sorted: number[], share: number): number {
+  return sorted[Math.max(0, Math.ceil(share * sorted.length) - 1)]!;
+}
+
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
 /** verification-report.json of the sandbox check (spec 11.11). */
 const reportSchema = z.object({
@@ -514,6 +536,108 @@ const commands: Record<string, Command> = {
       `checked ${result.checked}, suggested ${result.suggested}, skipped ${result.skipped}, left ${result.left}` +
         (result.stopped ? `; stopped: ${result.stopped}` : ""),
     );
+  },
+
+  /**
+   * latency-report --shop <id> [--since <time>] [--until <time>] [--out <file.csv>]: how long the shop's replies took
+   * (spec 19.3, D205), from the saved replies' timings (messages.meta.timings_ms): voice and chat apart, each stage's
+   * median, 90th percentile and slowest; with --out, one line per reply as CSV. --since is the start of today when left
+   * out; a time is read as the laptop's clock ("2026-12-10 09:00") or ISO. A voice turn's times count from the moment
+   * the whole recording reached the server; first_audio is when its first spoken sentence was sent.
+   */
+  "latency-report": async (platform, args) => {
+    const { values } = parseArgs({
+      args,
+      options: {
+        shop: { type: "string" },
+        since: { type: "string" },
+        until: { type: "string" },
+        out: { type: "string" },
+      },
+    });
+    const shopId = uuid.parse(values.shop);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // A date alone would be midnight in UTC: it is the laptop's midnight, as a date with a time is.
+    const time = (value: string) =>
+      z.coerce
+        .date({ error: `"${value}" is no time; write it like 2026-12-10 09:00` })
+        .parse(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00` : value);
+    const since = values.since === undefined ? today : time(values.since);
+    const until = values.until === undefined ? new Date() : time(values.until);
+    if (since >= until) throw new Error("--since must come before --until");
+    const reply = alias(messages, "reply");
+    const asked = alias(messages, "asked");
+    const rows = await platform.withAdmin((tx) =>
+      tx
+        .select({
+          at: reply.createdAt,
+          turnId: reply.turnId,
+          timings: sql<Record<string, number> | null>`${reply.meta} -> 'timings_ms'`,
+          voice: sql<boolean>`(${asked.meta} -> 'voice') is not null`,
+        })
+        .from(reply)
+        .leftJoin(asked, and(eq(asked.turnId, reply.turnId), eq(asked.role, "user")))
+        .where(
+          and(
+            eq(reply.shopId, shopId),
+            eq(reply.role, "assistant"),
+            gte(reply.createdAt, since),
+            lt(reply.createdAt, until),
+          ),
+        )
+        .orderBy(asc(reply.createdAt)),
+    );
+    const rank = (key: string) => (STAGES.includes(key) ? STAGES.indexOf(key) : STAGES.length);
+    const keysOf = (list: typeof rows) =>
+      [...new Set(list.flatMap((row) => Object.keys(row.timings ?? {})))].sort(
+        (a, b) => rank(a) - rank(b) || a.localeCompare(b),
+      );
+    const timesOf = (list: typeof rows, key: string) =>
+      list
+        .map((row) => row.timings?.[key])
+        .filter((ms): ms is number => typeof ms === "number")
+        .sort((a, b) => a - b);
+    const kinds = { voice: rows.filter((row) => row.voice), chat: rows.filter((row) => !row.voice) };
+    out(
+      `Replies from ${since.toLocaleString()} to ${until.toLocaleString()}: ` +
+        `${kinds.voice.length} voice, ${kinds.chat.length} chat`,
+    );
+    const firstSound = timesOf(kinds.voice, "first_audio");
+    if (firstSound.length)
+      out(
+        `Voice: the spoken answer started ${seconds(percentile(firstSound, 0.5))} after the recording reached the ` +
+          `server (median); 9 in 10 within ${seconds(percentile(firstSound, 0.9))}`,
+      );
+    for (const [kind, list] of Object.entries(kinds)) {
+      if (list.length === 0) continue;
+      out("");
+      out(`${kind.padEnd(14)}${"median".padStart(9)}${"90%".padStart(9)}${"slowest".padStart(9)}  replies`);
+      for (const key of keysOf(list)) {
+        const times = timesOf(list, key);
+        out(
+          `  ${key.padEnd(12)}${seconds(percentile(times, 0.5)).padStart(9)}` +
+            `${seconds(percentile(times, 0.9)).padStart(9)}${seconds(times.at(-1)!).padStart(9)}  ${times.length}`,
+        );
+      }
+    }
+    if (values.out) {
+      const keys = keysOf(rows);
+      const lines = [
+        ["at", "kind", "turn_id", ...keys].join(","),
+        ...rows.map((row) =>
+          [
+            row.at.toISOString(),
+            row.voice ? "voice" : "chat",
+            row.turnId,
+            ...keys.map((key) => row.timings?.[key] ?? ""),
+          ].join(","),
+        ),
+      ];
+      await writeFile(values.out, `${lines.join("\n")}\n`);
+      out("");
+      out(`Saved ${values.out}: one line per reply, times in ms`);
+    }
   },
 
   /**

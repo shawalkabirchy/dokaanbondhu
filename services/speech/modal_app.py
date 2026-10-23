@@ -2,16 +2,24 @@
 
 Once:   modal run modal_app.py::prepare_models   (converts and downloads the models into the volume)
 Deploy: modal deploy modal_app.py
+        on an L40S instead of the L4 (the capstone day, D192, D205), in PowerShell:
+        $env:SPEECH_GPU = "L40S"; modal deploy modal_app.py
 Every request needs a Modal proxy token (headers Modal-Key and Modal-Secret).
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import modal
 
 HERE = Path(__file__).resolve().parent
+
+# Read when deploying; the container gets the same value, so both see one GPU (D205).
+GPU = os.environ.get("SPEECH_GPU") or "L4"
+if GPU not in ("L4", "L40S"):
+    raise SystemExit(f"SPEECH_GPU is L4 or L40S, not {GPU!r}")
 
 app = modal.App("dokaanbondhu-speech")
 models = modal.Volume.from_name("dokaanbondhu-speech-models", create_if_missing=True)
@@ -36,10 +44,11 @@ def prepare_models() -> None:
 
 @app.function(
     image=image,
-    gpu="L4",
+    gpu=GPU,
+    env={"SPEECH_GPU": GPU},
     volumes={"/models": models},
     secrets=[huggingface],
-    scaledown_window=5 * 60,  # scales to zero after 5 idle minutes
+    scaledown_window=5 * 60,  # scales to zero after 5 idle minutes; awake.py keeps one running (D205)
     startup_timeout=15 * 60,  # loading both models and the warm-up
     routing_region="ap-south",  # the entry point closest to Bangladesh; no container region (D63)
 )

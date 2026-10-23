@@ -371,6 +371,7 @@ async function answer(
   const timings = { ...said.timings, ...outcome.meta.timings_ms };
 
   const now = new Date();
+  const replyId = randomUUID();
   await platform().withShop(caller.shopId, async (tx) => {
     await tx.insert(messages).values([
       {
@@ -382,6 +383,7 @@ async function answer(
         ...(said.userMeta ? { meta: said.userMeta } : {}),
       },
       {
+        id: replyId,
         shopId: caller.shopId,
         conversationId: conversation.id,
         turnId: outcome.turnId,
@@ -457,6 +459,7 @@ async function answer(
   if (shopHostValue.connectionId)
     for (const kept of outcome.racks) keepRack(shopHostValue, kept.hostPartId, kept.rack);
   if (speaker) await speaker.drain();
+  await saveFirstAudio(caller.shopId, replyId, speaker);
   const done = held as DoneEvent | null;
   if (done) {
     emit({
@@ -682,6 +685,7 @@ async function askAgain(
 ): Promise<void> {
   const { caller, conversation } = request;
   const turnId = randomUUID();
+  const replyId = randomUUID();
   emit({ type: "text", seq: 0, text: ASK_AGAIN, final: true });
   speaker.say(0, ASK_AGAIN);
   await platform().withShop(caller.shopId, (tx) =>
@@ -695,6 +699,7 @@ async function askAgain(
         meta: { voice },
       },
       {
+        id: replyId,
         shopId: caller.shopId,
         conversationId: conversation.id,
         turnId,
@@ -706,6 +711,7 @@ async function askAgain(
     ]),
   );
   await speaker.drain();
+  await saveFirstAudio(caller.shopId, replyId, speaker);
   emit({
     type: "done",
     turn_id: turnId,
@@ -716,4 +722,23 @@ async function askAgain(
       ...(speaker.firstAudioMs != null ? { first_audio: speaker.firstAudioMs } : {}),
     },
   });
+}
+
+/**
+ * The first audio mostly comes after the turn was saved, so its time is added to the saved reply's timings then, for
+ * the latency report (spec 9.1, D205). Only a warning if this fails: the answer is out already.
+ */
+async function saveFirstAudio(shopId: string, replyId: string, speaker: Speaker | null): Promise<void> {
+  const ms = speaker?.firstAudioMs;
+  if (ms == null) return;
+  try {
+    await platform().withShop(shopId, (tx) =>
+      tx
+        .update(messages)
+        .set({ meta: sql`jsonb_set(${messages.meta}, '{timings_ms,first_audio}', to_jsonb(${ms}::int))` })
+        .where(eq(messages.id, replyId)),
+    );
+  } catch (error) {
+    logger().warn({ err: error, message_id: replyId }, "the first audio's time was not saved");
+  }
 }

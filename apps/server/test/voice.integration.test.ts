@@ -304,6 +304,12 @@ describe.skipIf(!allLocal)("voice turns", () => {
     const voice = (saved[0]!.meta as { voice: { asr: Record<string, unknown>; clip?: string } }).voice;
     expect(voice.asr.nbest).toBeUndefined();
     expect(voice.clip).toBeUndefined();
+    // The reply keeps the times the done event gave, the first audio's too, for the latency report (D205).
+    const doneTimings = (done as { timings_ms: Record<string, number> }).timings_ms;
+    expect((saved[1]!.meta as { timings_ms: Record<string, number> }).timings_ms).toMatchObject({
+      asr: doneTimings.asr,
+      first_audio: doneTimings.first_audio,
+    });
   });
 
   it("answers a quietly spoken question: trimmed by the clip's own level and raised before transcribing (D150)", async () => {
@@ -408,6 +414,16 @@ describe.skipIf(!allLocal)("voice turns", () => {
     expect(quiet.reply).toBe(ASK_AGAIN);
     expect(speech.asrRequests).toHaveLength(0); // no provider call at all
     expect(quiet.events.find((event) => event.type === "audio")).toMatchObject({ seq: 0 });
+    const [, askedAgain] = await admin.withAdmin((tx) =>
+      tx
+        .select()
+        .from(messages)
+        .where(eq(messages.conversationId, quiet.conversationId))
+        .orderBy(messages.createdAt),
+    );
+    expect((askedAgain!.meta as { timings_ms: Record<string, number> }).timings_ms).toMatchObject({
+      first_audio: expect.any(Number),
+    }); // D205
 
     speech.asr.push({ text: "" });
     const empty = await say(spoken());
