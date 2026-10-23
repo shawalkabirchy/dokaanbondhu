@@ -148,6 +148,23 @@ describe("what is said, and what is asked (GearGrid, D195)", () => {
     },
   );
 
+  // Run 5, c-205: the rack left out and the part said by its number; the model searched, so it was only a part's answer.
+  it.each([
+    { style: "Bangla", text: "PAD-NEW পার্টের র‍্যাক বদলাতে হবে", answer: "ডি ১৪" },
+    { style: "Banglish", text: "PAD-NEW er rack bodlate hobe", answer: "d 14" },
+  ])(
+    "a rack change without the rack, the part by its number: asks which rack ($style)",
+    async ({ text, answer }) => {
+      const shop = connect(geargrid);
+      const search: Step[] = [{ calls: [{ name: "find_parts", arguments: { part_number: "PAD-NEW" } }] }];
+      const asked = await shop.say(fresh(), { text }, search);
+      expect(asked.reply).toMatch(/কোন র‍্যাকে রাখব\?$/);
+      const reply = await shop.say(asked.state, { text: answer });
+      expect(reply.confirm?.text).toMatch(/রাখা হবে D-14-এ \(এখন B-3\)। ঠিক আছে\?$/);
+      expect(reply.state.action?.request.path).toBe("/api/v1/parts/pad-new/rack");
+    },
+  );
+
   it.each(RACK)("the rack the part is on already is said, and nothing is asked ($style)", async (said) => {
     const shop = connect(geargrid);
     const first = await shop.say(fresh(), { text: said.same }, rackCall("update_rack", fielder(said)));

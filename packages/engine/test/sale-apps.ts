@@ -187,6 +187,8 @@ export interface Api {
   noRackAction?: boolean;
   /** DokaanBondhu's own racks by part (rack_extra). */
   ownRacks?: Map<string, string>;
+  /** What the near-word clean-up answers, one reply per call (D153). */
+  cleanups?: string[];
 }
 
 /** The app's new fitment as GearGrid answers it (D172). */
@@ -514,8 +516,8 @@ export function connect(shop: Shop, api: Api = {}) {
     dictionary = buildDictionary([...GLOSSARY, ...catalogEntries(catalog)]);
     dictionaries.set(shop.parts, dictionary);
   }
-  const deps = (steps: Step[]): TurnDeps => ({
-    llm: [scripted(steps)],
+  const deps = (steps: Step[], llm = scripted(steps, [...(api.cleanups ?? [])])): TurnDeps => ({
+    llm: [llm],
     dictionary: dictionary!,
     host: {
       map: geargridMap,
@@ -538,7 +540,10 @@ export function connect(shop: Shop, api: Api = {}) {
   /** One turn; an answer needs no LLM, so a request brings the one tool call its script names. */
   async function say(state: TurnState, input: Input, steps: Step[] = []) {
     const events: ReplyEvent[] = [];
-    const outcome = await runTurn(input, structuredClone(state), deps(steps), (event) => events.push(event));
+    const llm = scripted(steps, [...(api.cleanups ?? [])]);
+    const outcome = await runTurn(input, structuredClone(state), deps(steps, llm), (event) =>
+      events.push(event),
+    );
     const reply = events
       .filter((event) => event.type === "text")
       .map((event) => (event as { text: string }).text)
@@ -561,6 +566,8 @@ export function connect(shop: Shop, api: Api = {}) {
       racks: outcome.racks,
       state: outcome.state,
       trace: outcome.trace,
+      /** The turn's near-word clean-up calls (D153). */
+      cleanups: llm.cleanupRequests,
     };
   }
   /** The part the last dry run would sell. */

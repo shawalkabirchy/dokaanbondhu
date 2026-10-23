@@ -48,7 +48,7 @@ export const GET_REPORT = fn(
 
 export const GET_REMINDERS = fn(
   "get_reminders",
-  "Parts running low in stock, or customers whose due is old (D194). Use it for these instead of SQL.",
+  "The shop's reminders (D194): low_stock lists every part at or below its reorder level (running low, to order); old_dues lists customers whose due is over 30 days old. Not for parts out of stock (zero stock), a part's own stock or another stock count: use run_read_query for those.",
   {
     type: "object",
     properties: { kind: { type: "string", enum: ["low_stock", "old_dues"] } },

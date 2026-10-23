@@ -334,6 +334,9 @@ describe("a rack change said (D195)", () => {
     "axio pad er rack D-14 koro",
     "প্যাডটা বি-৩ থেকে সি-২ তে সরাও",
     "pad ta B-3 theke C-2 te sorao",
+    // The rack left out: still a rack change, and its question asks which (run 5, c-205).
+    "DNSP-0199 পার্টের র‍্যাক বদলাতে হবে",
+    "DNSP-0199 er rack bodlate hobe",
   ])("%s is a rack change", (text) => {
     expect(writeCueOf(text, { partyNamed: false })).toBe("rack_update");
   });
@@ -341,6 +344,8 @@ describe("a rack change said (D195)", () => {
   it.each([
     "বি-৩ এ কী কী আছে?", // a question
     "B-3 te ki ki ache",
+    "র‍্যাক কোনটা?", // a question, and no change
+    "rack konta bolo",
     "এই প্যাডটা রাখো", // no rack
     "ei padta rakho",
     "রহিম মোটরসকে ২ সেট প্যাড বাকিতে দাও", // a sale
@@ -374,6 +379,9 @@ describe("a price change said (D171)", () => {
     // The polite forms (D188).
     "AN-136WK এর খুচরা দাম ১৭০০ করে দেন",
     "AN-136WK er khuchra dam 1700 kore den",
+    // "রেট" (rate) names a price too (run 5, c-121).
+    "LOC-TIE-1220 পার্টের রেট ১১০০ টাকা সেট করেন",
+    "LOC-TIE-1220 er rate 1100 taka set koren",
   ])("%s is a price change", (text) => {
     expect(writeCueOf(text, { partyNamed: false })).toBe("price_update");
   });

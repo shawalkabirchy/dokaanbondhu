@@ -277,3 +277,50 @@ describe("the new customer's and supplier's tools (D173)", () => {
     expect(keys("add_supplier")).toEqual(["address", "name", "phone"]);
   });
 });
+
+// Run 5 (c-112, c-145): the near-word clean-up turned a new name into a known one ("Bikrampur Motors" into "Mirpur
+// Car Care Motors") or into a car ("কাওরান" into "ক্যারাভান"). A new name is new: the clean-up is not asked (D202).
+describe("a new name is never cleaned up into a known one (D202)", () => {
+  it.each([
+    {
+      style: "Bangla",
+      ask: "রোহিম গ্যারেজের বাকি কত?",
+      add: "নতুন কাস্টমার যোগ করেন: রোহিম গ্যারেজ, পাইকারি",
+      name: "রোহিম গ্যারেজ",
+      tool: "add_customer",
+    },
+    {
+      style: "Banglish",
+      ask: "Rohim Garej er baki koto?",
+      add: "notun customer add koren: Rohim Garej, paikari",
+      name: "Rohim Garej",
+      tool: "add_customer",
+    },
+    {
+      style: "Bangla",
+      ask: "নবাবপোর অটোর পাওনা কত?",
+      add: "নতুন সাপ্লায়ার যোগ করেন: নবাবপোর অটো",
+      name: "নবাবপোর অটো",
+      tool: "add_supplier",
+    },
+    {
+      style: "Banglish",
+      ask: "Nawabpor Autto er paona koto",
+      add: "notun supplier jog koren: Nawabpor Autto",
+      name: "Nawabpor Autto",
+      tool: "add_supplier",
+    },
+  ])(
+    "a $tool keeps the name as said, while a question about it is cleaned up ($style)",
+    async ({ ask, add, name, tool }) => {
+      const replaced = JSON.stringify({ replaced: [{ heard: name.split(" ")[0], meant: "Rahim Motors" }] });
+      const shop = connect(geargrid, { cleanups: [replaced, replaced] });
+      const question = await shop.say(fresh(), { text: ask }, [{ text: "" }, { text: "" }]);
+      expect(question.cleanups).toHaveLength(1);
+      const adding = await shop.say(fresh(), { text: add }, call(tool, { name }));
+      expect(adding.cleanups).toEqual([]);
+      expect(adding.trace.cleanup).toBeUndefined();
+      expect(JSON.stringify(adding.state.frame?.slots.new_name)).toContain(name);
+    },
+  );
+});

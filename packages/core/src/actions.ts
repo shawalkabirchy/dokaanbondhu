@@ -448,7 +448,9 @@ const PAYMENT_WORDS = [
   "bkash e",
 ];
 /** A price change (D171): দাম or price, the new amount as money, and a word that sets it; never with বিক্রি. */
-const PRICE_WORDS = new Set(["দাম", "dam", "daam", "price"].map((word) => normalize(word).tokens.join(" ")));
+const PRICE_WORDS = new Set(
+  ["দাম", "dam", "daam", "price", "রেট", "rate"].map((word) => normalize(word).tokens.join(" ")),
+);
 const SET_PRICE = [
   "করো",
   "করে দাও",
@@ -510,10 +512,29 @@ const SET_RACK = new Set(
     (word) => normalize(word).tokens.join(" "),
   ),
 );
+/** Words that change a part's rack without naming the new one: "র‍্যাক বদলাতে হবে", "rack bodlate hobe". */
+const CHANGE_RACK = new Set(
+  [
+    "বদলাতে",
+    "বদলানো",
+    "বদলাও",
+    "বদলে",
+    "পাল্টাও",
+    "পাল্টাতে",
+    "bodlate",
+    "bodlao",
+    "bodle",
+    "paltao",
+    "paltate",
+    "change",
+  ].map((word) => normalize(word).tokens.join(" ")),
+);
 function saysRack(text: string, tokens: string[]): boolean {
-  if (!rackSaid(text)) return false;
+  const rackWord = tokens.some((token) => RACK_NAMES.has(token));
+  // The rack left out: the change still starts, and its question asks which rack (D202).
+  if (!rackSaid(text)) return rackWord && tokens.some((token) => CHANGE_RACK.has(token));
   if (tokens.some((token) => PUT_ON_RACK.has(token))) return true;
-  return tokens.some((token) => RACK_NAMES.has(token)) && tokens.some((token) => SET_RACK.has(token));
+  return rackWord && tokens.some((token) => SET_RACK.has(token));
 }
 
 /**

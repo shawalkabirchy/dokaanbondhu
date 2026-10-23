@@ -702,8 +702,14 @@ export async function runTurn(
     askedSlot && ["vehicle", "part_type", "brand", "customer", "supplier"].includes(askedSlot)
       ? question({ slot: askedSlot as QuestionSlot })
       : undefined;
+  // A new customer's or supplier's name is new, so the clean-up never makes it a known name or a car: not in a request
+  // that adds one, nor in the answer to the add's own questions (D202).
+  const addsParty =
+    (said !== "" &&
+      ["add_customer", "add_supplier"].includes(writeCueOf(said, { partyNamed: false }) ?? "")) ||
+    (askedSlot?.startsWith("new_") ?? false);
   const hints =
-    said && !input.choice && !state.action && deps.llm.length
+    said && !addsParty && !input.choice && !state.action && deps.llm.length
       ? nearHints({
           text: said,
           dictionary: deps.dictionary,
