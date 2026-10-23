@@ -500,6 +500,52 @@ export function appWordsOf(
   );
 }
 
+/** How many parts, cars, customers and suppliers: the app's now, or the copy's. */
+export interface CatalogCounts {
+  part: number;
+  vehicle: number;
+  customer: number;
+  supplier: number;
+}
+
+/** Each counted concept with the field readCatalog needs besides the ID. */
+const COUNTED = [
+  ["part", "Part", "name"],
+  ["vehicle", "Vehicle", "model"],
+  ["customer", "Customer", "name"],
+  ["supplier", "Supplier", "name"],
+] as const;
+
+/**
+ * How many parts, cars, customers and suppliers the app holds now (D208): one count per mapped concept over the rows
+ * readCatalog reads (the entity's own filters, no child table), so right after a sync it equals the copy's. Cheap
+ * enough for the server to ask before a turn; a concept not mapped counts 0, as it has no rows in the copy.
+ */
+export async function hostCounts(run: RunQuery, map: SchemaMap): Promise<CatalogCounts> {
+  const counts: CatalogCounts = { part: 0, vehicle: 0, customer: 0, supplier: 0 };
+  for (const [concept, entity, field] of COUNTED) {
+    if (!hasField(map, entity, "id") || !hasField(map, entity, field)) continue;
+    const [row] = await run(
+      buildQuery(map, {
+        from: { concept: entity, alias: "x" },
+        select: [{ ref: { alias: "x", field: "id" }, as: "n", aggregate: "count" }],
+      }),
+    );
+    counts[concept] = Number(row?.n ?? 0);
+  }
+  return counts;
+}
+
+/** The copy's own counts, to compare with the app's (D208). */
+export function countsOf(catalog: Catalog): CatalogCounts {
+  return {
+    part: catalog.parts.length,
+    vehicle: catalog.vehicles.length,
+    customer: catalog.customers.length,
+    supplier: catalog.suppliers.length,
+  };
+}
+
 /** The newest sync time of a connection's cache (the server polls this every 60 s). */
 export async function catalogVersion(tx: Tx, connectionId: string): Promise<Date | null> {
   const [row] = await tx

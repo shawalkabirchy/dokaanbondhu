@@ -1,6 +1,6 @@
 import { aliasEntries, buildDictionary, catalogEntries, GLOSSARY } from "@dokaanbondhu/core";
 import { aliases, fitmentExtra, type Tx } from "@dokaanbondhu/platform-db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { readCatalog, toCatalog, writeCatalog } from "./catalog";
 import { parsedFitments } from "./fitment-text";
 import type { HostPools, RunQuery } from "./pool";
@@ -53,6 +53,9 @@ export async function syncConnection(
     covered: await fittedParts(run, map),
   }));
   const syncedAt = await withTx(async (tx) => {
+    // One write of a connection at a time (D208): the server's refresh and the worker's may meet; the second waits, so
+    // the parsed fitment rows below are never written twice.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${connectionId}))`);
     const at = await writeCatalog(tx, shopId, connectionId, rows);
     const own = await tx.select().from(aliases).where(eq(aliases.shopId, shopId));
     const catalog = toCatalog(rows);

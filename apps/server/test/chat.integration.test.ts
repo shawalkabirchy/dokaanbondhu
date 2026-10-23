@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { remindersSchema, type ReplyEvent } from "@dokaanbondhu/contracts";
 import { banglaDigits, CANNOT_ANSWER_NOW, SEE_IN_APP } from "@dokaanbondhu/core";
 import {
@@ -452,4 +453,43 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
     );
     expect(count.rows[0]).toMatchObject({ n: 0 });
   });
+  it.each([
+    { style: "Banglish", text: (name: string) => `${name} er baki koto?` },
+    { style: "Bangla", text: (name: string) => `${name}-এর বাকি কত?` },
+  ])(
+    "knows a customer added in the app since its last copy, at the next question, with no worker (D208, $style)",
+    async ({ style, text }) => {
+      const { clearHostCache, expireHostCheck, shopHost } = await import("../src/server/host");
+      await shopHost(shop.shopId); // the copy as it is, cached
+      const id = randomUUID();
+      const name = `Notun Test Garage ${style} ${id.slice(0, 4)}`;
+      const gearGrid = createPlatform(urls.host, { max: 1 });
+      // added straight into the app's database, as GearGrid's web dashboard does
+      await gearGrid.withAdmin((tx) =>
+        tx.execute(
+          sql`insert into customers (id, name, type, price_tier) values (${id}, ${name}, 'garage', 'garage')`,
+        ),
+      );
+      try {
+        expireHostCheck(shop.shopId); // the next turn runs the once-a-minute check now
+        const conversationId = await newConversation();
+        llm.script.push({ calls: [{ name: "resolve_customer", arguments: { name } }] }, { text: `${name}` });
+        await chat({ conversation_id: conversationId, text: text(name) });
+        // the lookup found the new customer (not {found: false}): the copy was refreshed before the answer
+        const toolReply = (llm.received[1]?.messages as { role: string; content: string }[]).find(
+          (message) => message.role === "tool",
+        );
+        // (the tool's answer reaches the LLM inside a <tool_result> fence)
+        expect(toolReply!.content).toContain(JSON.stringify({ customer: name }));
+        expect(toolReply!.content).not.toContain('"found":false');
+        expect((await shopHost(shop.shopId)).host.catalog.customers.map((c) => c.name)).toContain(name);
+      } finally {
+        await gearGrid.withAdmin((tx) => tx.execute(sql`delete from customers where id = ${id}`));
+        await gearGrid.end();
+        // Each case starts from a fresh look at the app: a removal here and an addition in the next case would
+        // otherwise cancel out in the counts (the 10-minute refresh is what catches that, D208).
+        clearHostCache(shop.shopId);
+      }
+    },
+  );
 });

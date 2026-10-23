@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { appWordsOf, customerTier, ourWord, toCatalog, yearsOf, type CatalogRow } from "./catalog";
+import {
+  appWordsOf,
+  countsOf,
+  customerTier,
+  hostCounts,
+  ourWord,
+  toCatalog,
+  yearsOf,
+  type CatalogRow,
+} from "./catalog";
+import { testMap } from "./test-map";
 
 // The app's own words (spec 9.8, D121, D122): a customer's price level is its own tier, else its type, and a part's
 // quality, position and unit are read through the owner's choice and then the word list, so any shop app's wording
@@ -88,5 +98,43 @@ describe("customer price levels", () => {
     expect(yearsOf({ year_from: "2014" })).toEqual({ from: 2014, to: 2014 }); // one year, no year_to mapped
     expect(yearsOf({})).toEqual({ from: 0, to: null });
     expect(yearsOf({ year_from: "new" })).toEqual({ from: 0, to: null });
+  });
+});
+
+describe("counting the app's names (D208)", () => {
+  const counting = (dialect: "postgres" | "mysql") => {
+    const sent: string[] = [];
+    const run = async (query: { text: string }) => {
+      sent.push(query.text);
+      return [{ n: dialect === "mysql" ? 7 : "7" }]; // pg returns a count as text, mysql2 as a number
+    };
+    return { sent, run };
+  };
+
+  it("counts each mapped concept over the rows the catalog reads, and skips one not mapped", async () => {
+    const { sent, run } = counting("postgres");
+    expect(await hostCounts(run, testMap())).toEqual({ part: 7, vehicle: 7, customer: 7, supplier: 0 });
+    expect(sent).toHaveLength(3); // no supplier in this app: nothing asked, as its copy has none
+    const parts = sent[0]!;
+    expect(parts).toMatch(/^SELECT COUNT\("x"\."id"\) AS "n" FROM "items" AS "x"/);
+    // the part's own filters apply, as in readCatalog; the codes table (a child) is not joined, so no part counts twice
+    expect(parts).toContain(`"x"."deleted_at" IS NULL`);
+    expect(parts).not.toContain("item_codes");
+  });
+
+  it("writes the same counts for a MySQL app", async () => {
+    const { sent, run } = counting("mysql");
+    expect(await hostCounts(run, testMap("mysql"))).toEqual({
+      part: 7,
+      vehicle: 7,
+      customer: 7,
+      supplier: 0,
+    });
+    expect(sent[0]).toMatch(/^SELECT COUNT\(`x`\.`id`\) AS `n` FROM `items` AS `x`/);
+  });
+
+  it("gives the copy's own counts to compare with", () => {
+    const catalog = toCatalog([customer("c1", {}), customer("c2", {})]);
+    expect(countsOf(catalog)).toEqual({ part: 0, vehicle: 0, customer: 2, supplier: 0 });
   });
 });

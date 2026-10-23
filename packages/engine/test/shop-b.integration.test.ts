@@ -11,10 +11,19 @@ import {
   type PartsContext,
 } from "@dokaanbondhu/core";
 import type { ReplyEvent } from "@dokaanbondhu/contracts";
+import { createConnection } from "mysql2/promise";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runTurn, type TurnInput, type TurnState } from "../src/conversation/turn";
-import { appWordsOf, customerTier, readCatalog, toCatalog, type Catalog } from "../src/host/catalog";
+import {
+  appWordsOf,
+  countsOf,
+  customerTier,
+  hostCounts,
+  readCatalog,
+  toCatalog,
+  type Catalog,
+} from "../src/host/catalog";
 import { findParts, type FindPartsInput, type FitmentExtra } from "../src/host/find-parts";
 import { parsedFitments } from "../src/host/fitment-text";
 import { introspect } from "../src/host/introspect";
@@ -643,4 +652,22 @@ describe.skipIf(!isLocal)("host integration on test shop B (MySQL)", () => {
       expect(pad.outcome.racks).toEqual([]);
     },
   );
+  it("counts its names as the catalog reads them, deleted ones left out, and one more once a customer is added (D208)", async () => {
+    const counts = () => pools.readOnly(db, (run) => hostCounts(run, shopBMap));
+    expect(await counts()).toEqual(countsOf(catalog)); // right after reading the catalog: no refresh would follow
+    // a new customer, added as the app itself would (its own login, not the read-only one)
+    const root = await createConnection(shopUrl);
+    const id = 900000 + Math.floor(Math.random() * 99999);
+    await root.execute("INSERT INTO parties (party_id, party_name, party_kind) VALUES (?, ?, ?)", [
+      id,
+      "Notun Test Garage",
+      "Mechanic",
+    ]);
+    try {
+      expect((await counts()).customer).toBe(countsOf(catalog).customer + 1);
+    } finally {
+      await root.execute("DELETE FROM parties WHERE party_id = ?", [id]);
+      await root.end();
+    }
+  });
 });

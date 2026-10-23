@@ -4,14 +4,18 @@ import { parseAesKey } from "@dokaanbondhu/engine/crypto";
 import {
   catalogVersion,
   chosenPaikari,
+  countsOf,
   HostConnectionError,
+  hostCounts,
   HostPools,
   loadCatalog,
   loadHostDb,
   loadSchemaMap,
   loadWriteHost,
+  syncConnection,
   type AppWords,
   type Catalog,
+  type CatalogCounts,
   type ReportName,
 } from "@dokaanbondhu/engine/host";
 import type { WriteCapability } from "@dokaanbondhu/engine/write";
@@ -49,8 +53,26 @@ interface Entry {
 
 const versionOf = (synced: Date | null, words: number) => `${synced?.getTime() ?? 0}|${words}`;
 
-const holder = globalThis as { __dokaanHosts?: Map<string, Entry>; __dokaanHostPools?: HostPools };
+/** What the server knows of a shop's copy between turns (D208). */
+interface Freshness {
+  /** The app's counts at the last check: a change means a name was added or removed. */
+  counts: CatalogCounts | null;
+  /**
+   * When the server's last refresh began, so its copy shows the app from then on (the copy's own time also moves when
+   * a turn adds a record, so it is not used once the server has refreshed).
+   */
+  refreshedAt: number | null;
+  /** The refresh under way, if any: one at a time per shop. */
+  running: Promise<void> | null;
+}
+
+const holder = globalThis as {
+  __dokaanHosts?: Map<string, Entry>;
+  __dokaanHostPools?: HostPools;
+  __dokaanFreshness?: Map<string, Freshness>;
+};
 const cache = (holder.__dokaanHosts ??= new Map());
+const freshness = (holder.__dokaanFreshness ??= new Map<string, Freshness>());
 
 /** The host database pools, one per connection, shared by every route (spec 8.1). */
 export function hostPools(): HostPools {
@@ -61,6 +83,13 @@ export function hostPools(): HostPools {
 
 export function clearHostCache(shopId: string): void {
   cache.delete(shopId);
+  freshness.delete(shopId);
+}
+
+/** Tests only: the next shopHost() runs its once-a-minute check at once. */
+export function expireHostCheck(shopId: string): void {
+  const entry = cache.get(shopId);
+  if (entry) entry.checkedAt = 0;
 }
 
 const EMPTY_CATALOG: Catalog = { syncedAt: null, parts: [], vehicles: [], customers: [], suppliers: [] };
@@ -165,6 +194,7 @@ export async function shopHost(shopId: string): Promise<ShopHost> {
   const entry = cache.get(shopId);
   const now = Date.now();
   if (entry && now - entry.checkedAt < VERSION_CHECK_MS) return entry.value;
+  let current: Entry | null = null;
   if (entry) {
     const connectionId = entry.connectionId;
     const version = await platform().withShop(shopId, async (tx) => {
@@ -177,10 +207,95 @@ export async function shopHost(shopId: string): Promise<ShopHost> {
     });
     if (version === entry.version) {
       entry.checkedAt = now;
-      return entry.value;
+      current = entry;
     }
   }
-  const fresh = await load(shopId);
-  cache.set(shopId, fresh);
-  return fresh.value;
+  if (!current) {
+    current = await load(shopId);
+    cache.set(shopId, current);
+  }
+  // The same once-a-minute check asks the app whether a name was added or removed (D208).
+  if (await keepFresh(shopId, current)) {
+    current = await load(shopId);
+    cache.set(shopId, current);
+  }
+  return current.value;
+}
+
+/** A copy older than this is refreshed in the background (D208), as often as the worker's catalog.sync. */
+const REFRESH_AFTER_MS = 10 * 60_000;
+
+const COUNTED = ["part", "vehicle", "customer", "supplier"] as const;
+
+/**
+ * Whether the shop's copy must be refreshed (D208): now, before the answer, when the app's counts differ from the
+ * known ones (a name added or removed); in the background when the copy is older than 10 minutes (an edit, which no
+ * count shows); else not.
+ */
+export function needsRefresh(input: {
+  counts: CatalogCounts;
+  known: CatalogCounts;
+  refreshedAt: number | null;
+  now: number;
+}): "now" | "background" | "no" {
+  if (COUNTED.some((concept) => input.counts[concept] !== input.known[concept])) return "now";
+  if (input.refreshedAt === null || input.now - input.refreshedAt > REFRESH_AFTER_MS) return "background";
+  return "no";
+}
+
+/**
+ * Counts the app's names and refreshes the copy when needsRefresh() says so; true when it refreshed before the
+ * answer (the caller reloads). The app out of reach or a failed refresh only warns: the turn goes on with the old copy.
+ */
+async function keepFresh(shopId: string, entry: Entry): Promise<boolean> {
+  const { connectionId, host } = entry.value;
+  if (!connectionId || !host.map || !host.run) return false;
+  const state = freshness.get(shopId) ?? { counts: null, refreshedAt: null, running: null };
+  freshness.set(shopId, state);
+  const countedAt = Date.now();
+  let counts: CatalogCounts;
+  try {
+    counts = await hostCounts(host.run, host.map);
+  } catch (error) {
+    logger().warn({ err: error, shop_id: shopId }, "the app's names could not be counted; the copy stays");
+    return false;
+  }
+  const decision = needsRefresh({
+    counts,
+    // on a fresh start, the copy's own counts: a name added while the server slept is caught too
+    known: state.counts ?? countsOf(host.catalog),
+    refreshedAt: state.refreshedAt ?? host.catalog.syncedAt?.getTime() ?? null,
+    now: Date.now(),
+  });
+  state.counts = counts;
+  if (decision === "no") return false;
+  const start = () =>
+    (state.running ??= refresh(shopId, connectionId, state).finally(() => {
+      state.running = null;
+    }));
+  if (decision === "background") {
+    void start();
+    return false;
+  }
+  await state.running; // one under way may have begun before this change
+  if (state.refreshedAt === null || state.refreshedAt < countedAt) await start();
+  return true;
+}
+
+/** The same catalog.sync as setup's "sync now", as platform_api for the shop; never throws. */
+async function refresh(shopId: string, connectionId: string, state: Freshness): Promise<void> {
+  const began = Date.now(); // the copy shows the app as it was read, from about now
+  try {
+    await syncConnection(
+      (fn) => platform().withShop(shopId, fn),
+      hostPools(),
+      parseAesKey(serverEnv().AES_KEY),
+      shopId,
+      connectionId,
+    );
+    state.refreshedAt = began;
+    cache.delete(shopId); // the next turn loads the new copy
+  } catch (error) {
+    logger().warn({ err: error, shop_id: shopId }, "catalog refresh failed; the old copy stays");
+  }
 }
