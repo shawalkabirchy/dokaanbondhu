@@ -2,8 +2,10 @@ import { Redirect, Tabs } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, StyleSheet, View, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FloatingMicBridge } from "../../src/floating-mic-bridge";
 import { useSpeechWake } from "../../src/lib/health";
 import { useMe, useSession } from "../../src/lib/session";
+import { VoiceProvider } from "../../src/lib/voice";
 import { colors } from "../../src/theme";
 import { Icon, type IconName } from "../../src/ui";
 
@@ -21,7 +23,7 @@ function tabIcon(name: IconName) {
 
 /**
  * The signed-in app (spec 15.2, D166): the assistant (default), history, staff (owner only) and more; each page draws
- * its own top bar.
+ * its own top bar. Around them the app's one voice, shared by the assistant page and the floating mic (spec 15.9).
  */
 export default function AppLayout() {
   const { t } = useTranslation();
@@ -40,34 +42,37 @@ export default function AppLayout() {
   if (!session) return <Redirect href="/login" />;
   const owner = me.data?.user.role === "owner";
   return (
-    <Tabs
-      // Back returns to the page before (setup goes back to More), not to the first tab.
-      backBehavior="history"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.greenInk,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: styles.label,
-        tabBarStyle: [styles.bar, { height: 66 + bottom }],
-      }}
-    >
-      <Tabs.Screen
-        name="assistant"
-        options={{ title: t("tabs.assistant"), tabBarIcon: tabIcon("microphone-outline") }}
-      />
-      <Tabs.Screen name="history" options={{ title: t("tabs.history"), tabBarIcon: tabIcon("history") }} />
-      <Tabs.Screen
-        name="staff"
-        options={{
-          title: t("tabs.staff"),
-          tabBarIcon: tabIcon("account-group-outline"),
-          href: owner ? undefined : null,
+    <VoiceProvider>
+      <FloatingMicBridge />
+      <Tabs
+        // Back returns to the page before (setup goes back to More), not to the first tab.
+        backBehavior="history"
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: colors.greenInk,
+          tabBarInactiveTintColor: colors.muted,
+          tabBarLabelStyle: styles.label,
+          tabBarStyle: [styles.bar, { height: 66 + bottom }],
         }}
-      />
-      <Tabs.Screen name="more" options={{ title: t("tabs.more"), tabBarIcon: tabIcon("menu") }} />
-      {/* Setup is opened from More (owner only), not from the tab bar. */}
-      <Tabs.Screen name="setup/index" options={{ title: t("setup.title"), href: null }} />
-    </Tabs>
+      >
+        <Tabs.Screen
+          name="assistant"
+          options={{ title: t("tabs.assistant"), tabBarIcon: tabIcon("microphone-outline") }}
+        />
+        <Tabs.Screen name="history" options={{ title: t("tabs.history"), tabBarIcon: tabIcon("history") }} />
+        <Tabs.Screen
+          name="staff"
+          options={{
+            title: t("tabs.staff"),
+            tabBarIcon: tabIcon("account-group-outline"),
+            href: owner ? undefined : null,
+          }}
+        />
+        <Tabs.Screen name="more" options={{ title: t("tabs.more"), tabBarIcon: tabIcon("menu") }} />
+        {/* Setup is opened from More (owner only), not from the tab bar. */}
+        <Tabs.Screen name="setup/index" options={{ title: t("setup.title"), href: null }} />
+      </Tabs>
+    </VoiceProvider>
   );
 }
 

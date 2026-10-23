@@ -176,4 +176,23 @@ describe("push-to-talk turn", () => {
     expect(uploads.map((upload) => upload.seq)).toEqual([0, 1, 1]);
     expect(finish).toHaveBeenCalledTimes(2);
   });
+
+  it("uploads nothing more once dropped, when the floating mic is dragged instead of held (spec 15.9)", async () => {
+    const { turn, deps, uploads, advance } = setup({
+      // Uploads that never finish, so later chunks wait in the queue.
+      upload: jest.fn(() => new Promise<void>(() => undefined)),
+    });
+    for (let i = 0; i < 4; i++) {
+      advance(500);
+      turn.add(chunk(0.2));
+    }
+    await flush();
+    expect(deps.upload).toHaveBeenCalledTimes(2); // two in flight, two waiting
+    turn.cancel();
+    turn.add(chunk(0.2)); // the recorder's last chunk, after the drag
+    await flush();
+    expect(deps.upload).toHaveBeenCalledTimes(2);
+    expect(turn.receivedMs).toBe(2000);
+    expect(uploads).toEqual([]);
+  });
 });

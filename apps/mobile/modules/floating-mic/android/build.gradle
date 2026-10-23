@@ -1,0 +1,21 @@
+// The floating mic's native module (spec 15.9, D196, D203): autolinked from apps/mobile/modules.
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.dokaanbondhu.floatingmic'
+version = '0.1.0'
+
+android {
+  namespace "com.dokaanbondhu.floatingmic"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // The headless JS task that keeps the app's timers running while it is in the background.
+  implementation 'com.facebook.react:react-android'
+}

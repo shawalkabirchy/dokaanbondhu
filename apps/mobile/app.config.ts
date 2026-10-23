@@ -16,18 +16,19 @@ const config: ExpoConfig = {
     package: "com.dokaanbondhu.app", // D30
     adaptiveIcon: { foregroundImage: "./assets/images/adaptive-icon.png", backgroundColor: "#1f7a4d" },
     permissions: ["android.permission.RECORD_AUDIO"],
-    // The app template's storage permissions are not needed: audio files stay in the app's own cache (D81).
+    // The app template's storage permissions are not needed: audio files stay in the app's own cache (D81). Drawing
+    // over other apps and the microphone service come from the floating mic's module (modules/floating-mic, spec 15.9).
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
       "android.permission.WRITE_EXTERNAL_STORAGE",
-      ...(release ? ["android.permission.SYSTEM_ALERT_WINDOW"] : []),
     ],
   },
   plugins: [
     "expo-router",
     "expo-secure-store",
-    // Push-to-talk records only while the button is held with the app open, so the library's phone-call, Bluetooth,
-    // notification and background-recording permissions stay off (D81).
+    // Push-to-talk records only while a button is held, so the library's phone-call, Bluetooth, notification and
+    // background-recording permissions stay off (D81); the floating mic's own service covers recording with another
+    // app in front (spec 15.9).
     [
       "@siteed/audio-studio",
       {

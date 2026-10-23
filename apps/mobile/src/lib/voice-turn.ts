@@ -52,6 +52,7 @@ export class VoiceTurn {
   private drained: (() => void)[] = [];
   private bytes = 0;
   private arrived: (() => void)[] = [];
+  private cancelled = false;
 
   constructor(
     private readonly deps: VoiceTurnDeps,
@@ -63,6 +64,7 @@ export class VoiceTurn {
 
   /** One recorded chunk: measured, cut into pieces of at most one second, kept for a resend, and queued for upload. */
   add(bytes: Uint8Array): void {
+    if (this.cancelled) return;
     this.bytes += bytes.byteLength;
     for (const wake of this.arrived.splice(0)) wake();
     this.rms.add(bytes);
@@ -103,6 +105,12 @@ export class VoiceTurn {
   private whenDrained(): Promise<void> {
     if (this.running === 0 && this.waiting.length === 0) return Promise.resolve();
     return new Promise((resolve) => this.drained.push(resolve));
+  }
+
+  /** Dropped (the floating mic was dragged, spec 15.9): nothing more is recorded or uploaded, and it is never sent. */
+  cancel(): void {
+    this.cancelled = true;
+    this.waiting.length = 0;
   }
 
   /** The button is released (or 30 s are up): the time the turn's duration ends. */

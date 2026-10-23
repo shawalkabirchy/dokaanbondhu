@@ -190,6 +190,20 @@
     "sign_out_ask_text": "You will need your email and password to sign in again.",
     "version": "DokaanBondhu {{version}}"
   },
+  "floating": {
+    "title": "Floating mic",
+    "note_off": "A round mic stays over other apps: hold it and speak, let go to hear the answer.",
+    "note_on": "On. The mic shows when you leave this app. Drag it to move it; drop it on the × at the bottom to close it.",
+    "need_overlay": "To show the mic, turn on \"Display over other apps\".",
+    "allow": "Turn on",
+    "ask_title": "Display over other apps",
+    "ask_text": "On the next page, turn on \"Display over other apps\" for DokaanBondhu, then come back.",
+    "ask_go": "Open the page",
+    "mic_needed": "The floating mic needs the microphone.",
+    "notification_title": "Floating mic is on",
+    "notification_text": "Hold the mic and speak; let go to hear the answer.",
+    "stop": "Stop"
+  },
   "staff": {
     "title": "Staff",
     "add": "Add a staff login",

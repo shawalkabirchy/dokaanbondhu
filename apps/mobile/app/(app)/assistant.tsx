@@ -1,6 +1,4 @@
-import type { ReplyEvent } from "@dokaanbondhu/contracts";
-import { ASK_AGAIN, banglaDigits } from "@dokaanbondhu/core";
-import * as Crypto from "expo-crypto";
+import { banglaDigits } from "@dokaanbondhu/core";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,21 +15,21 @@ import {
   View,
 } from "react-native";
 import { AssistantBubble, MemoryLine, UserBubble } from "../../src/chat-ui";
-import { phonePlayer, playAskAgain, stopPlayback, usePlayback } from "../../src/lib/audio";
+import { usePlayback } from "../../src/lib/audio";
 import { useChat } from "../../src/lib/chat";
 import type { ActionResultEvent } from "../../src/lib/chat-store";
 import { buzz } from "../../src/lib/haptics";
 import { useHealth, wakeSpeech } from "../../src/lib/health";
-import { ReplyPlayer } from "../../src/lib/reply-player";
 import { useMe } from "../../src/lib/session";
 import { useDeviceSettings } from "../../src/lib/settings-store";
-import { usePushToTalk } from "../../src/lib/use-push-to-talk";
+import { useVoice } from "../../src/lib/voice";
 import { RemindersCard } from "../../src/reminders-card";
 import { colors, radius, space, type } from "../../src/theme";
 import { AppBar, Badge, Icon, IconButton, KeyboardRoom, OfflineBanner, type Tone } from "../../src/ui";
 
 // The assistant page (spec 15.2, D125, D166): voice and typing on one page over one conversation, so a question asked
-// by voice can be finished by typing. At the bottom the round talk button (hold it and speak, src/lib/use-push-to-talk)
+// by voice can be finished by typing. At the bottom the round talk button (hold it and speak, src/lib/use-push-to-talk;
+// the recorder and the spoken reply are the app's one voice, src/lib/voice, shared with the floating mic)
 // with a keyboard button beside it, or the typing bar; one line under the button says what is happening: listening,
 // understanding, searching, speaking (with a stop button), and the notes of D111 and D164. While the speech worker
 // wakes the page says voice is getting ready (the button still works), then that it is ready; while the page is in
@@ -55,8 +53,8 @@ export default function Assistant() {
   const { t } = useTranslation();
   const language = useDeviceSettings((state) => state.language);
   const { health, micAllowed, starting, speechTrouble, speechWaking, refresh } = useHealth();
-  const { messages, busy, runTurn, ensureConversation, send, decide, undo, reset, note, remembered, forget } =
-    useChat();
+  const { messages, busy, send, decide, undo, reset, remembered, forget } = useChat();
+  const { talk, playerTap, stopReply, lastAsked } = useVoice();
   /** False when the developer has switched reading aloud off (AI_SPEAK=off, D114). */
   const speaks = useMe().data?.providers.speaks ?? true;
   const playing = usePlayback((state) => state.playing);
@@ -64,8 +62,6 @@ export default function Assistant() {
   const [text, setText] = useState("");
   /** The speaker: typed questions are answered aloud too (off at first). */
   const [speak, setSpeak] = useState(false);
-  const lastAsked = useRef<"voice" | "typed">("voice");
-  const player = useRef<ReplyPlayer | null>(null);
   const list = useRef<ScrollView>(null);
   const [ready, setReady] = useState(false);
   const wasWaking = useRef(false);
@@ -74,43 +70,6 @@ export default function Assistant() {
   const results = new Map<string, ActionResultEvent>();
   for (const message of messages)
     if (message.kind === "assistant" && message.result) results.set(message.result.action_id, message.result);
-
-  /** A new reply's audio player; the previous one stops. */
-  function playerTap(): (event: ReplyEvent) => void {
-    player.current?.stop();
-    const current = new ReplyPlayer(phonePlayer, Crypto.randomUUID());
-    player.current = current;
-    return (event) => {
-      if (event.type === "audio") current.add(event.seq, event.data);
-      if (event.type === "done") current.end();
-    };
-  }
-
-  /** Stops the answer being spoken (the stop button, a new press, a new conversation). */
-  function stopReply() {
-    player.current?.stop();
-    stopPlayback();
-  }
-
-  /** A clip too quiet to send: "আবার বলবেন?" as text, and as the bundled sound unless speaking is off (D114). */
-  function askAgain() {
-    note(ASK_AGAIN);
-    if (speaks) playAskAgain();
-  }
-
-  const talk = usePushToTalk({
-    busy,
-    ensureConversation,
-    runTurn,
-    askAgain,
-    replyTap: playerTap,
-    stopReply,
-    afterTurn: () => {
-      if (speechTrouble) void refresh(); // a turn that worked clears the warning at once
-    },
-  });
-
-  useEffect(() => () => player.current?.stop(), []);
 
   // "Voice is ready" for a few seconds once the worker that was waking answers (D164).
   useEffect(() => {
@@ -174,7 +133,7 @@ export default function Assistant() {
 
   /** Sending options for a typed question: with the speaker on, the reply's audio is played by a new player. */
   const typedOptions = () => {
-    player.current?.stop();
+    stopReply();
     if (!speak || !speaks) return {};
     return { speak: true, tap: playerTap() };
   };

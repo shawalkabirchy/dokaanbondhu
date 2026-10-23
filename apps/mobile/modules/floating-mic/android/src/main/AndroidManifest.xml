@@ -1,0 +1,13 @@
+<!-- The floating mic (spec 15.9, D196): drawing over other apps, and a foreground service that may use the
+     microphone while another app is in front. Merged into the app's manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <application>
+    <service
+      android:name="com.dokaanbondhu.floatingmic.FloatingMicService"
+      android:exported="false"
+      android:foregroundServiceType="microphone" />
+  </application>
+</manifest>

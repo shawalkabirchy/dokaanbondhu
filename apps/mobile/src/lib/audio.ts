@@ -51,6 +51,19 @@ export const phonePlayer: PlayerDeps = {
   remove: (uri) => new File(uri).delete(),
 };
 
+/**
+ * Until D204 the recorder also saved each recording as a WAV file in the app's documents, which nothing read and
+ * nothing deleted; the app keeps no WAV files of its own, so any found there are removed.
+ */
+export function removeOldRecordings(): void {
+  try {
+    for (const entry of Paths.document.list())
+      if (entry instanceof File && entry.name.endsWith(".wav")) entry.delete();
+  } catch {
+    // nothing to tidy, or the folder cannot be read: recording works either way
+  }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ASK_AGAIN_CLIP = require("../../assets/audio/abar-bolben.mp3") as number;
 

@@ -56,12 +56,18 @@ export function usePushToTalk(deps: PushToTalkDeps) {
   const micReady = useRef(false);
   const { ensureConversation } = deps;
 
-  // The settings of spec 15.3; the same object prepares and starts the recorder.
+  // The settings of spec 15.3; the same object prepares and starts the recorder. The floating mic's service declares
+  // the microphone for the background, which turns on the library's own background mode; keepAwake off and the
+  // interactive audio focus keep its recording exactly as before (spec 15.9). Streaming only: the library would also
+  // write each recording to a WAV file that nothing reads and nothing deletes (D204).
   const config = useRef<RecordingConfig>({
     sampleRate: 16000,
     channels: 1,
     encoding: "pcm_16bit",
     interval: 500,
+    keepAwake: false,
+    android: { audioFocusStrategy: "interactive" },
+    output: { primary: { enabled: false } },
     onAudioStream: async (event: AudioDataEvent) => {
       if (typeof event.data !== "string") return;
       const current = capturing.current;
@@ -148,5 +154,19 @@ export function usePushToTalk(deps: PushToTalkDeps) {
     deps.afterTurn();
   }
 
-  return { recording, level, onPressIn, onPressOut };
+  /** The floating mic was dragged instead of held (spec 15.9): the recording stops and nothing is sent. */
+  async function onCancel() {
+    const current = turn.current;
+    if (!current) return;
+    turn.current = null;
+    current.cancel();
+    if (limit.current) clearTimeout(limit.current);
+    await stopRecording().catch(() => undefined);
+    if (capturing.current === current) capturing.current = null;
+    setRecording(false);
+    setLevel(0);
+    void prepareRecording(config);
+  }
+
+  return { recording, level, onPressIn, onPressOut, onCancel };
 }

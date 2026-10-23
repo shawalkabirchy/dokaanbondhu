@@ -7,6 +7,9 @@ coverage/
 .expo/
 android/
 ios/
+# The floating mic's native module is source code, not a generated folder (spec 15.9); only its build output is not
+!apps/mobile/modules/*/android/
+apps/mobile/modules/*/android/build/
 .env.local
 .env*.local
 __pycache__/

@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { AppState } from "react-native";
-import Assistant from "../app/(app)/assistant";
+import AssistantPage from "../app/(app)/assistant";
 import { streamTurn, uploadChunk } from "./lib/stream";
+import { VoiceProvider } from "./lib/voice";
 
 // The assistant page (spec 15.3, 15.8, D166) with the recorder, the player and the server replaced: holding the button
 // records, recording stops by itself at 30 s, a quiet clip never reaches finish, and the button is never locked while
@@ -62,6 +63,7 @@ jest.mock("./lib/audio", () => ({
   },
   playAskAgain: jest.fn(),
   stopPlayback: jest.fn(),
+  removeOldRecordings: jest.fn(),
   usePlayback: jest.requireActual("zustand").create(() => ({ playing: false })),
 }));
 jest.mock("./lib/stream", () => ({ streamTurn: jest.fn(async () => undefined), uploadChunk: jest.fn() }));
@@ -79,6 +81,15 @@ jest.mock("./lib/chat", () => {
     }),
   };
 });
+
+/** The page inside the app's one voice (src/lib/voice), as the signed-in layout has it. */
+function Assistant() {
+  return (
+    <VoiceProvider>
+      <AssistantPage />
+    </VoiceProvider>
+  );
+}
 
 /** The recorder's onAudioStream, as the page configured it. */
 const onChunk = async (base64: string) => {
