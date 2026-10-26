@@ -47,6 +47,17 @@ describe("speaker sheets", () => {
     expect(sheet).toContain("নিজের ভাষায়");
     expect(sheet).not.toContain("সম্মতিপত্র");
   });
+
+  it("says how to record on an Android phone and on an iPhone (D210)", () => {
+    const sheet = speakerSheet(items, "S1");
+    expect(sheet).toContain("<h3>Android</h3>");
+    expect(sheet).toContain("<b>Recording quality</b>");
+    expect(sheet).toContain("<b>Noise reduction</b>");
+    expect(sheet).toContain("<h3>iPhone</h3>");
+    expect(sheet).toContain("<b>Lossless</b>");
+    expect(sheet).toContain("<b>Enhance Recording</b>");
+    expect(sheet).toContain("WhatsApp");
+  });
 });
 
 describe("step 10's extras (D196, D201)", () => {

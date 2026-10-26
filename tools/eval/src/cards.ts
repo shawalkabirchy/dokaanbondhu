@@ -216,6 +216,13 @@ export function speakerSheet(items: Item[], speaker: string): string {
   .rules { border: 1px solid #999; border-radius: 3mm; padding: 2.5mm 4mm; margin: 0 0 4mm; }
   .rules ol { margin: 0; padding-left: 5mm; }
   .rules li { margin: 0.6mm 0; }
+  .phones { border: 1px solid #999; border-radius: 3mm; padding: 2.5mm 4mm; margin: 0 0 4mm; break-inside: avoid; }
+  .phones h2 { font-size: 12pt; margin: 0 0 1.5mm; }
+  .phones h3 { font-size: 11pt; margin: 0 0 1mm; }
+  .phones .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .phones ol { margin: 0; padding-left: 5mm; font-size: 10.5pt; }
+  .phones li { margin: 0.5mm 0; }
+  .phones p { margin: 2mm 0 0; font-size: 10.5pt; }
   table { width: 100%; border-collapse: collapse; }
   th, td { border: 1px solid #888; padding: 1.6mm 2mm; vertical-align: top; text-align: left; }
   th { background: #eee; font-size: 10pt; }
@@ -236,8 +243,32 @@ export function speakerSheet(items: Item[], speaker: string): string {
       <li>রেকর্ডিংয়ের নাম দিন কার্ডের কোড দিয়ে, যেমন <b>v-042</b>। নাম দিতে না পারলে এই তালিকার ক্রমেই রেকর্ড করুন; কোনোটা বাদ পড়লে ✓ ঘরে দাগ দিন।</li>
       <li>ভুল হলে ওই কার্ড আবার রেকর্ড করুন; শেষেরটা রাখা হবে।</li>
       <li>বন্ধনীর ভেতরের কথা (যেমন "শুধু 'রহিম' বলবেন") নির্দেশনা, বলবেন না। "মালিক হিসেবে:" বা "স্টাফ হিসেবে:" কথাটা বলবেন না; ওই কার্ড মালিক বা স্টাফ যেভাবে বলেন সেভাবে বলুন।</li>
-      <li>ফোনের রেকর্ডারের মান সবচেয়ে বেশি রাখুন, আওয়াজ কমানোর কোনো সেটিং চালু রাখবেন না (iPhone-এ Voice Memos, Audio Quality: Lossless)।</li>
+      <li>ফোনের রেকর্ডারের মান সবচেয়ে বেশি রাখুন, আওয়াজ কমানোর কোনো সেটিং চালু রাখবেন না। নিচের বাক্সে আপনার ফোনের নিয়ম দেখুন।</li>
     </ol>
+  </div>
+  <div class="phones">
+    <h2>ফোনে যেভাবে রেকর্ড করবেন</h2>
+    <div class="cols">
+      <div>
+        <h3>Android</h3>
+        <ol>
+          <li>ফোনের নিজের রেকর্ডার অ্যাপ খুলুন: Samsung-এ <b>Voice Recorder</b>, Pixel-এ <b>Recorder</b>, Xiaomi বা Redmi-তে <b>Sound Recorder</b>, অন্য ফোনে <b>Recorder</b> বা <b>Voice Recorder</b>।</li>
+          <li>অ্যাপের <b>Settings</b>-এ <b>Recording quality</b> (বা Audio quality) সবচেয়ে বেশি, যেমন <b>High</b>, রাখুন।</li>
+          <li><b>Noise reduction</b>, <b>Noise cancellation</b> বা <b>Speech enhancement</b> থাকলে বন্ধ রাখুন। <b>Standard</b> বা <b>Normal</b> মোডে রেকর্ড করুন, <b>Interview</b> বা <b>Speech-to-text</b> মোডে নয়।</li>
+          <li>রেকর্ড শেষে সেভ করার সময় নাম দিন কার্ডের কোড দিয়ে, যেমন <b>v-042</b>।</li>
+        </ol>
+      </div>
+      <div>
+        <h3>iPhone</h3>
+        <ol>
+          <li><b>Voice Memos</b> অ্যাপ দিয়ে রেকর্ড করুন।</li>
+          <li>শুরুর আগে একবার: <b>Settings</b> → <b>Apps</b> → <b>Voice Memos</b> → <b>Audio Quality</b>: <b>Lossless</b> (পুরোনো iPhone-এ Settings → Voice Memos)।</li>
+          <li>রেকর্ডিং খুলে <b>Enhance Recording</b> (জাদুর কাঠির চিহ্ন) চাপবেন না।</li>
+          <li>রেকর্ডিংয়ের নামের ওপর ট্যাপ করে কার্ডের কোড লিখুন, যেমন <b>v-042</b>।</li>
+        </ol>
+      </div>
+    </div>
+    <p>দুই ফোনেই: WhatsApp বা Messenger-এর ভয়েস মেসেজ দিয়ে রেকর্ড করবেন না, তাতে আওয়াজের মান কমে যায়। ফোন স্বাভাবিকভাবে ধরুন, দোকানে কথা বলার সময় যেভাবে ধরেন।</p>
   </div>
   <table>
     <thead>

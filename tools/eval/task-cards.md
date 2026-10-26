@@ -1,6 +1,6 @@
 # Test set: task cards and chat items
 
-> **Refreshed 23 Oct 2026 against the current seed (D184).** Every expected answer was checked against a freshly
+> **Refreshed 26 Oct 2026 against the current seed (D184).** Every expected answer was checked against a freshly
 > seeded copy of GearGrid's demo data. Voice items: the speaker reads the Bangla card and says it in their own
 > words; each speaker's cards are on their sheet in `sheets/`. Chat items: the `text` is how staff type, half
 > Bangla script and half Banglish. The machine-readable file is `items.jsonl`; this page and the sheets are made
