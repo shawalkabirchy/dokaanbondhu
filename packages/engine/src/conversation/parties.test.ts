@@ -96,8 +96,83 @@ for (const { app, paikari, retail } of TYPES) {
       expect(sheet.confirm?.text).toBe(`নতুন কাস্টমার: ${said.name}, খুচরা। যোগ করব?`);
       expect(lastBody(shop)).toEqual({ name: said.name, type: retail });
     });
+
+    // D211: the type said aloud, spelled as speech-to-text wrote it on the owner's phone on 31 Oct, or close to it.
+    it.each([
+      { style: "Bangla", spoken: "পাইকারী", kind: "পাইকারি", value: paikari },
+      { style: "Bangla", spoken: "পাইকার ই", kind: "পাইকারি", value: paikari },
+      { style: "Bangla", spoken: "খুশরা", kind: "খুচরা", value: retail },
+      { style: "Bangla", spoken: "কুচরা", kind: "খুচরা", value: retail },
+      { style: "Banglish", spoken: "pikari", kind: "পাইকারি", value: paikari },
+      { style: "Banglish", spoken: "paikary", kind: "পাইকারি", value: paikari },
+      { style: "Banglish", spoken: "khushra", kind: "খুচরা", value: retail },
+      { style: "Banglish", spoken: "kuchra", kind: "খুচরা", value: retail },
+    ])("reads the type by its sound: $spoken ($style)", async ({ spoken, kind, value }) => {
+      const shop = connect(app);
+      const said = SAID[0];
+      const first = await shop.say(fresh(), { text: said.add }, call("add_customer", { name: said.name }));
+      const typed = await shop.say(first.state, { text: spoken });
+      expect(typed.reply).toBe("ফোন নম্বর কত? না থাকলে “নেই” বলুন।");
+      const sheet = await shop.say(typed.state, { text: said.none });
+      expect(sheet.confirm?.text).toBe(`নতুন কাস্টমার: ${said.name}, ${kind}। যোগ করব?`);
+      expect(lastBody(shop)).toEqual({ name: said.name, type: value });
+    });
+
+    it.each([
+      { style: "Bangla", heard: "ফাইনাল", guess: "পাইকারি" },
+      { style: "Banglish", heard: "final", guess: "paikari" },
+    ])("takes the type from another speech guess ($style)", async ({ heard, guess }) => {
+      const shop = connect(app);
+      const said = SAID[0];
+      const first = await shop.say(fresh(), { text: said.add }, call("add_customer", { name: said.name }));
+      const typed = await shop.say(first.state, { text: heard, hypotheses: [heard, guess] });
+      expect(typed.reply).toBe("ফোন নম্বর কত? না থাকলে “নেই” বলুন।");
+    });
   });
 }
+
+// D211: what the sound check must leave alone.
+describe("a type that is not one (GearGrid, D211)", () => {
+  it.each([
+    { style: "Bangla", spoken: "জানি না" },
+    { style: "Banglish", spoken: "jani na" },
+    { style: "Bangla", spoken: "সেলিম অটো" },
+    { style: "Banglish", spoken: "Selim Auto" },
+  ])("is asked again, and says so: $spoken ($style)", async ({ spoken }) => {
+    const shop = connect(geargrid);
+    const said = SAID[0];
+    const first = await shop.say(fresh(), { text: said.add }, call("add_customer", { name: said.name }));
+    const again = await shop.say(first.state, { text: spoken });
+    expect(again.reply).toBe("বুঝতে পারিনি। খুচরা না পাইকারি?");
+    expect(again.choices?.options.map((option) => option.label)).toEqual(["খুচরা", "পাইকারি"]);
+  });
+
+  it.each([
+    { style: "Bangla", spoken: "ডিলার" },
+    { style: "Banglish", spoken: "dealer" },
+    { style: "Bangla", spoken: "গ্যারেজ" },
+    { style: "Banglish", spoken: "garage" },
+  ])("the app's own words still read as paikari: $spoken ($style)", async ({ spoken }) => {
+    const shop = connect(geargrid);
+    const said = SAID[0];
+    const first = await shop.say(fresh(), { text: said.add }, call("add_customer", { name: said.name }));
+    const typed = await shop.say(first.state, { text: spoken });
+    expect(typed.reply).toBe("ফোন নম্বর কত? না থাকলে “নেই” বলুন।");
+  });
+
+  it.each([
+    { style: "Bangla", fix: "না, পাইকারী" },
+    { style: "Banglish", fix: "na, pikari" },
+  ])("a type corrected on the sheet is read by its sound too ($style)", async ({ fix }) => {
+    const shop = connect(geargrid);
+    const said = SAID[0];
+    const first = await shop.say(fresh(), { text: said.retail }, call("add_customer", { name: said.name }));
+    const sheet = await shop.say(first.state, { text: said.none });
+    expect(sheet.confirm?.text).toBe(`নতুন কাস্টমার: ${said.name}, খুচরা। যোগ করব?`);
+    const fixed = await shop.say(sheet.state, { text: fix });
+    expect(fixed.confirm?.text).toBe(`নতুন কাস্টমার: ${said.name}, পাইকারি। যোগ করব?`);
+  });
+});
 
 describe("what is shown before a new customer is added (GearGrid, D173)", () => {
   it.each(SAID)("a close name: tapping it adds nothing ($style)", async (said) => {
@@ -138,11 +213,25 @@ describe("what is shown before a new customer is added (GearGrid, D173)", () => 
     expect(lastBody(shop)).toMatchObject({ name: said.fixed });
   });
 
-  it.each(SAID)("a phone that is not one is asked again ($style)", async (said) => {
+  it.each(SAID)("a phone that is not one is asked again, and says so ($style)", async (said) => {
     const shop = connect(geargrid);
     const first = await shop.say(fresh(), { text: said.retail }, call("add_customer", { name: said.name }));
     const again = await shop.say(first.state, { text: "০১২৩৪" });
-    expect(again.reply).toBe("ফোন নম্বর কত? না থাকলে “নেই” বলুন।");
+    expect(again.reply).toBe("নম্বরটা বুঝতে পারিনি। এক এক করে বলুন, বা লিখে দিন।");
+    expect(again.choices?.options.map((option) => option.label)).toEqual(["নেই"]);
+  });
+
+  // D211: as speech-to-text wrote the digits on the owner's phone on 31 Oct. A number is never guessed.
+  it.each([
+    { style: "Bangla", spoken: "জিরো ওয়ান আট ওয়াউন ওয়াইন টু টু ত্রি থ্রাই ফোর ফোট" },
+    { style: "Banglish", spoken: "ziro one at waun wine two two tri thrai four fot" },
+  ])("garbled digits are asked again, not guessed ($style)", async ({ spoken }) => {
+    const shop = connect(geargrid);
+    const said = SAID[0];
+    const first = await shop.say(fresh(), { text: said.retail }, call("add_customer", { name: said.name }));
+    const again = await shop.say(first.state, { text: spoken });
+    expect(again.reply).toBe("নম্বরটা বুঝতে পারিনি। এক এক করে বলুন, বা লিখে দিন।");
+    expect(shop.calls).toHaveLength(0);
   });
 
   it.each(SAID)("a supplier: no type, the phone, its own sheet ($style)", async (said) => {

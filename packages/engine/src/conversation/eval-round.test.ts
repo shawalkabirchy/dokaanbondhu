@@ -173,6 +173,67 @@ describe("a sale said politely is a sale, even when the model searches the part 
   });
 });
 
+describe("how it is paid, said aloud (D211)", () => {
+  const askPaid = async (app: (typeof APPS)[number]["app"], bangla: (typeof APPS)[number]["bn"]) => {
+    const shop = connect(app);
+    const text = `নবাবপুর অটো পার্টস থেকে ${words(bangla)} দুই সেট এলো, প্রতি সেট ১২০০ টাকা`;
+    const asked = await shop.say(fresh(), { text }, call("find_parts", bangla));
+    expect(asked.asked, asked.reply).toBe("payment");
+    return { shop, asked };
+  };
+
+  it.each(APPS)("its button is read by sound (Bangla and Banglish, $app.name)", async ({ app, bn }) => {
+    for (const spoken of ["বাকীতে", "bakiti"]) {
+      const { shop, asked } = await askPaid(app, bn);
+      const sheet = await shop.say(asked.state, { text: spoken });
+      expect(sheet.confirm?.fields, `${spoken}: ${sheet.reply}`).toContainEqual(
+        expect.objectContaining({ label: "পেমেন্ট", value: "বাকিতে" }),
+      );
+    }
+  });
+
+  it.each(APPS)("another guess never overrules the best one ($app.name)", async ({ app, bn }) => {
+    for (const [spoken, guess] of [
+      ["রকেটে", "বাকিতে"],
+      ["rocket", "bakite"],
+    ] as const) {
+      const { shop, asked } = await askPaid(app, bn);
+      const reply = await shop.say(asked.state, { text: spoken, hypotheses: [spoken, guess] });
+      expect(JSON.stringify(reply.confirm?.fields ?? []), `${spoken}: ${reply.reply}`).not.toMatch(/বাকিতে/);
+    }
+  });
+
+  // D212: bKash sounds like Voxy, so it set the purchase aside as a new request about another car.
+  it.each(APPS)("bKash said here is how it is paid, not a car ($app.name)", async ({ app, bn }) => {
+    for (const spoken of ["বিকাশ", "বিকাশে", "bkash", "bkashe", "bikash", "bikashe"]) {
+      const { shop, asked } = await askPaid(app, bn);
+      const reply = await shop.say(asked.state, { text: spoken });
+      expect(reply.state.frame?.status, `${spoken}: ${reply.reply}`).not.toBe("set_aside");
+      expect(reply.confirm?.fields, `${spoken}: ${reply.reply}`).toContainEqual(
+        expect.objectContaining({ label: "পেমেন্ট", value: expect.stringMatching(/বিকাশ/) }),
+      );
+    }
+  });
+
+  it.each(APPS)("a method is read with its ending (Bangla and Banglish, $app.name)", async ({ app, bn }) => {
+    for (const spoken of ["ক্যাশে", "cashe", "ব্যাংকে", "banke"]) {
+      const { shop, asked } = await askPaid(app, bn);
+      const reply = await shop.say(asked.state, { text: spoken });
+      expect(reply.confirm?.fields, `${spoken}: ${reply.reply}`).toContainEqual(
+        expect.objectContaining({ label: "পেমেন্ট" }),
+      );
+    }
+  });
+
+  it.each(APPS)("a car said here is still a new request ($app.name)", async ({ app, bn }) => {
+    for (const spoken of ["ভক্সি ব্রেক প্যাড আছে?", "voxy brake pad ache?"]) {
+      const { shop, asked } = await askPaid(app, bn);
+      const reply = await shop.say(asked.state, { text: spoken });
+      expect(reply.state.frame?.status, `${spoken}: ${reply.reply}`).toBe("set_aside");
+    }
+  });
+});
+
 describe("goods arriving from a named supplier are a purchase (D186)", () => {
   it.each(APPS)("…থেকে দুইটা এলো / theke duita aslo ($app.name)", async ({ app, bn, en }) => {
     for (const [text, part] of [

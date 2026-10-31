@@ -500,7 +500,7 @@ function catalogOf(shop: Shop): Catalog {
 
 export const fresh = (): TurnState => ({ state: "IDLE", context: {}, frame: null, history: [] });
 
-type Input = { text: string } | { choice: { slot: string; optionId: string } };
+type Input = { text: string; hypotheses?: string[] } | { choice: { slot: string; optionId: string } };
 
 /** Each app's dictionary, built once: building one is the slow part of a turn, and the apps never change. */
 const dictionaries = new WeakMap<ShopPart[], Dictionary>();

@@ -2,6 +2,7 @@ import {
   decisionOf,
   matchConcept,
   normalize,
+  optionBySound,
   parseAmount,
   rackSaid,
   parseQuantity,
@@ -188,6 +189,13 @@ const AS_SAID = new Set([
 ]);
 
 /**
+ * Questions of fixed words whose buttons a spoken answer may match by sound (D211), with the speech guesses each one
+ * reads. A payment reads only the best guess: bKash has no button, so a lower guess must not overrule it.
+ */
+const guessesBySound = (slot: string, text: string, others: readonly string[] = []): readonly string[] =>
+  slot === "new_type" ? [text, ...others] : slot === "payment" ? [text] : [];
+
+/**
  * Tries the input as a value of the slot the frame is asking about (rule 3). A tap on a chip, or a spoken option,
  * fills it; otherwise the deterministic parser of the slot's type. Returns the filled slot's name, or null when the
  * input is something else (a correction of another slot or a new request goes on to the LLM).
@@ -204,9 +212,10 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   const { rest } = splitCorrection(input.text ?? "");
   const text = rest.trim();
   if (!text) return null;
-  const offered = frame.offers?.find(
-    (offer) => normalize(offer.label).tokens.join(" ") === normalize(text).tokens.join(" "),
-  );
+  const offered =
+    frame.offers?.find(
+      (offer) => normalize(offer.label).tokens.join(" ") === normalize(text).tokens.join(" "),
+    ) ?? optionBySound(guessesBySound(slot, text, input.others), frame.offers ?? []);
   if (offered) {
     setSlot(frame, slot, {
       value: offered.value,

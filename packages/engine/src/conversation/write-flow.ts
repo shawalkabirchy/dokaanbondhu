@@ -7,11 +7,13 @@ import {
   daysAgoSaid,
   daysBefore,
   decisionOf,
+  isBangla,
   levelPrice,
   methodText,
   money,
   normalize,
   normalizePartNumber,
+  optionBySound,
   parseAmount,
   parseQuantity,
   parseYear,
@@ -412,8 +414,15 @@ export function paymentOf(
   if (saysCredit(said)) return { credit: true };
   const param = methodParam(capability);
   if (!param) return null;
+  // Each word also with its ending, as it is said ("bikashe", "ক্যাশে"): an app's map is stored, so it is read here (D212).
   const words = Object.entries(param.spokenMap ?? {})
-    .map(([word, value]) => [normalize(word).tokens.join(" "), value] as const)
+    .flatMap(([word, value]) => {
+      const spoken = normalize(word).tokens.join(" ");
+      return [
+        [spoken, value],
+        [`${spoken}${isBangla(spoken) ? "ে" : "e"}`, value],
+      ] as const;
+    })
     .sort((a, b) => b[0].length - a[0].length);
   for (const [word, value] of words) if (word && text.includes(` ${word} `)) return { method: value };
   const direct = param.enumValues?.find((value) => tokens.includes(value.toLowerCase()));
@@ -1065,6 +1074,12 @@ function adderFor(turn: WriteTurn, capability: WriteCapability, party: "customer
 
 const newButton: Offer = { id: "opt-new", label: NEW_PARTY_LABEL, value: NEW_PARTY };
 
+/** A new customer's two price kinds as buttons (D173). */
+const KIND_BUTTONS: Offer[] = [
+  { id: "opt-1", label: "খুচরা", value: "retail" },
+  { id: "opt-2", label: "পাইকারি", value: "paikari" },
+];
+
 /** The app's type value of each price kind (D121, D145): the first of that kind; a kind it has none of is left out. */
 function typeChoices(adder: WriteCapability, turn: WriteTurn): Partial<Record<"retail" | "paikari", string>> {
   const values = adder.params.find((param) => param.semanticSlot === "party_type")?.enumValues ?? [];
@@ -1145,10 +1160,7 @@ async function addParty(
     if (!kind) {
       delete frame.slots.new_type;
       if (!kinds.length) return { kind: "answer", text: NO_KINDS };
-      return askSlot("new_type", question({ slot: "party_type" }), [
-        { id: "opt-1", label: "খুচরা", value: "retail" },
-        { id: "opt-2", label: "পাইকারি", value: "paikari" },
-      ]);
+      return askSlot("new_type", question({ slot: "party_type", again: said !== undefined }), KIND_BUTTONS);
     }
     type = choices[kind]!;
     frame.slots.new_type = understood(kind, { display: kind === "retail" ? "খুচরা" : "পাইকারি" });
@@ -1161,7 +1173,7 @@ async function addParty(
     const read = typeof said === "string" ? phoneOf(said) : null;
     if (!read) {
       delete frame.slots.new_phone;
-      return askSlot("new_phone", question({ slot: "phone" }), [
+      return askSlot("new_phone", question({ slot: "phone", again: said !== undefined }), [
         { id: "opt-none", label: NO_PHONE_LABEL, value: "none" },
       ]);
     }
@@ -1712,7 +1724,10 @@ export function correctWrite(
       delete frame.slots.new_phone_ok;
       return "new_phone";
     }
-    const kind = capability.template === "add_customer" && tokens.length <= 2 ? customerKindOf(rest) : null;
+    const kind =
+      capability.template === "add_customer" && tokens.length <= 2
+        ? (customerKindOf(rest) ?? optionBySound([rest], KIND_BUTTONS)?.value)
+        : null;
     if (kind) {
       frame.slots.new_type = understood(kind);
       return "new_type";

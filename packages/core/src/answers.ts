@@ -325,6 +325,8 @@ export interface QuestionInput {
   /** A new customer's or supplier's questions (D173): whose, and a close record found by its phone. */
   party?: "customer" | "supplier";
   byPhone?: boolean;
+  /** The question again after an answer that could not be read (D211). */
+  again?: boolean;
 }
 
 /** The template question for one slot (spec 9.4). */
@@ -366,10 +368,12 @@ export function question(input: QuestionInput): string {
       break;
     }
     case "party_type":
-      text = "খুচরা না পাইকারি?";
+      text = `${input.again ? "বুঝতে পারিনি। " : ""}খুচরা না পাইকারি?`;
       break;
     case "phone":
-      text = "ফোন নম্বর কত? না থাকলে “নেই” বলুন।";
+      text = input.again
+        ? "নম্বরটা বুঝতে পারিনি। এক এক করে বলুন, বা লিখে দিন।"
+        : "ফোন নম্বর কত? না থাকলে “নেই” বলুন।";
       break;
     case "sale_ref":
       text = "কোন দিনের বিক্রি?";

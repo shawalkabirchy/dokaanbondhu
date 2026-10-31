@@ -1,5 +1,5 @@
 import table from "../data/bn-latin.json";
-import { asciiDigits, isBangla } from "./text";
+import { asciiDigits, isBangla, normalize } from "./text";
 
 // Phonetic key and match scores (spec 10.3).
 
@@ -58,6 +58,31 @@ export function soundSimilarity(a: string, b: string): number {
   const y = soundOf(b).replace(/ /g, "");
   if (!x || !y) return 0;
   return 1 - soundDistance(x, y) / Math.max(x.length, y.length);
+}
+
+const BUTTON_MAX_WORDS = 2;
+const BUTTON_MIN_SOUND = 0.75;
+const BUTTON_MIN_LEAD = 0.25;
+
+/**
+ * The button a short answer sounds like (D211), the best guess first: speech-to-text can write a button's word another
+ * way (পাইকারী for পাইকারি) or split it (পাইকার ই). Only for buttons of fixed words: null unless the answer is close to
+ * one button and clearly nearer it than to the others.
+ */
+export function optionBySound<Option extends { label: string }>(
+  guesses: readonly string[],
+  options: readonly Option[],
+): Option | null {
+  for (const guess of guesses) {
+    const words = normalize(guess).tokens.length;
+    if (!words || words > BUTTON_MAX_WORDS) continue;
+    const [best, next] = options
+      .map((option) => ({ option, score: soundSimilarity(guess, option.label) }))
+      .sort((a, b) => b.score - a.score);
+    if (best && best.score >= BUTTON_MIN_SOUND && best.score - (next?.score ?? 0) >= BUTTON_MIN_LEAD)
+      return best.option;
+  }
+  return null;
 }
 
 /** The key keeps the first letter, drops the other vowels and collapses repeated letters: self, সেলফ -> slf. */

@@ -17,6 +17,35 @@ describe("glossary data (spec 10.2)", () => {
   });
 });
 
+describe("a word for bKash is no car (D212)", () => {
+  const dictionary = buildDictionary();
+  const car = (said: string) => matchConcept("vehicle_model", said, [], dictionary).candidates[0];
+
+  it.each([
+    ["বিকাশ"],
+    ["বিকাশে"],
+    ["বিকাশের"],
+    ["বিকাশ এ"],
+    ["bkash"],
+    ["bkashe"],
+    ["bikash"],
+    ["bikashe"],
+    ["bikash e"],
+  ])("%s does not read as Voxy", (said) => {
+    expect(car(said)?.value).not.toBe("Toyota Voxy");
+    expect(car(said)?.score ?? 0).toBeLessThan(0.7);
+  });
+
+  it("is no car inside a longer answer either", () => {
+    expect(car("বিকাশে দিব")?.value).not.toBe("Toyota Voxy");
+    expect(car("bikashe dibo")?.value).not.toBe("Toyota Voxy");
+  });
+
+  it.each([["ভক্সি"], ["voxy"]])("%s is still the car", (said) => {
+    expect(car(said)?.value).toBe("Toyota Voxy");
+  });
+});
+
 describe("matching (spec 10.2, 10.3)", () => {
   it("resolves the architecture's example: sell heard, self in hypothesis 2", () => {
     const match = matchConcept("part_type", "সেল", ["নোয়ার সেল আছে", "নোয়ার সেলফ আছে"], dictionary);

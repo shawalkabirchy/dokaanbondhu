@@ -126,13 +126,27 @@ function numberEdges(words: readonly string[]): "start" | "end" | "both" | null 
   return start && end ? "both" : start ? "start" : end ? "end" : null;
 }
 
+/** Words for paying by bKash: they sound like Voxy (both "bks"), so they match a term only exactly (D212). */
+const NEVER_BY_SOUND = new Set([
+  "বিকাশ",
+  "বিকাশে",
+  "বিকাশের",
+  "bkash",
+  "bkashe",
+  "bkasher",
+  "bikash",
+  "bikashe",
+  "bikasher",
+]);
+
 /**
  * Scores the targets of one concept for a slot value as said (the tool argument, from the best hypothesis) and the
  * other N-best hypotheses (rank order, rank 0 first). Words of the hypotheses count only where they sound like the
  * said value, so "fit" in "axio 2014 e fit hobe" is not taken for Honda Fit. An exact normalized match scores 1.0,
  * else 0.9 x phonetic similarity (0 below 0.6), times the rank's weight; a candidate keeps its best score. Keys
  * shorter than two letters are not matched phonetically, two-letter keys only between single words (D108), and words
- * made only of number words ("এক", "ek", "হাজার") never: "এক" sounds like Aqua's "একুয়া" (D101).
+ * made only of number words ("এক", "ek", "হাজার") never: "এক" sounds like Aqua's "একুয়া" (D101). Nor a word for bKash
+ * (D212).
  */
 export function matchConcept(
   concept: AliasConcept,
@@ -168,6 +182,7 @@ export function matchConcept(
       if (source.nearSaid && keySimilarity(key, saidKey) < SAME_PLACE) continue;
       const words = gram.text.split(" ");
       const numeric = words.every(isNumberWord);
+      const exactOnly = numeric || words.some((word) => NEVER_BY_SOUND.has(word));
       // Several words that start or end with a number word match by sound only a term that does too: "তেরো ইয়াল
       // ফিল্ডার" (the year, then "air filter") is not "তেল ফিল্টার", nor "প্রোবক্স দুই" a car, but "এক জি ও" is still
       // "এক জিও" (D158).
@@ -186,7 +201,7 @@ export function matchConcept(
           Math.min(key.length, term.key.length) <= 2 && (words.length > 1 || term.text.includes(" "));
         const otherEdges = edges && edges !== termEdges.get(term);
         const similarity =
-          exact || numeric || otherEdges || tooShort || key.length < 2 || term.key.length < 2
+          exact || exactOnly || otherEdges || tooShort || key.length < 2 || term.key.length < 2
             ? 0
             : keySimilarity(key, term.key, misheard);
         const score = weight * matchScore(exact, similarity);
