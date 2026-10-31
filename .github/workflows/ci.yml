@@ -105,7 +105,8 @@ jobs:
       - run: npm run test:integration
 
   python: # the speech worker's tests with fake models (spec 14.1): no GPU, no model download
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 refuses ctranslate2 4.5.0's library (D213); the worker itself runs on Ubuntu 22.04.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: services/speech
