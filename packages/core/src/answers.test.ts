@@ -9,7 +9,7 @@ import {
   slotChips,
   type PartsContext,
 } from "./answers";
-import { AllowedFacts, factsIn, isGrounded, splitSentences } from "./grounding";
+import { AllowedFacts, factsIn, hasBrokenWord, isGrounded, splitSentences } from "./grounding";
 import type { PartRow } from "./resolve";
 
 function row(overrides: Partial<PartRow>): PartRow {
@@ -220,6 +220,27 @@ describe("grounding (spec 12.1)", () => {
   it("allows numbers inside names from the results (Alto 800, 5W-30)", () => {
     const names = new AllowedFacts().addResult({ name: "Suzuki Alto 800", oil: "5W-30" });
     expect(isGrounded("অল্টো 800-এর জন্য 5W-30 আছে।", names).ok).toBe(true);
+  });
+});
+
+describe("a word the model broke (D216)", () => {
+  it.each(["Rahim Motors-এর বaki ১৯,২০০ টাকা।", "ব্রেকpad আছে।", "এক্সিওr সামনের প্যাড।"])(
+    "%s",
+    (sentence) => {
+      expect(hasBrokenWord(sentence)).toBe(true);
+    },
+  );
+
+  it.each([
+    "Rahim Motors-এর বাকি ১৯,২০০ টাকা।",
+    "Rahim Motors এর বাকি ১৯,২০০ টাকা।",
+    "Noah-র সেলফ B-3 তাকে।",
+    "৫W-30 মবিল আছে।",
+    "৳500 দাম।",
+    "New Dhaka Garage-এর বাকি ২০,৫০০ টাকা।",
+    "C-2 র‍্যাকে সেলফ মোটর আছে।",
+  ])("%s is whole", (sentence) => {
+    expect(hasBrokenWord(sentence)).toBe(false);
   });
 });
 

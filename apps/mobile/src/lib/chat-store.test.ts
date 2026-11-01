@@ -309,6 +309,21 @@ describe("chat store", () => {
     expect(reply(useChat)[1]!.texts).toEqual(["আগের কাজটা ফিরিয়ে নেওয়া হয়েছে।"]);
   });
 
+  // D216: "Saving…" showed for a moment after a tap on No.
+  it.each([
+    { decision: "yes", label: "হ্যাঁ", status: "status.saving" },
+    { decision: "no", label: "না", status: "status.cancelling" },
+  ] as const)("$decision starts with $status", async ({ decision, label, status }) => {
+    let shown: string | null | undefined;
+    const { useChat } = store([], {
+      stream: jest.fn(async () => {
+        shown = reply(useChat).at(-1)?.status;
+      }),
+    });
+    await useChat.getState().decide("0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e", decision, label);
+    expect(shown).toBe(status);
+  });
+
   it("offers no undo for an action that was not saved or cannot be undone", async () => {
     const actionId = "0b8c1f7e-6a55-4c1e-9d3e-2f4a6b7c8d9e";
     const { useChat } = store([

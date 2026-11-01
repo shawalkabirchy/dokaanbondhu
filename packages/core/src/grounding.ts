@@ -93,6 +93,14 @@ export function isGrounded(sentence: string, allowed: AllowedFacts): { ok: boole
   return { ok: unknown.length === 0, unknown };
 }
 
+/**
+ * A word the model broke (D216): a Bangla letter directly followed by a Latin letter, as in "বaki". A name in Latin
+ * letters with its Bangla ending ("Rahim Motors-এর", "Noah-র") and a Bangla digit before a Latin one are fine.
+ */
+export function hasBrokenWord(sentence: string): boolean {
+  return /(?![০-৯৳])\p{Script=Bengali}[A-Za-z]/u.test(sentence.normalize("NFC"));
+}
+
 /** Sentences (spec 12.3): split at danda, ?, ! and line breaks (and full stops in Latin text); short pieces join
  * the next one; long pieces split at commas. */
 export function splitSentences(text: string): string[] {

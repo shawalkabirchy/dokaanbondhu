@@ -189,6 +189,8 @@ export interface Api {
   ownRacks?: Map<string, string>;
   /** What the near-word clean-up answers, one reply per call (D153). */
   cleanups?: string[];
+  /** The rows the shop's database gives a run_read_query (D216). */
+  read?: Record<string, unknown>[];
 }
 
 /** The app's new fitment as GearGrid answers it (D172). */
@@ -521,7 +523,9 @@ export function connect(shop: Shop, api: Api = {}) {
     dictionary: dictionary!,
     host: {
       map: geargridMap,
-      run: runner(shop),
+      // The read guard's query starts with its filtered tables (spec 11.6).
+      run: async (query) =>
+        api.read && query.text.startsWith("WITH ") ? (api.read as never) : runner(shop)(query),
       catalog,
       fitmentExtra: [],
       rackExtra: api.ownRacks ?? new Map(),

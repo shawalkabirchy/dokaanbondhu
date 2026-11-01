@@ -300,7 +300,7 @@ export function createChatStore(deps: ChatDeps) {
               onEvent,
             ),
           options.tap,
-          "status.saving",
+          decision === "yes" ? "status.saving" : "status.cancelling",
         ),
       undo: async (actionId, label) => {
         if (get().busy) return;

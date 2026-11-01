@@ -294,6 +294,15 @@ const understood = (value: unknown, extra: Partial<Slot> = {}): Slot => ({
 });
 const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
 
+/**
+ * The quantity in an `items` entry the model wrote as text beside the part, with its own quote marks
+ * (`quantity:<|"|>dui set<|"|`), in 7 of 19 tries of a sale that names its quality (D216).
+ */
+function leakedQuantity(entry: unknown): string | null {
+  if (typeof entry !== "string") return null;
+  return /^quantity[\s:=<>|"']+([^<>|"{}]+)/i.exec(entry)?.[1]?.trim() || null;
+}
+
 /** The frame of a capability's tool call (spec 9.5: frame.fromWriteTool). */
 export function writeFrame(
   capability: WriteCapability,
@@ -336,18 +345,19 @@ export function writeFrame(
       frame.slots.new_phone = understood(phone);
     put("new_address", args.address);
   }
-  // The same line twice is one line: the model sometimes repeats it (D186).
-  const items = Array.isArray(args.items)
-    ? (args.items as Record<string, unknown>[]).filter(
-        (item, index, all) =>
-          all.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index,
-      )
-    : [];
+  const entries = Array.isArray(args.items) ? (args.items as unknown[]) : [];
+  // A quantity the model left beside the part as text is no line of its own (D216); the same line twice is one line:
+  // the model sometimes repeats it (D186).
+  const leaked = entries.map(leakedQuantity).find(Boolean);
+  const items = (entries.filter((entry) => !leakedQuantity(entry)) as Record<string, unknown>[]).filter(
+    (item, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index,
+  );
   if (items.length > 1) frame.slots.lines = understood(items.length);
   const item = items[0] ?? {};
   const part = (item.part ?? args.part ?? {}) as Record<string, unknown>;
-  for (const key of PART_KEYS) put(key, part[key]);
-  putSaid("quantity", item.quantity, quantityOf);
+  // The model often writes the part's type and position beside `part`, not in it (D216).
+  for (const key of PART_KEYS) put(key, part[key] ?? item[key]);
+  putSaid("quantity", item.quantity ?? leaked, quantityOf);
   putSaid("unit_cost", item.unit_cost, parseAmount, money);
   const payment = (args.payment ?? {}) as Record<string, unknown>;
   put("payment", payment.method_word);

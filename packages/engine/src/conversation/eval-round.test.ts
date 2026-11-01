@@ -588,3 +588,168 @@ describe("the third trial run's findings (D188)", () => {
     },
   );
 });
+
+describe("the findings of 1 Nov (D216)", () => {
+  // Word for word what the model wrote, 7 times of 19, with a turn's full prompt.
+  const LEAKS = ['quantity:<|"|>dui set<|"|', 'quantity:<|"|>2 set<|"|>', 'quantity:<|"|>২ সেট<|"|>}'];
+
+  it.each(APPS)("the part's type beside `part` is the part's ($app.name)", async ({ app, bn, en }) => {
+    for (const [text, said] of [
+      [`Rahim Motors কে ${words(bn)} দুই সেট বাকিতে দাও`, bn],
+      [`Rahim Motors ke ${words(en)} dui set bakite dao`, en],
+    ] as const) {
+      const { part_type, ...part } = said as { part_type: string };
+      for (const leak of ["", ...LEAKS]) {
+        const line = { part, part_type, ...(leak ? {} : { quantity: "dui set" }) };
+        const shop = connect(app);
+        // Word for word the model's shape: the type, and sometimes the quantity, outside `part`.
+        const sheet = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", { customer: "Rahim Motors", items: leak ? [line, leak] : [line] }),
+        );
+        expect(sheet.asked, `${text}: ${sheet.reply}`).toBeUndefined();
+        expect(sheet.confirm?.text, `${text}: ${sheet.reply}`).toMatch(/২ সেট/);
+      }
+    }
+  });
+
+  it.each(APPS)("a quantity left beside the part is no second part ($app.name)", async ({ app, bn, en }) => {
+    for (const leak of LEAKS) {
+      for (const [text, part] of [
+        [`Rahim Motors কে ${words(bn)} দুই সেট বাকিতে দাও`, bn],
+        [`Rahim Motors ke ${words(en)} dui set bakite dao`, en],
+      ] as const) {
+        const shop = connect(app);
+        // How it is paid was lost from the call in 5 of the 7: it is read from the request.
+        const sheet = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", { customer: "Rahim Motors", items: [{ part }, leak] }),
+        );
+        expect(sheet.reply, `${text}: ${leak}`).not.toMatch(/একবারে একটা/);
+        expect(sheet.asked, `${text}: ${leak}: ${sheet.reply}`).toBeUndefined();
+        expect(sheet.confirm?.text, `${text}: ${leak}`).toMatch(/২ সেট/);
+        expect(sheet.confirm?.text, `${text}: ${leak}`).toMatch(/বাকিতে/);
+      }
+    }
+  });
+
+  it.each(APPS)(
+    "a quantity the user never said is not kept from the leak ($app.name)",
+    async ({ app, bn, en }) => {
+      for (const [text, part] of [
+        [`Rahim Motors কে ${words(bn)} বাকিতে দাও`, bn],
+        [`Rahim Motors ke ${words(en)} bakite dao`, en],
+      ] as const) {
+        const shop = connect(app);
+        const asked = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", {
+            customer: "Rahim Motors",
+            items: [{ part }, 'quantity:<|"|>7 set<|"|>'],
+            payment: { method_word: text.includes("bakite") ? "bakite" : "বাকিতে" },
+          }),
+        );
+        expect(asked.asked, `${text}: ${asked.reply}`).toBe("quantity");
+        expect(asked.confirm).toBeUndefined();
+      }
+    },
+  );
+
+  it.each(APPS)("two real parts are still one at a time ($app.name)", async ({ app, bn, en }) => {
+    for (const [text, part, other] of [
+      [`Rahim Motors কে ${words(bn)} আর এয়ার ফিল্টার দাও`, bn, { part_type: "এয়ার ফিল্টার" }],
+      [`Rahim Motors ke ${words(en)} ar air filter dao`, en, { part_type: "air filter" }],
+    ] as const) {
+      const shop = connect(app);
+      const answer = await shop.say(
+        fresh(),
+        { text },
+        call("record_sale", { customer: "Rahim Motors", items: [{ part }, { part: other }] }),
+      );
+      expect(answer.reply, text).toMatch(/একবারে একটা/);
+    }
+  });
+
+  const dueRead = {
+    name: "run_read_query",
+    arguments: { sql: "SELECT due_balance FROM customers WHERE name = 'Rahim Motors'", purpose: "বাকি" },
+  };
+  const QUESTIONS = ["Rahim Motors এর বাকি কত?", "Rahim Motors er baki koto?"];
+
+  it.each(APPS)("a broken word is never said: the figure is ($app.name)", async ({ app }) => {
+    for (const text of QUESTIONS) {
+      const shop = connect(app, { read: [{ due_balance: "19200" }] });
+      const answer = await shop.say(fresh(), { text }, [
+        { calls: [dueRead] },
+        { text: "Rahim Motors-এর বaki ১৯,২০০ টাকা।" },
+      ]);
+      expect(answer.reply, text).toBe("১৯,২০০ টাকা।");
+      expect(answer.trace.grounding_failures).toBe(1);
+    }
+  });
+
+  it.each(APPS)("a whole sentence stays the model's ($app.name)", async ({ app }) => {
+    for (const text of QUESTIONS) {
+      const shop = connect(app, { read: [{ due_balance: "19200" }] });
+      const answer = await shop.say(fresh(), { text }, [
+        { calls: [dueRead] },
+        { text: "Rahim Motors-এর বাকি ১৯,২০০ টাকা।" },
+      ]);
+      expect(answer.reply, text).toBe("Rahim Motors-এর বাকি ১৯,২০০ টাকা।");
+      expect(answer.trace.grounding_failures).toBe(0);
+    }
+  });
+
+  const rack = {
+    name: "run_read_query",
+    arguments: {
+      sql: "SELECT name_en, name_bn FROM parts WHERE rack_location = 'C-2'",
+      purpose: "তাকে কী আছে",
+    },
+  };
+  const names = [
+    "সেলফ মোটর",
+    "সেলফ মোটর",
+    "সেলফ মোটর",
+    "ডায়নামো",
+    "ডায়নামো",
+    "হর্ন সেট",
+    "হর্ন সেট",
+    "ফিউজ বক্স",
+    "রিলে",
+    "রিলে",
+  ];
+  const rows = (count: number) =>
+    names.slice(0, count).map((name_bn, index) => ({ name_en: `Part ${index + 1}`, name_bn }));
+  const RACK_QUESTIONS = ["সি-২ তাকে কী কী আছে?", "C-2 rack e ki ki ache?"];
+
+  it.each(APPS)("a long read is the template's, with one AI call ($app.name)", async ({ app }) => {
+    for (const text of RACK_QUESTIONS) {
+      const shop = connect(app, { read: rows(10) });
+      // What the model wrote on 1 Nov, every number true, so the grounding check lets it through.
+      const answer = await shop.say(fresh(), { text }, [
+        { calls: [rack] },
+        { text: "এখানে সেলফ মোটর (১, ২, ১), ডায়নামো (১০) আছে।" },
+      ]);
+      expect(answer.reply, text).toBe(
+        "পাওয়া গেছে: সেলফ মোটর, ডায়নামো, হর্ন সেট, ফিউজ বক্স, রিলে। বিস্তারিত স্ক্রিনে দেখুন।",
+      );
+      expect(answer.tables[0]?.rows).toHaveLength(10);
+      expect(answer.trace.llm_calls).toBe(1);
+    }
+  });
+
+  it.each(APPS)("six rows are still the model's to phrase ($app.name)", async ({ app }) => {
+    for (const text of RACK_QUESTIONS) {
+      const shop = connect(app, { read: rows(6) });
+      const answer = await shop.say(fresh(), { text }, [
+        { calls: [rack] },
+        { text: "এই তাকে সেলফ মোটর, ডায়নামো আর হর্ন সেট আছে।" },
+      ]);
+      expect(answer.reply, text).toBe("এই তাকে সেলফ মোটর, ডায়নামো আর হর্ন সেট আছে।");
+    }
+  });
+});

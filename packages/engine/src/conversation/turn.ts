@@ -7,6 +7,7 @@ import {
   helpAnswer,
   learnableWords,
   missingAnswer,
+  hasBrokenWord,
   isGrounded,
   matchConcept,
   money,
@@ -603,10 +604,14 @@ const READ_ALOUD_NAMES = 6;
  * A read's template answer (spec 12.2, D160): a list of two to six different Bangla names is said, from its text
  * columns, those with Bangla names first ("পাওয়া গেছে: সেলফ মোটর, ডায়নামো, হর্ন সেট।"), then "see the screen". One
  * name is a value looked up (a due), which the name alone does not answer; more names, a row without one, or names
- * not in Bangla (the voice speaks Bangla) get only "see the screen".
+ * not in Bangla (the voice speaks Bangla) get only "see the screen". One row with one money value says that figure,
+ * so a voice user still hears it (D216).
  */
 function readAnswer(result: ReadQueryResult): string {
   const { rows } = result;
+  const money = result.columns.filter((column) => column.kind === "money");
+  const figure = rows.length === 1 && money.length === 1 ? rows[0]![money[0]!.key] : null;
+  if (typeof figure === "bigint") return `${formatTaka(figure)} টাকা।`;
   const said = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
   const bangla = (key: string) => rows.filter((row) => /[ঀ-৿]/.test(said(row[key]) ?? "")).length;
   const columns = result.columns
@@ -2140,7 +2145,15 @@ export async function runTurn(
       }
       // Parts are always said with the template: it is complete (every kind, stock, price, rack), in the shop's
       // Bangla words, and never claims a fit (D88, D95). The LLM phrases the other reads and report figures.
-      if (!final && llmText === null && !facts.parts && (facts.read || facts.report?.kind === "figure")) {
+      // A long read is said by the template, with its table on the screen: the model dumps its rows (D216).
+      const longRead = (facts.read?.rows.length ?? 0) > READ_ALOUD_NAMES;
+      if (
+        !final &&
+        llmText === null &&
+        !facts.parts &&
+        !longRead &&
+        (facts.read || facts.report?.kind === "figure")
+      ) {
         messages.push({ role: "user", content: PHRASING });
         let phrasing = await collect(deps.llm, messages, [], note);
         trace.llm_calls++;
@@ -2215,7 +2228,7 @@ export async function runTurn(
       const kept: string[] = [];
       let failed = false;
       for (const sentence of splitSentences(llmText)) {
-        if (isGrounded(sentence, facts.allowed).ok) {
+        if (isGrounded(sentence, facts.allowed).ok && !hasBrokenWord(sentence)) {
           kept.push(banglaNumbers(sentence));
           continue;
         }
