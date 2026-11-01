@@ -356,12 +356,12 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     { style: "Bangla", text: "রহিম মোটরসের বাকি কত?" },
     { style: "Banglish", text: "rahim motors er baki koto?" },
   ])(
-    "drops an invented figure from the LLM's words and says the template answer instead ($style)",
+    "drops an invented figure from the LLM's words and says the read's own figure instead (D216; $style)",
     async ({ text }) => {
       const llm = scripted([{ calls: [rahimMotorsDue] }, { text: "রহিম মোটরসের বাকি ২৫,০০০ টাকা।" }]);
       const { outcome, reply } = await turn(text, fresh(), [llm]);
       expect(outcome.meta.grounding_failures).toBe(1);
-      expect(reply).toBe(SEE_ON_SCREEN);
+      expect(reply).toBe("১৯,২০০ টাকা।");
     },
   );
 
@@ -777,11 +777,19 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
     },
   );
 
+  // Five names: a read this short is still the LLM's to phrase; the rack's ten rows are not (D216).
   const rackC2 = {
     name: "run_read_query",
     arguments: {
-      sql: "SELECT parts.name_en, parts.name_bn FROM parts WHERE parts.rack_location = 'C-2'",
+      sql: "SELECT DISTINCT parts.name_bn FROM parts WHERE parts.rack_location = 'C-2'",
       purpose: "C-2 তাকের মাল",
+    },
+  };
+  const rackC2Rows = {
+    ...rackC2,
+    arguments: {
+      ...rackC2.arguments,
+      sql: "SELECT parts.name_en, parts.name_bn FROM parts WHERE parts.rack_location = 'C-2'",
     },
   };
 
@@ -805,6 +813,17 @@ describe.skipIf(!isLocal)("chat turn pipeline on GearGrid's seed", () => {
       expect(invented.reply).not.toContain("৯৯");
     },
   );
+
+  it.each([
+    { style: "Bangla", text: "সি দুই থাকে কি কি আছে" },
+    { style: "Banglish", text: "c dui take ki ki ache" },
+  ])("a long read is the template's, not the LLM's (D216; $style)", async ({ text }) => {
+    // What the model wrote on 1 Nov: every number true, so the grounding check would have let it through.
+    const llm = scripted([{ calls: [rackC2Rows] }, { text: "এখানে সেলফ মোটর (১, ২, ১) আছে।" }]);
+    const { outcome, reply } = await turn(text, fresh(), [llm]);
+    expect(reply).toMatch(/^পাওয়া গেছে: .*সেলফ.*। বিস্তারিত স্ক্রিনে দেখুন।$/);
+    expect(outcome.meta.llm_calls).toBe(1);
+  });
 
   // "কোন কোন মাল অর্ডার দিতে হবে?" is a reminder question now, answered without the LLM (D194); this one is a read.
   it.each([
