@@ -19,6 +19,12 @@ const PART: Record<string, string> = {
   "shop B": "2",
   "an app with its own words": "tc-platinum",
 };
+/** The sheet's part row: the car, the part and its quality, each once (D229). */
+const PART_ROW: Record<string, string> = {
+  GearGrid: "ফিল্ডারের সামনের ব্রেক প্যাড, জেনুইন",
+  "shop B": "এক্সিওর সামনের ব্রেক প্যাড, নন-জেনুইন",
+  "an app with its own words": "Hyundai Tucson-এর সামনের ব্রেক প্যাড, Platinum",
+};
 
 const RACK = [
   {
@@ -80,6 +86,7 @@ for (const app of [geargrid, shopB, ownWords]) {
       );
       // A rack change moves no money: no total row (it read "মোট ০ টাকা", D229).
       expect(reply.confirm?.fields.map((field) => field.label)).not.toContain("মোট");
+      expect(reply.confirm?.fields.find((field) => field.label === "পার্ট")?.value).toBe(PART_ROW[app.name]);
       // The app has no dry run for racks: nothing is sent before yes.
       expect(shop.calls).toHaveLength(0);
       expect(reply.state.action?.request).toEqual({

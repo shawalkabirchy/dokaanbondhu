@@ -36,6 +36,8 @@ const CASES: {
   said: { style: string; text: string; args: object }[];
   taps: RegExp[];
   sheet: RegExp;
+  /** The sheet's part row: the car, the part and its quality, each once (D229). */
+  part: string;
   body: Record<string, unknown>;
 }[] = [
   {
@@ -61,6 +63,7 @@ const CASES: {
     // The Premio's two generations: its year is asked, with the rows' years.
     taps: [/^2007–2011$/],
     sheet: /^ফিল্ডারের সামনের ব্রেক প্যাড, জেনুইন — প্রিমিও ২০০৭–২০১১-এ লাগে। যোগ করব\?$/,
+    part: "ফিল্ডারের সামনের ব্রেক প্যাড, জেনুইন",
     body: { part_id: "pad-new", vehicle_id: "premio-2007", verified: true },
   },
   {
@@ -86,6 +89,7 @@ const CASES: {
     // Two pads fit the Axio chassis: the quality picks one; the app has one Fielder row.
     taps: [/নন-জেনুইন/],
     sheet: /— ফিল্ডার ২০১২–২০১৭-এ লাগে। যোগ করব\?$/,
+    part: "এক্সিওর সামনের ব্রেক প্যাড, নন-জেনুইন",
     body: { part_id: "2", vehicle_id: "2" },
   },
   {
@@ -111,11 +115,12 @@ const CASES: {
     // The Pajero rows have no years: their engine codes tell them apart.
     taps: [/^4D56$/],
     sheet: /— পাজেরো 4D56-এ লাগে। যোগ করব\?$/,
+    part: "Hyundai Tucson-এর সামনের ব্রেক প্যাড, Platinum",
     body: { part_id: "tc-platinum", vehicle_id: "pj-a", verified: true },
   },
 ];
 
-for (const { app, said, taps, sheet, body } of CASES) {
+for (const { app, said, taps, sheet, part, body } of CASES) {
   describe(`${app.name}: a fitment added (D172)`, () => {
     it.each(said)(
       "the part by its own words, the new car among the app's ($style)",
@@ -127,6 +132,7 @@ for (const { app, said, taps, sheet, body } of CASES) {
         expect(reply.confirm?.text).toMatch(sheet);
         // A fitment moves no money: no total row (it read "মোট ০ টাকা", D229).
         expect(reply.confirm?.fields.map((field) => field.label)).not.toContain("মোট");
+        expect(reply.confirm?.fields.find((field) => field.label === "পার্ট")?.value).toBe(part);
         expect(reply.state.action?.request).toMatchObject({ method: "POST", path: "/api/v1/fitments" });
         expect(reply.state.action?.request.body).toMatchObject(body);
         expect(shop.calls).toHaveLength(0); // no dry run: nothing is sent before yes

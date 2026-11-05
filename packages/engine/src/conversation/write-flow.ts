@@ -1585,9 +1585,12 @@ async function prepareWrite(
       ? [
           {
             label: "পার্ট",
+            // The car, the part and its quality, each once: a price, rack or fitment names the car in its phrase
+            // ("এক্সিওর সামনের ব্রেক প্যাড"), and a fitment's line holds the quality too (D229).
             value: [
-              chosen.vehicle ? banglaOf("vehicle_model", chosen.vehicle) : null,
-              lines[0]!.part,
+              ...(fitCar || change || rackChange
+                ? [partPhrase(chosen)]
+                : [chosen.vehicle ? banglaOf("vehicle_model", chosen.vehicle) : null, lines[0]!.part]),
               chosen.quality ? banglaOf("quality", chosen.quality) : null,
             ]
               .filter(Boolean)
