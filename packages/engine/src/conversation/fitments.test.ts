@@ -125,6 +125,8 @@ for (const { app, said, taps, sheet, body } of CASES) {
         const reply = await tapAll(shop, first, taps);
         expect(reply.asked).toBeUndefined();
         expect(reply.confirm?.text).toMatch(sheet);
+        // A fitment moves no money: no total row (it read "মোট ০ টাকা", D229).
+        expect(reply.confirm?.fields.map((field) => field.label)).not.toContain("মোট");
         expect(reply.state.action?.request).toMatchObject({ method: "POST", path: "/api/v1/fitments" });
         expect(reply.state.action?.request.body).toMatchObject(body);
         expect(shop.calls).toHaveLength(0); // no dry run: nothing is sent before yes

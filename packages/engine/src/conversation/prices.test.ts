@@ -77,6 +77,8 @@ for (const app of [geargrid, shopB, ownWords]) {
           { label: "নতুন", value: "১,৭০০ টাকা", highlight: false },
         ]),
       );
+      // A price change moves no money: no total row (it read "মোট ০ টাকা", D229).
+      expect(reply.confirm?.fields.map((field) => field.label)).not.toContain("মোট");
       // The app has no dry run for prices: nothing is sent before yes.
       expect(shop.calls).toHaveLength(0);
       expect(reply.state.action?.request).toEqual({

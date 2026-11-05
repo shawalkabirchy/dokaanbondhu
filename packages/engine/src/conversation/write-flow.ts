@@ -1478,6 +1478,9 @@ async function prepareWrite(
         amount: payment.amount ?? total,
       }));
   }
+  // A price, rack or fitment change moves no money: its part line has no quantity, so a total would show on the
+  // sheet as "মোট ০ টাকা" (D229).
+  if (template === "price_update" || template === "rack_update" || template === "add_fitment") total = null;
 
   const { body } = buildBody(capability, resolved);
   const paid =

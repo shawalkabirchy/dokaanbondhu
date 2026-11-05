@@ -78,6 +78,8 @@ for (const app of [geargrid, shopB, ownWords]) {
           { label: "আগে", value: "B-3", highlight: false },
         ]),
       );
+      // A rack change moves no money: no total row (it read "মোট ০ টাকা", D229).
+      expect(reply.confirm?.fields.map((field) => field.label)).not.toContain("মোট");
       // The app has no dry run for racks: nothing is sent before yes.
       expect(shop.calls).toHaveLength(0);
       expect(reply.state.action?.request).toEqual({
