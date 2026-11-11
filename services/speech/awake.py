@@ -1,6 +1,7 @@
 """Keeps one speech worker running all day, or lets it sleep again (spec 19.3; D192, D205).
 
-On:     modal run awake.py --mode on       one container kept running (L4 about $0.80 an hour, L40S about $1.95)
+On:     modal run awake.py --mode on       one container kept running (L4 about $0.80 an hour, L40S about $1.95,
+                                           the A10G backup about $1.10, D238)
 Off:    modal run awake.py --mode off      back to none kept: it sleeps after 5 quiet minutes
 Status: modal run awake.py                 how many containers run now
 

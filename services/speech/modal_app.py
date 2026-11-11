@@ -1,9 +1,9 @@
 """The speech worker on Modal, for development (spec 14.1).
 
 Once:   modal run modal_app.py::prepare_models   (converts and downloads the models into the volume)
-Deploy: modal deploy modal_app.py
+Deploy: modal deploy modal_app.py               (an L4, else an A10G when no L4 is free, D238)
         on an L40S instead of the L4 (the capstone day, D192, D205), in PowerShell:
-        $env:SPEECH_GPU = "L40S"; modal deploy modal_app.py
+        $env:SPEECH_GPU = "L40S"; modal deploy modal_app.py   (an L40S, else an L4, else an A10G)
 Every request needs a Modal proxy token (headers Modal-Key and Modal-Secret).
 """
 
@@ -16,10 +16,14 @@ import modal
 
 HERE = Path(__file__).resolve().parent
 
-# Read when deploying; the container gets the same value, so both see one GPU (D205).
+# Read when deploying; the container gets the same value, so both see one GPU list (D205).
 GPU = os.environ.get("SPEECH_GPU") or "L4"
 if GPU not in ("L4", "L40S"):
     raise SystemExit(f"SPEECH_GPU is L4 or L40S, not {GPU!r}")
+# Modal starts the first type in the list that it has free (D238): on 11 Nov it started no L40S and then, for a while,
+# no L4, so voice stopped. An A10G ($1.10 an hour against the L4's $0.80) is as able for both models (24 GB, half
+# precision) and is taken only when the chosen GPU is not free.
+GPUS = ["L40S", "L4", "A10G"] if GPU == "L40S" else ["L4", "A10G"]
 
 app = modal.App("dokaanbondhu-speech")
 models = modal.Volume.from_name("dokaanbondhu-speech-models", create_if_missing=True)
@@ -44,7 +48,7 @@ def prepare_models() -> None:
 
 @app.function(
     image=image,
-    gpu=GPU,
+    gpu=GPUS,
     env={"SPEECH_GPU": GPU},
     volumes={"/models": models},
     secrets=[huggingface],

@@ -381,6 +381,11 @@ def load_models() -> None:
     cuda = ctranslate2.get_cuda_device_count() > 0
     device = "cuda" if cuda else "cpu"
     compute_type = os.environ.get("ASR_COMPUTE_TYPE") or ("float16" if cuda else "int8")
+    if cuda:
+        import torch  # in the worker's image (Parler-TTS), never in the tests' light set
+
+        # Which GPU Modal gave: the chosen one, or the A10G when it was not free (D238).
+        log.info("on the GPU %s", torch.cuda.get_device_name(0))
     started = time.perf_counter()
     log.info("loading speech-to-text from %s on %s (%s)", ASR_MODEL_DIR, device, compute_type)
     state.asr = WhisperAsr(ASR_MODEL_DIR, device, compute_type)
