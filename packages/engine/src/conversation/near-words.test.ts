@@ -194,7 +194,7 @@ describe("a number's words, a rack and the speaker's role are never a name (D237
 
   it.each([
     { style: "Bangla", text: "বিটু তাকে কি কি মাল আছে", word: "বিটু" },
-    { style: "Banglish", text: "bitu take ki ki mal ache", word: "bitu" },
+    { style: "Banglish", text: "bitwo take ki ki mal ache", word: "bitwo" },
   ])("a rack said as one word, the shop's or not ($style)", ({ text, word }) => {
     for (const racks of [["B-2", "C-1"], []])
       expect(unplaced(text, { racks }).filter((heard) => heard.includes(word))).toEqual([]);

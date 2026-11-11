@@ -129,21 +129,21 @@ describe("a part number said aloud (D237)", () => {
 describe("a rack said as one word (D237)", () => {
   it.each([
     { style: "Bangla", words: ["বিটু", "সিওয়ান", "এইচওয়ান"] },
-    { style: "Banglish", words: ["bitu", "siwan", "eichwan"] },
+    { style: "Banglish", words: ["bitwo", "seeone", "eichone"] },
   ])("is its letter and number ($style)", ({ words }) => {
     expect(words.map(gluedRack)).toEqual(["B2", "C1", "H1"]);
   });
 
   it.each([
-    { style: "Bangla", words: ["আরেক", "একটা", "এইটা", "সিটি", "বিশ"] },
-    { style: "Banglish", words: ["arek", "ekta", "eita", "city", "bish"] },
+    { style: "Bangla", words: ["আরেক", "একটা", "এইটা", "সিটি", "বিশ", "জেনুইন"] },
+    { style: "Banglish", words: ["arek", "ekta", "eita", "city", "bish", "genuine"] },
   ])("an everyday word is none ($style)", ({ words }) => {
-    expect(words.map(gluedRack)).toEqual([null, null, null, null, null]);
+    expect(words.map(gluedRack)).toEqual([null, null, null, null, null, null]);
   });
 
   it.each([
     { style: "Bangla", put: "ওটা সিওয়ান রেখে রাখো", moved: "বি তিন থেকে সিওয়ান এ রাখো" },
-    { style: "Banglish", put: "ota siwan e rekhe rakho", moved: "b tin theke siwan e rakho" },
+    { style: "Banglish", put: "ota seeone e rekhe rakho", moved: "b tin theke seeone e rakho" },
   ])("is the rack a change names, the last one said ($style)", ({ put, moved }) => {
     expect(rackSaid(put, ["B-3", "C-1"])).toBe("C-1");
     expect(rackSaid(moved, ["B-3", "C-1"])).toBe("C-1");

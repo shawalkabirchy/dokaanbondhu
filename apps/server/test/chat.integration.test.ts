@@ -309,22 +309,23 @@ describe.skipIf(!allLocal)("chat endpoints", () => {
 
   // The shop's own names said in the request reach the LLM as they are stored (D95, D108): in Bangla script too, and
   // the words of a name are not taken for a part ("গ্যারেজের" sounds like grease) or a car ("তাকে কী" like Aqua).
+  // An address, not a phone: a named person's phone is said from the shop's list without the LLM (D237).
   it.each([
     {
       style: "Bangla",
-      text: "নিউ ঢাকা গ্যারেজের ফোন নম্বর কত?",
+      text: "নিউ ঢাকা গ্যারেজের ঠিকানা কী?",
       named: "customer New Dhaka Garage",
       not: ["Grease"],
     },
     {
       style: "Banglish",
-      text: "New Dhaka Garage er phone number koto?",
+      text: "New Dhaka Garage er thikana ki?",
       named: "customer New Dhaka Garage",
       not: ["Grease"],
     },
     {
       style: "Bangla",
-      text: "ইস্টার্ন লুব্রিকেন্টসের ফোন নম্বর দিন",
+      text: "ইস্টার্ন লুব্রিকেন্টসের ঠিকানা দিন",
       named: "supplier Eastern Lubricants",
       not: [],
     },

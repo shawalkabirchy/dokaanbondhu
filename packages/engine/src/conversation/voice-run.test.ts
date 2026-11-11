@@ -169,7 +169,7 @@ describe("a rack said as one word (D237)", () => {
   // As speech-to-text wrote C-1 in the run (v-203), and the model passed it on as said.
   const GLUED = [
     { style: "Bangla", text: "ব্রেক প্যাডটা সিওয়ান রেখে রাখো", part: "ব্রেক প্যাড", rack: "সিওয়ান" },
-    { style: "Banglish", text: "brake pad ta siwan e rekhe rakho", part: "brake pad", rack: "siwan" },
+    { style: "Banglish", text: "brake pad ta c1 e rekhe rakho", part: "brake pad", rack: "c1" },
   ] as const;
   for (const app of [geargrid, shopB, ownWords]) {
     it.each(GLUED)(`is read as its label (${app.name}, $style)`, async (said) => {
@@ -182,4 +182,43 @@ describe("a rack said as one word (D237)", () => {
       expect(reply.confirm?.text).toMatch(/ব্রেক প্যাড রাখা হবে C-1-এ \(এখন B-3\)। ঠিক আছে\?$/);
     });
   }
+});
+
+// Found by CI on the first push (D237): "জেনুইন" split as J and "নুইন", a letter from নাইন, and counted as rack J-9, so
+// a sale lost its quality. A glued rack now takes only an exact English digit word.
+describe("a quality is never a rack said as one word (D237)", () => {
+  it.each([
+    { style: "Bangla", text: "রহিম মোটরসকে এক্সিও ২০০৮ সামনের জেনুইন ব্রেক প্যাড এক সেট নগদে দাও" },
+    { style: "Banglish", text: "Rahim Motors ke axio 2008 samner genuine brake pad ek set nogode dao" },
+  ])("a sale keeps its quality, heard in the words ($style)", async ({ text }) => {
+    const shop = connect(geargrid);
+    const sheet = await shop.say(fresh(), { text }, [
+      {
+        calls: [
+          {
+            name: "record_sale",
+            arguments: {
+              customer: "Rahim Motors",
+              items: [
+                {
+                  part: {
+                    part_type: "brake pad",
+                    vehicle: "axio",
+                    year: "2008",
+                    position: "front",
+                    // in English, as the model wrote it for a Bangla request: kept only when the words say it
+                    quality: "genuine",
+                  },
+                },
+              ],
+              payment: { method_word: text.includes("নগদে") ? "নগদে" : "nogode" },
+            },
+          },
+        ],
+      },
+    ]);
+    expect(sheet.confirm?.text, sheet.reply).toMatch(
+      /^Rahim Motors — এক্সিও ২০০৮, সামনের ব্রেক প্যাড, জেনুইন, ১ সেট/,
+    );
+  });
 });

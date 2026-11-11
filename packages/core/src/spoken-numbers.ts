@@ -289,13 +289,12 @@ const ENGLISH_DIGIT_WORDS = new Map(
 );
 
 /**
- * The digits of a rack's glued number: English digit words, exact or by sound. A Bangla number word ("এক", "ek") is
- * none, so "arek" (another) is never rack R-1.
+ * The digits of a rack's glued number: an English digit word written exactly ("টু", "ওয়ান", "two"), as speech-to-text
+ * glued them in the run. Never by sound, so "জেনুইন" (genuine) is no J-9 ("নুইন" is a letter from নাইন), and never a
+ * Bangla number word ("এক", "ek"), so "arek" (another) is no R-1.
  */
 function englishDigits(rest: string): { digits: string; cost: number } | null {
   if (/^\d{1,3}$/.test(asciiDigits(rest))) return { digits: asciiDigits(rest), cost: 0 };
   const exact = ENGLISH_DIGIT_WORDS.get(rest);
-  if (exact) return { digits: exact, cost: 0 };
-  if (NUMBER_WORDS.has(rest)) return null;
-  return digitSplit(rest);
+  return exact ? { digits: exact, cost: 0 } : null;
 }
