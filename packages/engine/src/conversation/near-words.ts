@@ -2,13 +2,16 @@ import {
   APP_WORD_CONCEPTS,
   appWord,
   banglaOf,
+  digitRun,
   gluedQuantity as readGluedQuantity,
+  gluedRack,
   EVERYDAY_WORDS,
   isNumberWord,
   knownWords,
   matchConcept,
   namesInText,
   normalize,
+  racksInText,
   soundOf,
   soundSimilarity,
   stripEnding,
@@ -181,6 +184,10 @@ export interface NearInput {
   dictionary: Dictionary;
   customers: readonly CatalogCustomer[];
   suppliers: readonly CatalogCustomer[];
+  /** The shop's rack labels: one said in the text is a rack, never a misheard name ("বিটু তাকে" is B-2, D237). */
+  racks?: readonly string[];
+  /** Words to leave as they are, [from, to) in the normalized tokens: a part number said aloud (D237). */
+  keep?: readonly (readonly [number, number])[];
 }
 
 interface Spelling {
@@ -256,6 +263,13 @@ function placedSpans(input: NearInput, tokens: readonly string[]): [number, numb
   }));
   for (const found of namesInText(input.text, names, input.dictionary))
     mark(normalize(found.heard).tokens.join(" "));
+  // A rack label, the shop's or one said as one word ("সিওয়ান" for C-1), and a part number said aloud (D237).
+  for (const found of racksInText(input.text, input.racks ?? []))
+    mark(normalize(found.heard).tokens.join(" "));
+  tokens.forEach((token, index) => {
+    if (gluedRack(token)) spans.push([index, index + 1]);
+  });
+  for (const [from, to] of input.keep ?? []) spans.push([from, to]);
   return spans;
 }
 
@@ -300,9 +314,12 @@ export function nearHints(input: NearInput): NearHint[] {
     [token, ...stripEnding(token)].some((form) =>
       APP_WORD_CONCEPTS.some((concept) => appWord(concept, form)),
     );
+  // A digit word misheard or glued next to other digits ("জিরো ওয়াইন" is 0 1, never a wiper; D237).
+  const digits = new Set(digitRun(tokens).flatMap((read, index) => (read === null ? [] : [tokens[index]!])));
   const numeric = (token: string) =>
     [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form)) ||
-    gluedQuantity(token);
+    gluedQuantity(token) ||
+    digits.has(token);
   const unclear = (token: string) =>
     !EVERYDAY.has(token) &&
     !numeric(token) &&

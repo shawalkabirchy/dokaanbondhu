@@ -15,4 +15,5 @@ export * from "./quantity";
 export * from "./reminders";
 export * from "./resolve";
 export * from "./shop-words";
+export * from "./spoken-numbers";
 export * from "./text";

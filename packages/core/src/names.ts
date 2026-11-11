@@ -3,6 +3,7 @@ import spelled from "../data/spelled-letters.json";
 import type { Dictionary } from "./glossary";
 import { NUMBER_WORDS, normalizePartNumber, spokenSign, wordNumber } from "./numbers";
 import { keySimilarity, phoneticKey } from "./phonetic";
+import { gluedRack } from "./spoken-numbers";
 import { asciiDigits, normalize } from "./text";
 
 // The shop's own names said inside a request (spec 9.1, D95, D108): its customers and suppliers in either script and
@@ -256,6 +257,12 @@ export function rackSaid(text: string, racks: readonly string[] = []): string | 
     const written = rackKey(asciiDigits(token));
     if (/^[A-Z]{1,2}\d{1,3}$/.test(written) && /^[a-z]/i.test(token)) {
       candidates.push({ key: written, everyday: false });
+      return;
+    }
+    // A letter and its number said as one word ("বিটু" B-2, "সিওয়ান" C-1; D237), a label like any other.
+    const glued = gluedRack(token);
+    if (glued) {
+      candidates.push({ key: glued, everyday: false });
       return;
     }
     const letter = spokenSign(token) ?? (/^[a-z]$/.test(token) ? token : null);

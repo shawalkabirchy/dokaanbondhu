@@ -1,9 +1,11 @@
 import {
   decisionOf,
   matchConcept,
+  matchPartNumber,
   normalize,
   optionBySound,
   parseAmount,
+  partNumberBySound,
   rackSaid,
   parseQuantity,
   parseYear,
@@ -151,6 +153,8 @@ export interface FrameAnswerInput {
   suppliers?: CatalogCustomer[];
   /** A voice answer's other speech-to-text guesses, best first (D158). */
   others?: readonly string[];
+  /** The shop's part numbers, for an answer to "which part number?" (D237). */
+  partNumbers?: readonly string[];
   now: Date;
 }
 
@@ -237,6 +241,11 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   } else if (slot === "quantity") {
     const quantity = parseQuantity(tokens);
     if (quantity) value = quantity;
+  } else if (slot === "part_number") {
+    // "Which part number?" answered: written, or said aloud sign by sign, matched by sound anywhere in the answer to
+    // the shop's own numbers (D237). Never a number the shop does not have.
+    const known = input.partNumbers ?? [];
+    value = matchPartNumber(text, known).exact ?? partNumberBySound(text, known, { anywhere: true }).number;
   } else if (slot === "new_rack") {
     value = rackSaid(text); // a rack change's rack (D195): only a label, so anything else is not its answer
   } else if (slot === "own_ok") {

@@ -47,8 +47,20 @@ export const MISHEARD_THOUSAND = new Set(
     "hawzar",
     "haojar",
     "hajnar",
+    // the first voice run of the test set (D237): "দুইশ হারজার ছয়" (2006) became Harrier and "পাঁচ হাজতো পঞ্চাশ"
+    // Alto in the clean-up
+    "হারজার",
+    "হাজতো",
+    "harjar",
+    "hajto",
   ].map(nfc),
 );
+
+/**
+ * Twenty as speech-to-text wrote it after a thousand (D237): "দুই হাজার বিশ্বের" for বিশের, 2020. Only there, since
+ * বিশ্ব (world) is a word of its own.
+ */
+const MISHEARD_TWENTY = new Set(["বিশ্ব", "বিশ্বের", "বিশ্বে", "bishwo", "bisshwer"].map(nfc));
 
 /** Words that go with numbers: thousand, hundred, lakh, and the year words (model, sal). */
 const NUMBER_CONTEXT = new Set(
@@ -132,6 +144,7 @@ const NINETEEN_HUNDRED = new Set(["উনিশশো", "unishsho", "unisho"].ma
 function spokenYear(tokens: readonly string[], index: number): number | null {
   const at = (offset: number) => nfc(tokens[index + offset] ?? "");
   const rest = (offset: number) => {
+    if (MISHEARD_TWENTY.has(at(offset))) return 20;
     const value = wordNumber(tokens[index + offset] ?? "");
     // "ফোর টিন": a digit and teen, split by speech-to-text
     if (value !== null && value >= 3 && value <= 9 && TEEN.has(at(offset + 1))) return 10 + value;

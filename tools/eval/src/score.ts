@@ -57,6 +57,8 @@ export interface TurnRecord {
   state: string;
   /** The slot a question asked about (from its chips or the trace), when the turn ended with a question. */
   slot: string | null;
+  /** The question's buttons, as labelled, when it had any (D237). */
+  options?: string[];
   trace: Trace | null;
   tables: TableRecord[];
   cards: number;

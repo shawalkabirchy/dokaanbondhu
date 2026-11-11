@@ -126,7 +126,10 @@ function numberEdges(words: readonly string[]): "start" | "end" | "both" | null 
   return start && end ? "both" : start ? "start" : end ? "end" : null;
 }
 
-/** Words for paying by bKash: they sound like Voxy (both "bks"), so they match a term only exactly (D212). */
+/**
+ * Words for paying by bKash: they sound like Voxy (both "bks"), so they match a term only exactly (D212). And "price"
+ * said in English, which sounds like a Prius: "…শক অ্যাবজারভারের প্রাইস কত" asked whether the part fit a Prius (D237).
+ */
 const NEVER_BY_SOUND = new Set([
   "বিকাশ",
   "বিকাশে",
@@ -137,6 +140,15 @@ const NEVER_BY_SOUND = new Set([
   "bikash",
   "bikashe",
   "bikasher",
+  "প্রাইস",
+  "প্রাইসটা",
+  "প্রাইসের",
+  "প্রাইজ",
+  "price",
+  "prices",
+  "prais",
+  "praise",
+  "praisd",
 ]);
 
 /**

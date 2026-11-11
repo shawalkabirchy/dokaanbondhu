@@ -191,7 +191,11 @@
     "বৃষ্টি",
     "আবহাওয়া",
     "খবর",
-    "খেলা"
+    "খেলা",
+    "মালিক",
+    "হিসেবে",
+    "হিসাবে",
+    "স্টাফ"
   ],
   "banglish": [
     "ami",
@@ -332,6 +336,11 @@
     "liter",
     "brishti",
     "khobor",
-    "khela"
+    "khela",
+    "malik",
+    "hishebe",
+    "hisebe",
+    "hishabe",
+    "staff"
   ]
 }

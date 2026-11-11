@@ -1,4 +1,5 @@
 import { CANNOT_ANSWER_NOW } from "@dokaanbondhu/core";
+import { cardAnswer } from "./card-answer";
 import type { Item, WriteExpected } from "./items";
 import type { ItemResult, TurnRecord } from "./score";
 import type { Session } from "./session";
@@ -64,8 +65,9 @@ export async function runChatItem(
     if (turn.state !== "CLARIFYING") break;
     const answer = turn.slot ? item.script[turn.slot] : undefined;
     if (answer === undefined) {
+      // A voice card's speaker answers from the card what it names (D237); it still counts as unnecessary.
       unscripted++;
-      text = DONT_KNOW;
+      text = (clip ? cardAnswer(item, turn) : null) ?? DONT_KNOW;
     } else {
       text = String(answer);
     }

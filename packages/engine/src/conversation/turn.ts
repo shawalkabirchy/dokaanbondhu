@@ -61,6 +61,14 @@ import {
   oldDuesAnswer,
   reminderCueOf,
   type ReminderKind,
+  matchPartNumber,
+  partNumberBySound,
+  partsOfType,
+  asksPhone,
+  phoneAnswer,
+  phoneWord,
+  EVERYDAY_WORDS,
+  gluedRack,
 } from "@dokaanbondhu/core";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
@@ -444,6 +452,9 @@ function parseArgs(call: ToolCall): Record<string, unknown> {
 
 const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
 
+/** Everyday words of shop talk, normalized: never part of a name asked for (D162, D237). */
+const EVERYDAY_TOKENS = new Set(EVERYDAY_WORDS.map((word) => normalize(word).tokens.join(" ")));
+
 function partQueryOf(args: Record<string, unknown>): PartQuery {
   const query: PartQuery = {};
   for (const key of [
@@ -713,6 +724,10 @@ export async function runTurn(
     (said !== "" &&
       ["add_customer", "add_supplier"].includes(writeCueOf(said, { partyNamed: false }) ?? "")) ||
     (askedSlot?.startsWith("new_") ?? false);
+  // A part number said aloud sign by sign ("কেওয়াইবি থ্রি জিরো জিরো …"), matched by sound against the shop's own
+  // numbers (D237); its words are left out of the clean-up, which once made "ওয়াইন" (one) a wiper.
+  const shopNumbers = deps.host.catalog.parts.flatMap((part) => part.partNumbers);
+  const spokenNumber = said ? partNumberBySound(said, shopNumbers) : { number: null, close: [], span: null };
   const hints =
     said && !addsParty && !input.choice && !state.action && deps.llm.length
       ? nearHints({
@@ -724,6 +739,8 @@ export async function runTurn(
             name: supplier.name,
             nameBn: supplier.nameBn ?? null,
           })),
+          racks: rackLabels(deps.host.catalog),
+          ...(spokenNumber.span ? { keep: [spokenNumber.span] } : {}),
         })
       : [];
   const cleaned = hints.length
@@ -817,6 +834,12 @@ export async function runTurn(
   // not a Fielder, D158).
   const partWords: string[] = [];
   const inPart = (heard: string) => partWords.some((words) => ` ${words} `.includes(` ${heard} `));
+  // The words a part number was said in are no detail of it: "ফোট" (four, misheard) is not a Honda Fit (D237).
+  const numberWords = spokenNumber.span
+    ? normalize(said).tokens.slice(spokenNumber.span[0], spokenNumber.span[1]).join(" ")
+    : "";
+  const inNumber = (heard: string) =>
+    numberWords !== "" && ` ${numberWords} `.includes(` ${normalize(heard).tokens.join(" ")} `);
   const candidates = (["part_type", "vehicle_model", "quality", "position"] as const)
     .map((concept) => {
       if (!hypotheses[0]) return null;
@@ -825,6 +848,9 @@ export async function runTurn(
         matchConcept(concept, text, extra, deps.dictionary).candidates.filter(
           (candidate) =>
             !inName(candidate.heard) &&
+            !inNumber(candidate.heard) &&
+            // a rack said as one word ("সিওয়ান", C-1) is no car (it sounds like a Sunny, D237)
+            !normalize(candidate.heard).tokens.some((token) => gluedRack(token) !== null) &&
             !(concept !== "part_type" && inPart(candidate.heard)) &&
             !normalize(candidate.heard).tokens.some(isWriteWord),
         );
@@ -1069,6 +1095,17 @@ export async function runTurn(
     options: { carFromRequest?: boolean } = {},
   ): { query: PartQuery; remembered: Set<string> } => {
     const out = { ...query };
+    // A part number the request says is the search, when the LLM gave none of the shop's own; one said aloud keeps
+    // only a car the words name, never one the LLM read into them (D237).
+    const saidNumber = partNumberIn();
+    if (saidNumber && !(out.part_number && matchPartNumber(out.part_number, shopNumbers).exact)) {
+      out.part_number = saidNumber.number;
+      if (saidNumber.bySound) {
+        delete out.vehicle;
+        delete out.year;
+        delete out.engine;
+      }
+    }
     // A fitment names the part's car and a second car: its part takes neither the request's car nor a year it did not
     // say (D172).
     const ownCar = options.carFromRequest === false;
@@ -1326,6 +1363,19 @@ export async function runTurn(
       )
     )
       delete part.part_number;
+    // A part number said aloud sign by sign is the part (D237): the LLM's own guess at it ("0199", "30101") was dropped
+    // above, and a part type or car it put beside it from the same words is not the part's.
+    const saidNumber = partNumberIn();
+    if (saidNumber && missing("part_number")) {
+      part.part_number = saidNumber.number;
+      if (saidNumber.bySound) {
+        if (!heardSlots.has("part_type")) delete part.part_type;
+        if (!heardSlots.has("vehicle_model")) {
+          delete part.vehicle;
+          delete part.year;
+        }
+      }
+    }
     // A count said with its unit or টা ("ekta", "দুই সেট") is the line's quantity when the model left it out, or put
     // a number nobody said ("tinta …" as 1, D188).
     const unsaid = (value: unknown) => {
@@ -1388,18 +1438,68 @@ export async function runTurn(
   };
 
   /** The shop's own part number the request says, written however ("an 136 wk"), the longest one; null if none. */
-  const numberSaid = (): string | null => {
+  /**
+   * The shop's part number the request says: written ("KYB-300115"), or said aloud sign by sign and matched by sound
+   * (D237), which tells the caller to trust no car the LLM added beside it ("প্রাইস কত" had become a Prius).
+   */
+  const partNumberIn = (): { number: string; bySound: boolean } | null => {
     const squash = (value: string) =>
       asciiDigits(value)
         .replace(/[\s\-_./]/g, "")
         .toUpperCase();
     const spoken = squash(text);
-    return (
-      deps.host.catalog.parts
-        .flatMap((part) => part.partNumbers)
+    const written =
+      shopNumbers
         .filter((number) => squash(number).length >= 5 && spoken.includes(squash(number)))
-        .sort((a, b) => squash(b).length - squash(a).length)[0] ?? null
+        .sort((a, b) => squash(b).length - squash(a).length)[0] ?? null;
+    if (written) return { number: written, bySound: false };
+    const heard = spokenNumber.number ?? numberOfHeardType(spokenNumber.close);
+    return heard ? { number: heard, bySound: true } : null;
+  };
+  const numberSaid = (): string | null => partNumberIn()?.number ?? null;
+  /** Of the close part numbers said aloud, the one part of the type the words name, when only one is (D237). */
+  const numberOfHeardType = (close: readonly string[]): string | null => {
+    const type = heardSlots.get("part_type");
+    if (!type || close.length < 2) return null;
+    const typed = new Set(
+      partsOfType(type, deps.host.catalog.parts, deps.dictionary).flatMap((part) => part.partNumbers),
     );
+    const kept = close.filter((number) => typed.has(number));
+    return kept.length === 1 ? kept[0]! : null;
+  };
+
+  /**
+   * The customer or supplier a phone question names, with the phone the shop's list keeps (D237): one found in the
+   * words, else the clearest of the shop's names among the words left without the phone and everyday words, the
+   * longest run of them first; a run that begins one name is enough ("নবাবপুর অটো" of a misheard "নবাবপুর অটো
+   * পয়েন্টের", Nawabpur Auto Parts Ltd.), as "rahim" is Rahim Motors when only one name begins so.
+   */
+  const phonePerson = (said: string): { name: string; phone: string | null } | null => {
+    const people = [
+      ...deps.host.catalog.customers.map((c) => ({ ...c, nameBn: c.nameBn ?? null })),
+      ...deps.host.catalog.suppliers.map((s) => ({ ...s, nameBn: s.nameBn ?? null, attrs: s.attrs ?? {} })),
+    ];
+    const found = named.find((name) => name.kind === "customer" || name.kind === "supplier");
+    let person = found ? people.find((candidate) => candidate.name === found.name) : undefined;
+    const words = normalize(said, deps.dictionary.variants).tokens.filter(
+      (token) => !phoneWord(token) && !EVERYDAY_TOKENS.has(token),
+    );
+    for (let size = Math.min(words.length, 6); !person && size >= 1; size -= 1) {
+      for (let start = 0; !person && start + size <= words.length; start += 1) {
+        const match = resolveCustomer(
+          words.slice(start, start + size).join(" "),
+          [],
+          people,
+          deps.dictionary,
+        );
+        const best = match.candidates[0];
+        if (best && (match.decision === "understood" || match.decision === "understood_bold"))
+          person = people.find((candidate) => candidate.hostId === best.customer.hostId);
+      }
+    }
+    if (!person) return null;
+    const phone = person.attrs.phone;
+    return { name: person.name, phone: typeof phone === "string" && phone.trim() ? phone : null };
   };
 
   const startCued = async (capability: WriteCapability, part: Record<string, unknown>, customer?: string) => {
@@ -1414,12 +1514,16 @@ export async function runTurn(
     const who = customer ?? party("customer");
     // A price change: the part, and the new price as said money, of the kind the request names (D171).
     const price = [...saidMoney(text)].at(-1);
-    const heardPart = (withCar: boolean) =>
-      Object.fromEntries(
+    // A part number said, written or aloud (D237), names the part with no other word.
+    const saidNumber = numberSaid();
+    const heardPart = (withCar: boolean) => ({
+      ...Object.fromEntries(
         (["part_type", "vehicle_model", "position", "quality"] as const)
           .filter((concept) => heardSlots.has(concept) && (withCar || concept !== "vehicle_model"))
           .map((concept) => [concept === "vehicle_model" ? "vehicle" : concept, heardSlots.get(concept)]),
-      );
+      ),
+      ...(saidNumber ? { part_number: saidNumber } : {}),
+    });
     const args: Record<string, unknown> =
       capability.template === "add_customer" || capability.template === "add_supplier"
         ? { ...(customer ? { name: customer } : {}) }
@@ -1901,6 +2005,7 @@ export async function runTurn(
       ...(input.text ? { text: input.text } : {}),
       ...(input.choice ? { choice: input.choice } : {}),
       others,
+      partNumbers: shopNumbers,
       dictionary: deps.dictionary,
       customers: deps.host.catalog.customers,
       suppliers: deps.host.catalog.suppliers.map((supplier) => ({
@@ -2035,6 +2140,32 @@ export async function runTurn(
   if (ownersOnly) {
     trace.tool_calls.push({ name: ownersOnly.name, arguments: {}, result: "owner_only" });
     final = { kind: "answer", text: ownerOnlyText(ownersOnly.template) };
+  }
+
+  // A named customer's or supplier's phone ("শফিকুল ইসলামের ফোন নম্বর কি", "tejgaon auto care er number ta den") is
+  // said from the shop's own list with a template, never by the LLM, which answered without reading it and was then
+  // stopped by the grounding check (c-072, v-105; D237). A name heard a little off is still found ("নবাবপুর অটো
+  // পয়েন্ট" for Nawabpur Auto Parts Ltd.); a part, a car or a part number makes it another question.
+  if (
+    text &&
+    !final &&
+    !facts.parts &&
+    !facts.report &&
+    !cueKind &&
+    asksPhone(text) &&
+    !heardSlots.has("part_type") &&
+    !heardSlots.has("vehicle_model") &&
+    !numberSaid()
+  ) {
+    const person = phonePerson(text);
+    if (person) {
+      final = { kind: "answer", text: phoneAnswer(person.name, person.phone) };
+      trace.tool_calls.push({
+        name: "party_phone",
+        arguments: { name: person.name },
+        result: person.phone ? "phone" : "none",
+      });
+    }
   }
 
   // A clear reminder question ("কী কী কম আছে?", "kar baki purono?") is answered at once, without the LLM (D194). One

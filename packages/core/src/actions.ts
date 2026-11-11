@@ -4,6 +4,7 @@ import { money } from "./format";
 import { rackSaid } from "./names";
 import { MISHEARD_THOUSAND, wordNumber } from "./numbers";
 import { parseQuantity } from "./quantity";
+import { digitRun, repeatWord } from "./spoken-numbers";
 import { asciiDigits, banglaDigits, normalize } from "./text";
 
 // The write path's words (spec 9.9, 11.10; D135): amounts as said, the yes and no of a confirmation, and the
@@ -706,7 +707,8 @@ export function writeCueOf(
   if (party && !PAYMENT_WORDS.some((phrase) => said(tokens, phrase))) return party;
   if (
     WRITE_CUES.sale.some((phrase) => said(tokens, phrase)) &&
-    !tokens.some((token) => INFO_WORDS.has(token)) &&
+    // with any ending: "রহিম মোটরসের নাম্বারটা দেন" asks the phone (D237)
+    !tokens.some((token) => INFO_WORDS.has(token) || phoneWord(token)) &&
     (options.partyNamed || PAYMENT_WORDS.some((phrase) => said(tokens, phrase)))
   )
     return "sale";
@@ -898,32 +900,63 @@ export function phoneOf(text: string): string | "none" | null {
     return tokens.length <= 3 && NO_PHONE.some((word) => said(tokens, word)) ? "none" : null;
   }
   if (digits.length === 13 && digits.startsWith("880")) digits = digits.slice(2);
-  return /^01[3-9]\d{8}$/.test(digits) ? digits : null;
+  return PHONE.test(digits) ? digits : null;
 }
 
-const DOUBLE = new Set(["ডাবল", "double", "dabol"]);
+/** A Bangladeshi mobile number: 11 digits from 01 (D173). */
+const PHONE = /^01[3-9]\d{8}$/;
 
-/** A number said as words, digit by digit or in pairs ("সতেরো"), with ডাবল for a digit twice; "" when none is. */
+/**
+ * A number said as words, digit by digit or in pairs ("সতেরো"), with ডাবল for a digit twice; "" when none is. Only
+ * words read exactly: a misheard digit is never guessed, so a garbled phone is asked again (D170, D211, D237).
+ */
 function spokenDigits(text: string): string {
+  const tokens = normalize(text).tokens;
+  const read = digitRun(tokens, { bySound: false });
   let out = "";
   let times = 1;
-  for (const token of normalize(text).tokens) {
-    if (DOUBLE.has(token)) {
-      times = 2;
-      continue;
+  tokens.forEach((token, index) => {
+    const repeat = repeatWord(token);
+    if (repeat > 1) {
+      times = repeat;
+      return;
     }
-    const ascii = asciiDigits(token);
-    const word = /^\d+$/.test(ascii) ? null : wordNumber(token);
-    const value = /^\d+$/.test(ascii) ? ascii : word !== null && word < 100 ? String(word) : null;
-    if (value !== null) out += value.repeat(times);
+    const value = read[index];
+    if (value) out += value.repeat(times);
     times = 1;
-  }
+  });
   return out;
 }
 
 /** A phone of 11 digits as the sheet shows it: ০১৭১১-২২৩৩৪৪. */
 export function phoneText(phone: string): string {
   return banglaDigits(phone.length === 11 ? `${phone.slice(0, 5)}-${phone.slice(5)}` : phone);
+}
+
+/** Words that ask for someone's phone (D237): ফোন, মোবাইল, contact, and নম্বর or number with their endings. */
+const PHONE_STEMS = ["ফোন", "phone", "fon", "মোবাইল", "mobile", "কন্টাক্ট", "contact"].map(nfc);
+const NUMBER_STEMS = ["নম্বর", "নাম্বার", "নাম্বর", "number", "nambar", "nombor", "nomber"].map(nfc);
+
+/** Whether a text asks for a phone: a phone word, or নম্বর / number ("tejgaon auto care er number ta den"; D237). */
+export function asksPhone(text: string): boolean {
+  return normalize(text).tokens.some((token) =>
+    [...PHONE_STEMS, ...NUMBER_STEMS].some((stem) => token.startsWith(stem)),
+  );
+}
+
+/** The words of a phone question that are not the person's name: the phone and number words (D237). */
+export function phoneWord(token: string): boolean {
+  return [...PHONE_STEMS, ...NUMBER_STEMS].some((stem) => nfc(token).startsWith(stem));
+}
+
+/**
+ * A customer's or supplier's phone, read from the shop's own list (D237): "Shafiqul Islam-এর ফোন নম্বর
+ * ০১৮১১-০০০২০২।", or that the app keeps none for them.
+ */
+export function phoneAnswer(name: string, phone: string | null): string {
+  const digits = phone ? asciiDigits(phone).replace(/[^\d]/g, "") : "";
+  if (!phone || !digits) return `${possessive(name)} ফোন নম্বর অ্যাপে নেই।`;
+  return `${possessive(name)} ফোন নম্বর ${phoneText(digits.length === 11 ? digits : phone.trim())}।`;
 }
 
 /** What staff are told when they ask for a write only the owner may make, and nothing changes (D171). */

@@ -30,6 +30,8 @@ interface ShopPart {
   position: string | null;
   brand: string | null;
   fits: string[];
+  /** The part numbers the app keeps beside the part's ID, for a number said aloud (D237). */
+  numbers?: string[];
 }
 
 /** A sale line in the app's books, for returns (D169), so many days before the tests' now. */
@@ -481,7 +483,7 @@ function catalogOf(shop: Shop): Catalog {
       hostId: part.id,
       name: part.name,
       nameBn: null,
-      partNumbers: [part.id.toUpperCase()],
+      partNumbers: [part.id.toUpperCase(), ...(part.numbers ?? [])],
       category: part.category ?? null,
       brand: part.brand,
       attrs: {},

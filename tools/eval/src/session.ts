@@ -219,6 +219,7 @@ async function readTurn(response: Response, sent: string, started: number): Prom
       .join(" "),
     state,
     slot: state === "CLARIFYING" ? (choices?.slot ?? trace?.questions.at(-1) ?? null) : null,
+    ...(state === "CLARIFYING" && choices ? { options: choices.options.map((option) => option.label) } : {}),
     trace,
     tables,
     cards: events

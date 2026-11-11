@@ -159,3 +159,59 @@ describe("a misheard thousand is a number, never a name (D178)", () => {
     expect(heard.filter((words) => /হাউজার|হাইজার|হাসার|haujar/.test(words))).toEqual([]);
   });
 });
+
+// The first voice run of the test set (D237): the clean-up made a digit said in English a wiper ("ওয়াইন"), the owner's
+// own words ("মালিক হিসেবে") a shop, a rack said as one word ("বিটু তাকে", B-2) a Vitz and a misheard thousand a car.
+describe("a number's words, a rack and the speaker's role are never a name (D237)", () => {
+  /** The test shop's customer the run's "মালিক" was made into. */
+  const alif = { hostId: "c3", name: "Alif Motors", nameBn: null };
+  const unplaced = (text: string, options: { racks?: string[]; keep?: [number, number][] } = {}) =>
+    nearHints({ text, dictionary, customers: [...customers, alif], suppliers, ...options }).map(
+      (hint) => hint.heard,
+    );
+
+  it.each([
+    {
+      style: "Bangla",
+      text: "কেওয়াইবি থ্রি জিরো জিরো ওয়ান ওয়াইন ফাইভ নম্বরের শক অ্যাবজার্ভারের দাম",
+      word: "ওয়াইন",
+    },
+    {
+      style: "Banglish",
+      text: "kyb three zero zero one wine five number er shock absorber er dam",
+      word: "wine",
+    },
+  ])("a misheard digit beside other digits ($style)", ({ text, word }) => {
+    expect(unplaced(text).filter((heard) => heard.split(" ").includes(word))).toEqual([]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "ডিনাই শূন্য এক পঞ্চাশ পার্টা কোন কোনটা লাগে", word: "ডিনাই" },
+    { style: "Banglish", text: "dinai shunno ek ponchash part ta kon konta lage", word: "dinai" },
+  ])("the words of a part number said aloud, kept as they are ($style)", ({ text, word }) => {
+    expect(unplaced(text, { keep: [[0, 4]] }).filter((heard) => heard.includes(word))).toEqual([]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "বিটু তাকে কি কি মাল আছে", word: "বিটু" },
+    { style: "Banglish", text: "bitu take ki ki mal ache", word: "bitu" },
+  ])("a rack said as one word, the shop's or not ($style)", ({ text, word }) => {
+    for (const racks of [["B-2", "C-1"], []])
+      expect(unplaced(text, { racks }).filter((heard) => heard.includes(word))).toEqual([]);
+  });
+
+  it.each([
+    { style: "Bangla", text: "মালিক হিসেবে ওয়ান সেভেন এইড জিরো পাটের খুচরা দাম এক হাজার টাকা করুন" },
+    { style: "Banglish", text: "malik hishebe one seven eid zero part er khuchra dam ek hajar taka korun" },
+  ])("the speaker's role said before the card ($style)", ({ text }) => {
+    expect(unplaced(text).filter((heard) => /মালিক|malik/.test(heard))).toEqual([]);
+  });
+
+  it.each([
+    "সিক্স পি কে পার্টা দুই হাজার এক থেকে দুইশ হারজার ছয় সালের করলাতেও লাগে",
+    "মদীনা অটো ওয়ার্কসকে চারটা হেডলাইট প্রতিটি পাঁচ হাজতো পঞ্চাশ টাকা দিয়ে নগদে বিক্রি করো",
+    "six p k part ta dui hajar ek theke duisho harjar choy saler corolla teo lage",
+  ])("a thousand misheard in the run: %s", (text) => {
+    expect(unplaced(text).filter((heard) => /হারজার|হাজতো|harjar/.test(heard))).toEqual([]);
+  });
+});

@@ -152,8 +152,8 @@
   {
     "target_concept": "part_type",
     "target_value": "Radiator Cap",
-    "bn": ["রেডিয়েটর ক্যাপ", "রেডিয়েটরের ঢাকনা"],
-    "latin": ["radiator cap"]
+    "bn": ["রেডিয়েটর ক্যাপ", "রেডিয়েটরের ঢাকনা", "রেডিয়েটর কাপ"],
+    "latin": ["radiator cap", "radiator kap"]
   },
   {
     "target_concept": "part_type",
