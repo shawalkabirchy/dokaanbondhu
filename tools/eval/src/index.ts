@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { pcmToWav } from "@dokaanbondhu/core";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { toPcm16k } from "./audio";
+import { fileToPcm16k, toPcm16k } from "./audio";
 import {
   keptConversations,
   loadClipLabels,
@@ -14,7 +15,9 @@ import {
   type ClipStorage,
 } from "./clips";
 import { loadItems, type Item } from "./items";
+import { localClips } from "./recordings";
 import { runItems, type LoadClip, type RunState } from "./run";
+import { serveTranscripts } from "./transcripts";
 import { cardsMarkdown, SPEAKERS, speakerSheet } from "./cards";
 import { buildReport, renderMarkdown, scoreItem } from "./score";
 import { Session, type EvalEnv } from "./session";
@@ -27,6 +30,9 @@ import { Session, type EvalEnv } from "./session";
 // npm run eval -- clips [--since yyyy-mm-dd]   the test shop's kept voice clips replayed and scored (D149)
 // npm run eval -- cards   task-cards.md and the speakers' printable sheets (sheets/S1.html to S5.html), from items.jsonl
 //                         (D184); then run Prettier on task-cards.md
+// npm run eval -- upload [--dir <folder>] [--ids <ids>]   the speakers' recordings (one folder per speaker, files named by
+//                         card code) to the private bucket as <shop_id>/eval/<id>.wav, 16 kHz mono (D235)
+// npm run eval -- transcripts [--dir <folder>] [--port 3300]   the page for typing what each clip says (D236)
 // The held-out split is for the final run only (build step 9); the default is the open split. Voice recordings are
 // read from the private recordings bucket with the project's secret key and converted with ffmpeg (spec 18.4).
 
@@ -47,6 +53,12 @@ const envSchema = z.object({
   EVAL_STAFF_EMAIL: z.string().min(3),
   EVAL_STAFF_PASSWORD: z.string().min(1),
   EVAL_SHOP_ID: z.uuid().optional(), // the test shop, whose recordings are under <shop_id>/eval/
+});
+
+const uploadEnvSchema = z.object({
+  SUPABASE_URL: z.url(),
+  SUPABASE_SECRET_KEY: z.string().min(20),
+  EVAL_SHOP_ID: z.uuid(),
 });
 
 function latestRun(): string {
@@ -86,6 +98,8 @@ async function main() {
       file: { type: "string" },
       as: { type: "string", default: "owner" },
       since: { type: "string" },
+      dir: { type: "string" },
+      port: { type: "string", default: "3300" },
     },
   });
   const all = loadItems(join(root, "items.jsonl"));
@@ -110,8 +124,61 @@ async function main() {
     print(`written: task-cards.md and sheets/${SPEAKERS.join(", ")}.html`);
     return;
   }
+  // The recordings folder: D:\cap\eval-recordings by default (D235), beside the repo, so no path needs typing (Git Bash
+  // drops the backslashes of a typed Windows path).
+  const recordings = resolve(values.dir ?? join(root, "..", "..", "..", "eval-recordings"));
+  if ((command === "transcripts" || command === "upload") && !existsSync(recordings)) {
+    throw new Error(
+      `no recordings folder at ${recordings}; leave out --dir for D:\\cap\\eval-recordings, or in Git Bash write it ` +
+        "with forward slashes (D:/cap/eval-recordings)",
+    );
+  }
+  if (command === "transcripts") {
+    const port = Number(values.port);
+    const server = serveTranscripts(join(root, "items.jsonl"), recordings, port);
+    server.on("listening", () =>
+      print(
+        `The transcript page: http://127.0.0.1:${port} (clips from ${recordings}). ` +
+          "Ctrl+C stops it; each Enter saves into items.jsonl.",
+      ),
+    );
+    server.on("error", (error: NodeJS.ErrnoException) => {
+      console.error(
+        error.code === "EADDRINUSE"
+          ? `Port ${port} is already in use: the page is probably still open in another terminal. Use that one ` +
+              `(http://127.0.0.1:${port}), stop it with Ctrl+C there, or start this one with --port ${port + 1}.`
+          : error.message,
+      );
+      process.exit(1);
+    });
+    return;
+  }
+  if (command === "upload") {
+    const env = uploadEnvSchema.parse(process.env);
+    const { found, problems } = localClips(recordings, all);
+    for (const problem of problems) print(`  ! ${problem}`);
+    const ids = values.ids?.split(",");
+    const chosen = [...found].filter(([id]) => !ids || ids.includes(id));
+    const bucket = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    }).storage.from("recordings");
+    let seconds = 0;
+    for (const [id, path] of chosen) {
+      const pcm = await fileToPcm16k(path);
+      const { error } = await bucket.upload(`${env.EVAL_SHOP_ID}/eval/${id}.wav`, pcmToWav(pcm), {
+        contentType: "audio/wav",
+        upsert: true,
+      });
+      if (error) throw new Error(`uploading ${id}: ${error.message}`);
+      seconds += pcm.byteLength / 32_000;
+    }
+    print(
+      `uploaded ${chosen.length} recordings (${(seconds / 60).toFixed(1)} min of speech) to ${env.EVAL_SHOP_ID}/eval/`,
+    );
+    return;
+  }
   if (command !== "run" && command !== "say" && command !== "clips")
-    throw new Error(`unknown command ${command}; use run, score, say, clips or cards`);
+    throw new Error(`unknown command ${command}; use run, score, say, clips, cards, upload or transcripts`);
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
@@ -190,7 +257,7 @@ async function main() {
   if (command === "say") {
     if (!values.file) throw new Error("say needs --file <audio file>");
     const session = values.as === "staff" ? sessions.staff : sessions.owner;
-    const pcm = await toPcm16k(readFileSync(values.file));
+    const pcm = await fileToPcm16k(values.file);
     print(`sending ${(pcm.byteLength / 32_000).toFixed(1)} s of audio as a voice question, in real time`);
     const turn = await session.voice(await session.newConversation("voice"), pcm, { realTime: true });
     print(`heard:  ${turn.transcript ?? "(no transcript)"}`);
