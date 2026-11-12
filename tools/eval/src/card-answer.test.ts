@@ -32,6 +32,44 @@ const v119 = itemSchema.parse({
   script: { payment: "বাকিতে", confirm: "yes" },
 });
 
+const v116 = itemSchema.parse({
+  id: "v-116",
+  channel: "voice",
+  split: "open",
+  kind: "write",
+  as: "staff",
+  task_card: "Add a new paikari (garage) customer Al-Amin Auto Garage, phone 01755-201101",
+  task_card_bn: "নতুন কাস্টমার যোগ করুন: আল-আমিন অটো গ্যারেজ, পাইকারি, ফোন ০১৭৫৫-২০১১০১",
+  expected: {
+    action: "add_customer",
+    slots: {
+      name: "Al-Amin Auto Garage",
+      name_bn: "আল-আমিন অটো গ্যারেজ",
+      party_type: "garage",
+      phone: "01755-201101",
+    },
+  },
+  script: { confirm: "yes", new_check: "নতুন হিসেবে যোগ করুন" },
+});
+const v134 = itemSchema.parse({
+  id: "v-134",
+  channel: "voice",
+  split: "open",
+  kind: "write",
+  as: "owner",
+  task_card:
+    "As the owner: sell 4 × right headlight for a 2017 Axio to Madina Auto Works at 5,850 taka each for cash",
+  task_card_bn:
+    "মালিক হিসেবে: মদিনা অটো ওয়ার্কসকে চারটা এক্সিও ২০১৭-এর ডান দিকের হেডলাইট প্রতিটা ৫,৮৫০ টাকা দরে নগদে বিক্রি করুন",
+  expected: {
+    action: "sale",
+    slots: { customer: "Madina Auto Works", quantity: 4, payment: "cash", unit_price: 5850 },
+    part: { part_type: "Headlight", vehicle: "Toyota Axio", year: 2017, position: "right" },
+    part_key: "LOC-HEA-1037",
+  },
+  script: { confirm: "yes" },
+});
+
 describe("a question answered from the card (D237)", () => {
   it("picks the one button whose words are on the card", () => {
     expect(
@@ -56,5 +94,17 @@ describe("a question answered from the card (D237)", () => {
     expect(cardAnswer(v119, { slot: "position" })).toBeNull();
     expect(cardAnswer(v205, { slot: "vehicle" })).toBeNull();
     expect(cardAnswer(v205, { slot: null })).toBeNull();
+  });
+
+  it("says the phone and the price the card names, a number written with commas whole (D239)", () => {
+    expect(cardAnswer(v116, { slot: "new_phone" })).toBe("01755-201101");
+    expect(cardAnswer(v134, { slot: "unit_price" })).toBe("5850");
+    expect(cardAnswer(v134, { slot: "quantity" })).toBe("4");
+  });
+
+  it("says the car in words when no button has it (D239)", () => {
+    expect(cardAnswer(v119, { slot: "vehicle", options: ["এক্সিও", "প্রিমিও", "ফিল্ডার"] })).toBe(
+      "Toyota RAV4",
+    );
   });
 });

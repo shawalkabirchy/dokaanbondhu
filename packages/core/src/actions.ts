@@ -1016,8 +1016,25 @@ const word = (text: string) => normalize(text).tokens.join(" ");
 const LINE_PRICE = new Set(["টাকায়", "টাকাই", "টাকাতে", "takay", "takai", "takaye"].map(word));
 const PRICE_DAME = new Set(["দামে", "dame"].map(word));
 /** The price of one: "১৫০০ টাকা করে", "1500 taka kore", "প্রতি সেট ১৫০০ টাকা". */
-const EACH_AFTER = new Set(["করে", "kore", "korey", "koira"].map(word));
-const EACH_BEFORE = new Set(["প্রতি", "প্রতিটা", "proti", "protita", "per"].map(word));
+const EACH_AFTER = new Set(["করে", "kore", "korey", "koira", "দরে", "dore", "dorey"].map(word)); // দরে: "at the rate", D239
+const EACH_BEFORE = new Set(
+  [
+    "প্রতি",
+    "প্রতিটা",
+    "per",
+    "proti",
+    "protita",
+    // each in its other forms, as the speakers said it (D239): "প্রতিটি হইতেছে … টাকা দিয়ে"
+    "প্রতিটি",
+    "প্রতিটায়",
+    "প্রত্যেকটা",
+    "প্রত্যেকটি",
+    "protiti",
+    "prottekta",
+    "prottekti",
+    "each",
+  ].map(word),
+);
 const TAKA = new Set(["টাকা", "taka", "tk", "৳"].map(word));
 
 /**
@@ -1048,10 +1065,12 @@ export function salePriceOf(text: string): { amount: number; each: boolean } | n
       if (amount !== null) return { amount, each: true };
     }
     if (EACH_BEFORE.has(token)) {
-      // "প্রতি সেট ১৫০০ টাকা": a number then টাকা within the next few words
+      // "প্রতি সেট ১৫০০ টাকা": a number then টাকা within the next few words; the number right before টাকা when
+      // words come between ("প্রতিটি হইতেছে ৫৮৫০ টাকা দিয়ে", D239)
       const rest = tokens.slice(index + 1, index + 8);
       const taka = rest.findIndex((item) => TAKA.has(item) || LINE_PRICE.has(item));
-      const amount = taka > 0 ? parseAmount(rest.slice(0, taka).join(" ")) : null;
+      const amount =
+        taka > 0 ? (parseAmount(rest.slice(0, taka).join(" ")) ?? runBefore(index + 1 + taka)) : null;
       if (amount !== null) return { amount, each: true };
     }
   }
@@ -1059,14 +1078,16 @@ export function salePriceOf(text: string): { amount: number; each: boolean } | n
 }
 
 /**
- * Whether a sale's request sets a price at all, read or not (D178): টাকায় or টাকাতে, or টাকা করে. A price whose
- * amount was misheard is then asked, never left out.
+ * Whether a sale's request sets a price at all, read or not (D178): টাকায় or টাকাতে, or টাকা করে, or প্রতি … টাকা
+ * (D239). A price whose amount was misheard is then asked, never left out nor swapped for the shop's own.
  */
 export function saysSalePrice(text: string): boolean {
   const tokens = normalize(text).tokens;
   return tokens.some(
     (token, index) =>
-      LINE_PRICE.has(token) || (EACH_AFTER.has(token) && index > 0 && TAKA.has(tokens[index - 1]!)),
+      LINE_PRICE.has(token) ||
+      (EACH_AFTER.has(token) && index > 0 && TAKA.has(tokens[index - 1]!)) ||
+      (EACH_BEFORE.has(token) && tokens.slice(index + 1, index + 8).some((item) => TAKA.has(item))),
   );
 }
 

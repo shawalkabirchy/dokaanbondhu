@@ -589,6 +589,38 @@ describe("a sale's price said (D176, D177)", () => {
   });
 });
 
+// The first voice run (D239): "প্রতিটি … টাকা দিয়ে" and the card's own "টাকা দরে" are the price of one too; a price
+// said that cannot be read is asked, never swapped for the shop's own.
+describe("each, said other ways (D239)", () => {
+  it.each([
+    ["চারটা হেডলাইট প্রতিটি পাঁচ হাজার আটশো পঞ্চাশ টাকা দিয়ে নগদে বিক্রি করো", 5850],
+    ["charta headlight protiti pach hajar atsho ponchash taka diye nogode bikri koro", 5850],
+    ["প্রতিটি হইতেছে ৫৮৫০ টাকা দিয়ে নগদে বিক্রি করা", 5850],
+    ["protiti hoitese 5850 taka diye nogode bikri kora", 5850],
+    ["চারটা হেডলাইট প্রতিটা ৫,৮৫০ টাকা দরে নগদে বিক্রি করুন", 5850],
+    ["charta headlight 5850 taka dore nogode bikri korun", 5850],
+    ["প্রত্যেকটা ১৫০০ টাকা দাও", 1500],
+    ["each 1500 taka dao", 1500],
+  ] as const)("%s sets %d for one", (text, amount) => {
+    expect(salePriceOf(text)).toEqual({ amount, each: true });
+  });
+
+  it.each([
+    "প্রতিটি হইতেছে ঝাপসা টাকা দিয়ে নগদে বিক্রি করা",
+    "protiti hoitese jhapsa taka diye nogode bikri kora",
+  ])("%s says a price it cannot read, so it is asked", (text) => {
+    expect(salePriceOf(text)).toBeNull();
+    expect(saysSalePrice(text)).toBe(true);
+  });
+
+  it.each(["রহিম মোটরসকে দুই সেট প্যাড প্রতিটি নগদে দাও", "Rahim Motors ke dui set pad bakite dao"])(
+    "%s says no price",
+    (text) => {
+      expect(saysSalePrice(text)).toBe(false);
+    },
+  );
+});
+
 describe("a price misheard (D178)", () => {
   it.each([
     [

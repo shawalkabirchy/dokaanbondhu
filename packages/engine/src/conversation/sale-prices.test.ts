@@ -110,6 +110,20 @@ for (const { app, bangla, banglish } of PARTS) {
       expect(reply.confirm?.text).toMatch(/প্রতি সেট ১,৫০০ টাকা, ৩,০০০ টাকা, বাকিতে/);
       expect(line(shop)).toMatchObject({ quantity: 2, unit_price_taka: 1500 });
     });
+
+    // The first voice run (D239): the shop's own price went on the sheet for a price said with "প্রতিটি".
+    it.each(
+      STYLES.flatMap((style) => [
+        { style, price: { bn: "প্রতিটি হইতেছে ১৫০০ টাকা দিয়ে", en: "protiti hoitese 1500 taka diye" } },
+        { style, price: { bn: "১৫০০ টাকা দরে", en: "1500 taka dore" } },
+      ]),
+    )("“$price.bn” is one's too ($style)", async ({ style, price }) => {
+      const shop = shopFor(app);
+      const request = said(style, partOf(style), price);
+      const reply = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+      expect(reply.confirm?.text, request.text).toMatch(/প্রতি সেট ১,৫০০ টাকা, ৩,০০০ টাকা, বাকিতে/);
+      expect(line(shop)).toMatchObject({ quantity: 2, unit_price_taka: 1500 });
+    });
   });
 }
 
@@ -240,6 +254,20 @@ describe("a price misheard (GearGrid, D178)", () => {
     await shop.say(asked.state, { text: style === "Bangla" ? "হাজার পাঁচশ টাকা" : "hajar pachsho taka" });
     expect(line(shop)).toMatchObject({ unit_price_taka: 1500 });
   });
+
+  it.each(STYLES)(
+    "a price said with “প্রতিটি” and not read is asked, not the shop's own (D239; %s)",
+    async (style) => {
+      const shop = shopFor(geargrid);
+      const request = said(style, part(style), {
+        bn: "প্রতিটি হইতেছে ঝাপসা টাকা দিয়ে",
+        en: "protiti hoitese jhapsa taka diye",
+      });
+      const asked = await shop.say(fresh(), { text: request.text }, saleCall(request.args));
+      expect(asked.reply).toMatch(/প্রতি সেট দাম কত\?$/);
+      expect(shop.calls).toHaveLength(0);
+    },
+  );
 
   it.each(STYLES)("a price whose amount is not read is asked, never left out (%s)", async (style) => {
     const shop = shopFor(geargrid);
