@@ -125,6 +125,24 @@ export function parseYearRange(text: string): YearRange | null {
   return to === null || to >= from ? { from, to } : null;
 }
 
+/** Words between two years of a range: থেকে, theke, to, পর্যন্ত (D240). */
+const RANGE_WORDS = new Set(["থেকে", "theke", "teke", "hote", "হতে", "to", "till"].map(nfc));
+const UNTIL_WORDS = new Set(["পর্যন্ত", "porjonto", "projonto"].map(nfc));
+
+/**
+ * A year range said in words, the answer to a year button typed or said (D240): "2012 theke 2017", "২০১২ থেকে
+ * ২০১৭", "দুই হাজার বারো থেকে দুই হাজার সতেরো পর্যন্ত". Each side must read as a whole year, the second not before the
+ * first. Null for anything else; a written range ("2012-2017") is parseYearRange's.
+ */
+export function saidYearRange(tokens: readonly string[], now: Date = new Date()): YearRange | null {
+  const words = tokens.filter((token) => !UNTIL_WORDS.has(nfc(token)));
+  const cut = words.findIndex((token) => RANGE_WORDS.has(nfc(token)));
+  if (cut <= 0 || cut >= words.length - 1) return null;
+  const from = parseYear(words.slice(0, cut), { now });
+  const to = parseYear(words.slice(cut + 1), { now });
+  return from !== null && to !== null && to >= from ? { from, to } : null;
+}
+
 /**
  * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
  * হাজত (custody) is never a number by itself.

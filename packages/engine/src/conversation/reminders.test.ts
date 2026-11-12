@@ -143,3 +143,50 @@ describe("what is not a reminder question (GearGrid, D194)", () => {
     }
   });
 });
+
+// Found while typing the promotional video's lines (5 Nov, D240): after a part question, "kar baki purono?" was taken
+// for a follow-up asking for a used (পুরাতন) part, so the old dues were never said.
+describe("a reminder question right after a part question (D240)", () => {
+  /** Each app's part, said as its own words name it, that one search finds at once. */
+  const PART: Record<string, { bn: [string, object]; en: [string, object] }> = {
+    GearGrid: {
+      bn: [
+        "ফিল্ডার ২০১৫-এর ব্রেক প্যাড আছে?",
+        { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০১৫" },
+      ],
+      en: ["fielder 2015 er brake pad ache?", { part_type: "brake pad", vehicle: "fielder", year: "2015" }],
+    },
+    "shop B": {
+      bn: [
+        "ফিল্ডার ২০১৫-এর ব্রেক প্যাড আছে?",
+        { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০১৫" },
+      ],
+      en: ["fielder 2015 er brake pad ache?", { part_type: "brake pad", vehicle: "fielder", year: "2015" }],
+    },
+    "an app with its own words": {
+      bn: [
+        "Tucson-এর Platinum ব্রেক প্যাড আছে?",
+        { part_type: "ব্রেক প্যাড", vehicle: "Tucson", quality: "Platinum" },
+      ],
+      en: [
+        "tucson er platinum brake pad ache?",
+        { part_type: "brake pad", vehicle: "tucson", quality: "platinum" },
+      ],
+    },
+  };
+  for (const app of [geargrid, shopB, ownWords]) {
+    it.each(ASK)(`the old dues, not a used part (${app.name}, $style)`, async (said) => {
+      const shop = connect({ ...app, customerDue: 5000, sales: [sale(app, "s1", 3000, 45)] });
+      const [text, query] = said.style === "Bangla" ? PART[app.name]!.bn : PART[app.name]!.en;
+      const part = await shop.say(fresh(), { text }, [
+        { calls: [{ name: "find_parts", arguments: { ...query } }] },
+        { text: "" },
+      ]);
+      expect(part.asked, part.reply).toBeUndefined();
+      const old = await shop.say(part.state, { text: said.old });
+      expect(old.reply).toMatch(/^১ জনের বাকি ৩০ দিনের বেশি পুরোনো/);
+      expect(old.trace.llm_calls).toBe(0);
+      expect(old.trace.tool_calls.map((call) => call.name)).toEqual(["get_reminders"]);
+    });
+  }
+});

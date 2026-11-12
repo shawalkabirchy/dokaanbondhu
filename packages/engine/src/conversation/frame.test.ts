@@ -1,6 +1,6 @@
 import { buildDictionary } from "@dokaanbondhu/core";
 import { describe, expect, it } from "vitest";
-import { answerFrame, asking, correctedSlot, isOpen, newFrame, splitCorrection } from "./frame";
+import { answerFrame, asking, correctedSlot, followUpSlot, isOpen, newFrame, splitCorrection } from "./frame";
 import { canTransition, transition, TransitionRefused } from "./state";
 
 const dictionary = buildDictionary();
@@ -105,5 +105,28 @@ describe("state machine (spec 9.2)", () => {
     expect(canTransition("CONFIRMING", "EXECUTING")).toBe(true);
     expect(canTransition("IDLE", "EXECUTING")).toBe(false);
     expect(() => transition("LISTENING", "CONFIRMING")).toThrow(TransitionRefused);
+  });
+});
+
+describe("a short follow-up is never a dues question (D240)", () => {
+  const now = new Date("2026-11-12T12:00:00+06:00");
+  it.each([
+    "কার বাকি পুরোনো?",
+    "kar baki purono?",
+    "কী কী কম আছে?",
+    "ki ki kom ache?",
+    "রহিমের বাকি?",
+    "rahim er baki?",
+  ])("%s is no follow-up", (text) => {
+    expect(followUpSlot(text, dictionary, now)).toBeNull();
+  });
+
+  it.each([
+    ["পুরাতনটা?", "quality"],
+    ["purono ta?", "quality"],
+    ["পেছনেরটা?", "position"],
+    ["pechoner ta?", "position"],
+  ] as const)("%s still asks the last part again with one detail changed", (text, slot) => {
+    expect(followUpSlot(text, dictionary, now)?.slot).toBe(slot);
   });
 });

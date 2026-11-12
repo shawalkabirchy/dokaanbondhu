@@ -210,3 +210,64 @@ describe("no question is asked twice in a request, on any app (D167)", () => {
     });
   }
 });
+
+// Found while typing the promotional video's lines (5 Nov, D240): at "Kon bochhorer Fielder?", "2012 theke 2017" was
+// read as the one year 2012, which both generations share, so the question came again. A range said, in digits or
+// words, picks the button with exactly those years. Shop B's Axio has generations by years too; the app with its own
+// words keeps no years for the Pajero and one generation of the Tucson, so it asks no year.
+describe("a year range typed or said instead of tapped (D240)", () => {
+  const RANGES = [
+    {
+      style: "Bangla",
+      text: "ব্রেক প্যাড আছে?",
+      part: "ব্রেক প্যাড",
+      newer: "২০১২ থেকে ২০১৭",
+      older: "দুই হাজার ছয় থেকে দুই হাজার বারো পর্যন্ত",
+    },
+    {
+      style: "Banglish",
+      text: "brake pad ache?",
+      part: "brake pad",
+      newer: "2012 theke 2017",
+      older: "dui hajar choy theke dui hajar baro porjonto",
+    },
+  ] as const;
+
+  it.each(RANGES)(
+    "GearGrid: the Fielder 2012–2017 in digits, though 2012 is in both ($style)",
+    async (said) => {
+      const shop = connect(geargrid);
+      const first = await shop.say(fresh(), { text: said.text }, findCall({ part_type: said.part }));
+      const fielder = await shop.say(first.state, tap(first, /ফিল্ডার/));
+      expect(fielder.choices?.options.map((option) => option.label)).toEqual(["2006–2012", "2012–2017"]);
+      const year = await shop.say(fielder.state, { text: said.newer });
+      expect(year.asked, year.reply).toBeUndefined();
+      expect(year.found).toEqual(["PAD-NEW"]);
+      expect(year.state.context.vehicle).toMatchObject({
+        model: "Toyota Fielder",
+        years: { from: 2012, to: 2017 },
+      });
+    },
+  );
+
+  it.each(RANGES)("GearGrid: the older Fielder said in words, both its kinds ($style)", async (said) => {
+    const shop = connect(geargrid);
+    const first = await shop.say(fresh(), { text: said.text }, findCall({ part_type: said.part }));
+    const fielder = await shop.say(first.state, tap(first, /ফিল্ডার/));
+    const year = await shop.say(fielder.state, { text: said.older });
+    expect(year.asked, year.reply).toBeUndefined();
+    expect(year.reply).toMatch(/^ফিল্ডার ২০০৬-এর সামনের ব্রেক প্যাড দুই রকম আছে/);
+    expect(year.state.context.vehicle).toMatchObject({ years: { from: 2006, to: 2012 } });
+  });
+
+  it.each(RANGES)("shop B: the Axio 2012–2017, both its kinds ($style)", async (said) => {
+    const shop = connect(shopB);
+    const first = await shop.say(fresh(), { text: said.text }, findCall({ part_type: said.part }));
+    const axio = await shop.say(first.state, tap(first, /^Axio$/));
+    expect(axio.choices?.options.map((option) => option.label)).toContain("2012–2017");
+    const year = await shop.say(axio.state, { text: said.newer });
+    expect(year.asked, year.reply).toBeUndefined();
+    expect(year.reply).toMatch(/^এক্সিও ২০১২-এর সামনের ব্রেক প্যাড দুই রকম আছে/);
+    expect(year.state.context.vehicle).toMatchObject({ years: { from: 2012, to: 2017 } });
+  });
+});

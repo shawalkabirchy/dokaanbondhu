@@ -7,6 +7,7 @@ import {
   parseEngineCode,
   parseYear,
   parseYearRange,
+  saidYearRange,
   yearRangeText,
 } from "./numbers";
 import { checkQuantity, parseQuantity } from "./quantity";
@@ -211,4 +212,26 @@ describe("numbers in answers (spec 10.8)", () => {
     expect(quantity(3, "piece")).toBe("৩টা");
     expect(quantity(1.5, "liter")).toBe("১.৫ লিটার");
   });
+});
+
+describe("a year range said (D240)", () => {
+  const now = new Date("2026-11-12T12:00:00+06:00");
+  const read = (text: string) => saidYearRange(normalize(text).tokens, now);
+
+  it.each([
+    ["২০১২ থেকে ২০১৭", 2012, 2017],
+    ["2012 theke 2017", 2012, 2017],
+    ["দুই হাজার ছয় থেকে দুই হাজার বারো পর্যন্ত", 2006, 2012],
+    ["dui hajar choy theke dui hajar baro porjonto", 2006, 2012],
+    ["2012 to 2017", 2012, 2017],
+  ] as const)("%s is %d to %d", (text, from, to) => {
+    expect(read(text)).toEqual({ from, to });
+  });
+
+  it.each(["২০১৭ থেকে ২০১২", "2012", "dhaka theke 2017", "নবাবপুর থেকে আসলো", "2012 theke"])(
+    "%s is none",
+    (text) => {
+      expect(read(text)).toBeNull();
+    },
+  );
 });

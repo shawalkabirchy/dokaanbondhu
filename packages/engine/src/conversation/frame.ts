@@ -7,9 +7,12 @@ import {
   parseAmount,
   partNumberBySound,
   rackSaid,
+  reminderCueOf,
   parseQuantity,
   parseYear,
   parseYearRange,
+  saidYearRange,
+  yearRangeText,
   resolveCustomer,
   NEW_PARTY,
   saysNewParty,
@@ -236,8 +239,26 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
   if (frame.offers?.some((offer) => offer.value === NEW_PARTY) && saysNewParty(text)) {
     value = NEW_PARTY; // "নতুন", the new-name button said (D173)
   } else if (slot === "year" || slot === "fit_year") {
-    const year = answeredYear(tokens, input.others ?? [], input.now);
-    if (year !== null) value = String(year);
+    // A range said ("2012 theke 2017", "২০১২ থেকে ২০১৭"): the year button with exactly those years, so two generations
+    // that share a year stay apart; a fitment's year is the range's first (D240).
+    const range = saidYearRange(tokens, input.now);
+    const button = range && frame.offers?.find((offer) => offer.value === yearRangeText(range));
+    if (button) {
+      setSlot(frame, slot, {
+        value: button.value,
+        display: button.label,
+        status: "understood",
+        source: "user",
+      });
+      return slot;
+    }
+    const year = range
+      ? slot === "year"
+        ? null
+        : range.from
+      : answeredYear(tokens, input.others ?? [], input.now);
+    if (range && slot === "year") value = yearRangeText(range);
+    else if (year !== null) value = String(year);
   } else if (slot === "quantity") {
     const quantity = parseQuantity(tokens);
     if (quantity) value = quantity;
@@ -307,6 +328,11 @@ export function answerFrame(frame: RequestFrame, input: FrameAnswerInput): strin
 }
 
 /** Words that carry no value in a short follow-up: "pechoner ta?", "আর জেনুইনটা?". */
+/** Words of a due, never a part's detail in a follow-up (D240). */
+const DUE_WORDS = new Set(
+  ["বাকি", "বাকী", "baki", "baaki", "due"].map((word) => normalize(word).tokens.join(" ")),
+);
+
 const FOLLOW_UP_FILLER = new Set([
   "ta",
   "ti",
@@ -331,8 +357,11 @@ export function followUpSlot(
   dictionary: Dictionary,
   now: Date,
 ): { slot: "year" | "position" | "quality" | "brand"; value: string } | null {
+  // A question about dues or the reminders is never one about the last part: "kar baki purono?" after a part question
+  // had its পুরোনো (old dues) taken for a used part (D240).
+  if (reminderCueOf(text)) return null;
   const kept = normalize(text, dictionary.variants).tokens.filter((token) => !FOLLOW_UP_FILLER.has(token));
-  if (!kept.length || kept.length > 3) return null;
+  if (!kept.length || kept.length > 3 || kept.some((token) => DUE_WORDS.has(token))) return null;
   const rest = kept.join(" ");
   // A part or car matched surely (0.85 or more) makes it a new request; a weak match ("pechoner" is also in "pechoner
   // light", a tail light) does not.
