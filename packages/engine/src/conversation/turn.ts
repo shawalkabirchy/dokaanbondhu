@@ -700,6 +700,9 @@ export async function runTurn(
     state.context = { ...state.context };
     delete state.context.customer;
   }
+  // The car remembered from the user's own earlier part questions, as the turn starts: a search the model makes in
+  // this turn with a car nobody said must not make that car the user's (D241).
+  const carBefore = state.context.vehicle?.model ?? null;
   // DokaanBondhu's own rack action has no capability row, so its saved frame comes back without the ID (D199).
   if (state.frame && !state.frame.capabilityId && state.frame.intent === ownRackCapability().name)
     state.frame = { ...state.frame, capabilityId: OWN_RACK_ID };
@@ -1332,6 +1335,25 @@ export async function runTurn(
    * A write's one item without the part type, car, year, quality or side the request itself says: the request's own
    * words complete it, as they complete a part search (D118, D148). The model may leave one out.
    */
+  /**
+   * Whether the user named this car (D241): its words in what they said now or in the request an answer finishes, or
+   * the same car the matcher heard there, or the car remembered from their own last part question (D125).
+   */
+  const carSaid = (value: unknown): boolean => {
+    const words = normalize(String(value ?? ""), deps.dictionary.variants).tokens.join(" ");
+    if (!words) return false;
+    const inWords = (said: string) =>
+      ` ${normalize(said, deps.dictionary.variants).tokens.join(" ")} `.includes(` ${words} `);
+    if (inWords(text) || inWords(request)) return true;
+    const car = (said: string) => {
+      const best = matchConcept("vehicle_model", said, [], deps.dictionary).candidates[0];
+      return best && best.score >= 0.7 ? best.value : null;
+    };
+    const named = car(String(value));
+    if (!named) return false;
+    return named === heardSlots.get("vehicle_model") || named === car(request) || named === carBefore;
+  };
+
   const withHeardPart = (args: Record<string, unknown>): Record<string, unknown> => {
     const items = Array.isArray(args.items) ? args.items : null;
     const item = items?.length === 1 && items[0] && typeof items[0] === "object" ? items[0] : null;
@@ -1351,6 +1373,14 @@ export async function runTurn(
     const inText = (value: unknown) =>
       ` ${normalize(text).tokens.join(" ")} `.includes(` ${normalize(String(value)).tokens.join(" ")} `);
     if (!missing("quality") && !heardSlots.has("quality") && !inText(part.quality)) delete part.quality;
+    // A car is the part's only when the user named it in this request, or it is the car of their own last part
+    // question (the remembered car, D125): never one the model read from an earlier answer, as a low-stock list's
+    // X-Trail became a sale's car (D241). Without it, the write asks "কোন গাড়ির?" like any request without a car. A
+    // fitment's two cars keep their own rules (D172, D174).
+    if (!missing("vehicle") && !args.vehicle && !carSaid(part.vehicle)) {
+      delete part.vehicle;
+      delete part.year;
+    }
     const spoken = asciiDigits(text)
       .replace(/[\s\-_./]/g, "")
       .toUpperCase();

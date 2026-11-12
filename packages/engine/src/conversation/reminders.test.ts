@@ -190,3 +190,101 @@ describe("a reminder question right after a part question (D240)", () => {
     });
   }
 });
+
+// Found on the owner's phone (12 Nov, D241): after "স্টকে কি কি কম আছে", "রহিম মোটরস কে এক সেট ব্রেক প্যাড বিক্রি করো"
+// went to a sheet for an X-Trail, a car the model took from the low-stock list; nobody had said it. A sale's car is
+// one the user said, or the car of their own last part question; otherwise "কোন গাড়ির?" is asked.
+describe("a sale's car is one the user named (D241)", () => {
+  /** The car the model put in the call, as it read one from the list, and the words the user would say it in. */
+  const CAR: Record<string, { model: string; bn: string; en: string; query: { bn: object; en: object } }> = {
+    GearGrid: {
+      model: "Toyota Fielder",
+      bn: "ফিল্ডার ২০১৫-এর",
+      en: "fielder 2015 er",
+      query: {
+        bn: { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০১৫" },
+        en: { part_type: "brake pad", vehicle: "fielder", year: "2015" },
+      },
+    },
+    "shop B": {
+      model: "Fielder",
+      bn: "ফিল্ডার ২০১৫-এর",
+      en: "fielder 2015 er",
+      query: {
+        bn: { part_type: "ব্রেক প্যাড", vehicle: "ফিল্ডার", year: "২০১৫" },
+        en: { part_type: "brake pad", vehicle: "fielder", year: "2015" },
+      },
+    },
+    "an app with its own words": {
+      model: "Tucson",
+      bn: "Tucson-এর Platinum",
+      en: "tucson er platinum",
+      query: {
+        bn: { part_type: "ব্রেক প্যাড", vehicle: "Tucson", quality: "Platinum" },
+        en: { part_type: "brake pad", vehicle: "tucson", quality: "platinum" },
+      },
+    },
+  };
+  const SALE = [
+    {
+      style: "Bangla",
+      sale: (car: string) => `রহিম মোটরস কে ${car} এক সেট ব্রেক প্যাড নগদে বিক্রি করো`,
+      word: "নগদে",
+      ask: "কী কী কম আছে?",
+    },
+    {
+      style: "Banglish",
+      sale: (car: string) => `Rahim Motors ke ${car} ek set brake pad nogode bikri koro`,
+      word: "nogode",
+      ask: "ki ki kom ache?",
+    },
+  ] as const;
+  const saleCall = (vehicle: string, word: string): Step[] => [
+    {
+      calls: [
+        {
+          name: "record_sale",
+          arguments: {
+            customer: "Rahim Motors",
+            items: [{ part: { part_type: "brake pad", vehicle }, quantity: "1 set" }],
+            payment: { method_word: word },
+          },
+        },
+      ],
+    },
+  ];
+
+  for (const app of [geargrid, shopB, ownWords]) {
+    const car = CAR[app.name]!;
+    it.each(SALE)(`a car read from a list and never said is asked (${app.name}, $style)`, async (said) => {
+      const shop = connect(lowOne(app));
+      const list = await shop.say(fresh(), { text: said.ask });
+      const sale = await shop.say(list.state, { text: said.sale("") }, saleCall(car.model, said.word));
+      expect(sale.asked, sale.reply).toBe("vehicle");
+      expect(sale.confirm).toBeUndefined();
+    });
+
+    it.each(SALE)(`a car said in the sale is kept (${app.name}, $style)`, async (said) => {
+      const shop = connect(app);
+      const words = said.style === "Bangla" ? car.bn : car.en;
+      const sale = await shop.say(fresh(), { text: said.sale(words) }, saleCall(car.model, said.word));
+      expect(sale.asked, sale.reply).not.toBe("vehicle");
+    });
+
+    it.each(SALE)(
+      `the car of the user's own last part question is kept (${app.name}, $style)`,
+      async (said) => {
+        const shop = connect(app);
+        const words = said.style === "Bangla" ? car.bn : car.en;
+        const query = said.style === "Bangla" ? car.query.bn : car.query.en;
+        const part = await shop.say(fresh(), { text: `${words} ব্রেক প্যাড আছে?` }, [
+          { calls: [{ name: "find_parts", arguments: { ...query } }] },
+          { text: "" },
+        ]);
+        expect(part.asked, part.reply).toBeUndefined();
+        const sale = await shop.say(part.state, { text: said.sale("") }, saleCall(car.model, said.word));
+        expect(sale.asked, sale.reply).not.toBe("vehicle");
+      },
+    );
+  }
+});
