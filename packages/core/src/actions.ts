@@ -558,35 +558,51 @@ function saysFits(tokens: string[]): boolean {
 const ALSO_BN = /(তেও|য়েও|এও|েও)$/u;
 const ALSO_LATIN = new Set(["teo", "eo", "o", "tew", "eow"]);
 
+/** Where a fitment's added car is said: the index of its word, and its words with the word before (D172, D174). */
+function alsoCar(tokens: string[]): { index: number; words: string } | null {
+  const at = tokens.findIndex((token) => FITS.has(token));
+  if (at < 1) return null;
+  const start = Math.max(0, at - 4);
+  const before = tokens.slice(start, at);
+  const found = (index: number, car: string) => ({
+    // A year said with the added car ("premio 2009 teo") is its word, so the car starts one word before it.
+    index: start + (/^\d+$/.test(before[index] ?? "") && index > 0 ? index - 1 : index),
+    words: [index > 0 ? before[index - 1] : null, car].filter(Boolean).join(" "),
+  });
+  for (let index = before.length - 1; index >= 0; index--) {
+    const token = before[index]!;
+    if (ALSO_BN.test(token) && token.replace(ALSO_BN, "")) return found(index, token.replace(ALSO_BN, ""));
+    // "প্রিমিও ২০০৯-তেও": the ending split from a year
+    if (ALSO_BN.test(token) && index > 0) return found(index - 1, before[index - 1]!);
+    if (token === "ও" && index > 0) return found(index - 1, before[index - 1]!.replace(/(তে|য়ে|এ|ে)$/u, ""));
+    if (ALSO_LATIN.has(token) && index > 0) {
+      const car = before[index - 1]!;
+      // "premio te o": the marker split in two
+      if ((car === "te" || car === "e") && index > 1) return found(index - 2, before[index - 2]!);
+      return found(index - 1, car);
+    }
+    const glued = /^(.+?)(teo|eo)$/.exec(token);
+    if (glued && /[a-z]/.test(token)) return found(index, glued[1]!);
+  }
+  return null;
+}
+
 /**
  * The words of the car a fitment adds: the one said with "also" before লাগে ("প্রিমিওতেও", "ফিল্ডারেও", "premio teo",
  * "fielder eo", "premioteo"), with the word before it for a two-word car; null when none is said (D172, D174).
  */
 export function alsoCarWords(text: string): string | null {
+  return alsoCar(normalize(text).tokens)?.words ?? null;
+}
+
+/**
+ * The words said before the car a fitment adds: the part's own, with its car and year ("এক্সিও ২০১০-এর সামনের … ব্রেক
+ * প্যাড" before "ফিল্ডারেও লাগে"); null when nothing comes before it (D242).
+ */
+export function wordsBeforeAlsoCar(text: string): string | null {
   const tokens = normalize(text).tokens;
-  const at = tokens.findIndex((token) => FITS.has(token));
-  if (at < 1) return null;
-  const before = tokens.slice(Math.max(0, at - 4), at);
-  const withWordBefore = (index: number, car: string) =>
-    [index > 0 ? before[index - 1] : null, car].filter(Boolean).join(" ");
-  for (let index = before.length - 1; index >= 0; index--) {
-    const token = before[index]!;
-    if (ALSO_BN.test(token) && token.replace(ALSO_BN, ""))
-      return withWordBefore(index, token.replace(ALSO_BN, ""));
-    // "প্রিমিও ২০০৯-তেও": the ending split from a year
-    if (ALSO_BN.test(token) && index > 0) return withWordBefore(index - 1, before[index - 1]!);
-    if (token === "ও" && index > 0)
-      return withWordBefore(index - 1, before[index - 1]!.replace(/(তে|য়ে|এ|ে)$/u, ""));
-    if (ALSO_LATIN.has(token) && index > 0) {
-      const car = before[index - 1]!;
-      // "premio te o": the marker split in two
-      if ((car === "te" || car === "e") && index > 1) return withWordBefore(index - 2, before[index - 2]!);
-      return withWordBefore(index - 1, car);
-    }
-    const glued = /^(.+?)(teo|eo)$/.exec(token);
-    if (glued && /[a-z]/.test(token)) return withWordBefore(index, glued[1]!);
-  }
-  return null;
+  const car = alsoCar(tokens);
+  return car && car.index > 0 ? tokens.slice(0, car.index).join(" ") : null;
 }
 
 /** The words that ask for a write, and how it is paid. */

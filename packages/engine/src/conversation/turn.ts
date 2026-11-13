@@ -55,6 +55,7 @@ import {
   yearRangeText,
   NEW_PARTY,
   alsoCarWords,
+  wordsBeforeAlsoCar,
   banglaDigits,
   daysBefore,
   lowStockAnswer,
@@ -1354,8 +1355,30 @@ export async function runTurn(
     return named === heardSlots.get("vehicle_model") || named === car(request) || named === carBefore;
   };
 
+  /**
+   * Whether the model's part number can be one (D242): one of the shop's own numbers, or one to three pieces with a
+   * digit ("04465-12592", "KYB 300115"). A sentence never is: the model once wrote the whole fitment request as one.
+   */
+  const looksLikePartNumber = (value: unknown): boolean => {
+    const squash = (said: string) =>
+      asciiDigits(said)
+        .replace(/[\s\-_./]/g, "")
+        .toUpperCase();
+    const number = String(value ?? "").trim();
+    if (!number) return false;
+    if (shopNumbers.some((own) => squash(own) === squash(number))) return true;
+    return number.split(/\s+/).length <= 3 && /\d/.test(asciiDigits(number));
+  };
+
   const withHeardPart = (args: Record<string, unknown>): Record<string, unknown> => {
-    const items = Array.isArray(args.items) ? args.items : null;
+    // The same line repeated is one line (D186), before the request's words complete it: the model sometimes writes
+    // "dui set" as the part listed twice, with no quantity, and the count said was then never read (D242).
+    const items = Array.isArray(args.items)
+      ? (args.items as unknown[]).filter(
+          (entry, index, all) =>
+            all.findIndex((other) => JSON.stringify(other) === JSON.stringify(entry)) === index,
+        )
+      : null;
     const item = items?.length === 1 && items[0] && typeof items[0] === "object" ? items[0] : null;
     // A price change's or a fitment's one part, outside any items (D171, D172).
     const single =
@@ -1386,11 +1409,12 @@ export async function runTurn(
       .toUpperCase();
     if (
       !missing("part_number") &&
-      !spoken.includes(
-        asciiDigits(String(part.part_number))
-          .replace(/[\s\-_./]/g, "")
-          .toUpperCase(),
-      )
+      (!looksLikePartNumber(part.part_number) ||
+        !spoken.includes(
+          asciiDigits(String(part.part_number))
+            .replace(/[\s\-_./]/g, "")
+            .toUpperCase(),
+        ))
     )
       delete part.part_number;
     // A part number said aloud sign by sign is the part (D237): the LLM's own guess at it ("0199", "30101") was dropped
@@ -1456,6 +1480,18 @@ export async function runTurn(
       delete part.vehicle;
       const partYear = parseYear(normalize(String(part.year ?? "")).tokens, { now, bare: true });
       if (year !== null && partYear === year) delete part.year;
+    }
+    // A part the model gave no car and no part number has the car said before the new one, with its year, as the
+    // request says it ("Axio 2010 er … brake pad Fielder eo lage", D242). The new car's own words are left out of it.
+    if (!part.vehicle && !looksLikePartNumber(part.part_number)) {
+      const own = (wordsBeforeAlsoCar(alsoCarWords(said) ? said : text) ?? "").split(" ").filter(Boolean);
+      while (own.length && carOf(own.join(" ")) === also) own.pop();
+      const car = own.length ? carOf(own.join(" ")) : null;
+      if (car) {
+        part.vehicle = car;
+        const ownYear = parseYear(normalize(own.join(" ")).tokens, { now, bare: true });
+        if (ownYear !== null && !part.year) part.year = String(ownYear);
+      }
     }
     const vehicle = args.vehicle;
     const model = typeof vehicle === "string" ? vehicle : (vehicle as { model?: unknown } | undefined)?.model;

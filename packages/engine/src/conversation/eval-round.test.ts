@@ -753,3 +753,56 @@ describe("the findings of 1 Nov (D216)", () => {
     }
   });
 });
+
+describe("the checks of 13 Nov on the main AI (D242)", () => {
+  // Word for word the model's shape in 3 of 32 tries: "dui set" written as the part listed twice, "tin set" three times,
+  // with no quantity, so "কয় সেট?" was asked although the count was said.
+  it.each(APPS)(
+    "the part listed once per set is that many sets, asked nothing ($app.name)",
+    async ({ app, bn, en }) => {
+      for (const [text, part, method, count, sets] of [
+        [`রহিম মোটরসকে ${words(bn)} দুই সেট বাকিতে দাও`, bn, "বাকিতে", 2, /২ সেট/],
+        [`Rahim Motors ke ${words(en)} dui set bakite dao`, en, "bakite", 2, /২ সেট/],
+        [`রহিম মোটরসকে ${words(bn)} তিন সেট বাকিতে দাও`, bn, "বাকিতে", 3, /৩ সেট/],
+        [`Rahim Motors ke ${words(en)} tin set bakite dao`, en, "bakite", 3, /৩ সেট/],
+      ] as const) {
+        const shop = connect(app);
+        const sheet = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", {
+            customer: "Rahim Motors",
+            items: Array.from({ length: count }, () => ({ part })),
+            payment: { method_word: method },
+          }),
+        );
+        expect(sheet.reply, text).not.toMatch(/কয় সেট|একবারে একটা/);
+        expect(sheet.asked, `${text}: ${sheet.reply}`).toBeUndefined();
+        expect(sheet.confirm?.text, text).toMatch(sets);
+      }
+    },
+  );
+
+  it.each(APPS)(
+    "the part listed twice with no count said still asks the count ($app.name)",
+    async ({ app, bn, en }) => {
+      for (const [text, part, method] of [
+        [`রহিম মোটরসকে ${words(bn)} বাকিতে দাও`, bn, "বাকিতে"],
+        [`Rahim Motors ke ${words(en)} bakite dao`, en, "bakite"],
+      ] as const) {
+        const shop = connect(app);
+        const asked = await shop.say(
+          fresh(),
+          { text },
+          call("record_sale", {
+            customer: "Rahim Motors",
+            items: [{ part }, { part }],
+            payment: { method_word: method },
+          }),
+        );
+        expect(asked.asked, `${text}: ${asked.reply}`).toBe("quantity");
+        expect(asked.confirm).toBeUndefined();
+      }
+    },
+  );
+});

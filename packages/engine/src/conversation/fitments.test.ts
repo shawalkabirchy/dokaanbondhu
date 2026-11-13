@@ -313,3 +313,92 @@ describe("the fitment's tool (D172)", () => {
     ]);
   });
 });
+
+// The check of 13 Nov on the main AI (D242): in 4 of 6 Banglish tries the model wrote the whole request as the part's
+// number, and "এই পার্ট নম্বর পাইনি" was said. A sentence is no part number: the part is the request's own words, its
+// car the one said before the car it also fits.
+for (const { app, said, taps, sheet, body } of CASES) {
+  describe(`${app.name}: the whole request as the part's number (D242)`, () => {
+    it.each(said)("the part by its own words all the same ($style)", async ({ text, args }) => {
+      const shop = connect(app);
+      const { vehicle } = args as { vehicle: object };
+      const first = await shop.say(fresh(), { text }, fitCall({ part: { part_number: text }, vehicle }));
+      expect(first.reply).not.toMatch(/পার্ট নম্বর পাইনি/);
+      // An app's own grade words are not the shared glossary's: with no grade in the call, its button is asked.
+      const reply = await tapAll(shop, first, [...(app === ownWords ? [/^Platinum$/] : []), ...taps]);
+      expect(reply.asked).toBeUndefined();
+      expect(reply.confirm?.text).toMatch(sheet);
+      expect(reply.state.action?.request.body).toMatchObject(body);
+    });
+  });
+}
+
+describe("the line of 13 Nov, word for word (GearGrid, D242)", () => {
+  const LINES = [
+    {
+      style: "Bangla",
+      text: "এক্সিও ২০১০-এর সামনের নন জেনুইন ব্রেক প্যাড ফিল্ডারেও লাগে",
+      fielder: "ফিল্ডার",
+    },
+    {
+      style: "Banglish",
+      text: "Axio 2010 er shamner non genuine brake pad Fielder eo lage",
+      fielder: "Fielder",
+    },
+  ] as const;
+  const copySheet = /^এক্সিওর সামনের ব্রেক প্যাড, নন-জেনুইন — ফিল্ডার ২০১২–২০১৭-এ লাগে। যোগ করব\?$/;
+
+  it.each(LINES)("asks the Fielder's year, then the Axio's copy pad ($style)", async ({ text, fielder }) => {
+    const shop = connect(geargrid);
+    // The model's call as the run logged it: the quality, the request as the number, the new car.
+    const first = await shop.say(
+      fresh(),
+      { text },
+      fitCall({ part: { quality: "aftermarket", part_number: text }, vehicle: { model: fielder } }),
+    );
+    expect(first.reply).toBe("কোন বছরের ফিল্ডার?");
+    const reply = await shop.say(first.state, tap(first, /^2012–2017$/));
+    expect(reply.confirm?.text).toMatch(copySheet);
+    expect(reply.state.action?.request.body).toMatchObject({
+      part_id: "pad-old-copy",
+      vehicle_id: "fielder-2012",
+    });
+  });
+
+  // A real part number still names the part, written whole or in its pieces, with no car beside it.
+  const numbered: Shop = {
+    ...geargrid,
+    parts: geargrid.parts.map((part) =>
+      part.id === "pad-old-copy" ? { ...part, numbers: ["04465-12592"] } : part,
+    ),
+  };
+  it.each([
+    {
+      style: "Bangla",
+      text: "04465-12592 পার্টটা ফিল্ডারেও লাগে",
+      number: "04465-12592",
+      fielder: "ফিল্ডার",
+    },
+    {
+      style: "Banglish",
+      text: "04465 12592 part ta fielder eo lage",
+      number: "04465 12592",
+      fielder: "fielder",
+    },
+  ])("a part number in the call is the part ($style)", async ({ text, number, fielder }) => {
+    const shop = connect(numbered);
+    const first = await shop.say(
+      fresh(),
+      { text },
+      fitCall({ part: { part_number: number }, vehicle: { model: fielder } }),
+    );
+    expect(first.reply).toBe("কোন বছরের ফিল্ডার?");
+    const reply = await shop.say(first.state, tap(first, /^2012–2017$/));
+    // Found by its number, the part is named by the app's own name, with no car (D237).
+    expect(reply.confirm?.text).toMatch(/নন-জেনুইন — ফিল্ডার ২০১২–২০১৭-এ লাগে। যোগ করব\?$/);
+    expect(reply.state.action?.request.body).toMatchObject({
+      part_id: "pad-old-copy",
+      vehicle_id: "fielder-2012",
+    });
+  });
+});

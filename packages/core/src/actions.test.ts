@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   alsoCarWords,
+  wordsBeforeAlsoCar,
   confirmationText,
   customerKindOf,
   daysAgoSaid,
@@ -544,6 +545,22 @@ describe("the car a fitment adds, said with “also” (D174)", () => {
 
   it.each(["প্রিমিওর প্যাড লাগে", "premio r pad lage", "এই প্যাডটা আছে?"])("%s names none", (text) => {
     expect(alsoCarWords(text)).toBeNull();
+  });
+});
+
+describe("the part's own words, said before the car a fitment adds (D242)", () => {
+  it.each([
+    ["এক্সিও ২০১৪-এর সামনের ব্রেক প্যাড ফিল্ডারেও লাগে", /^এক্সিও 2014 [^ফ]*$/],
+    ["axio 2014 er samner brake pad fielder eo lage", /^axio 2014 er samner brake pad$/],
+    ["এই প্যাডটা প্রিমিও ২০০৯-তেও লাগে", /^এই প্যাডটা$/],
+    ["ei pad ta premio 2009 teo lage", /^ei pad ta$/],
+    ["ei pad ta premioteo lage", /^ei pad ta$/],
+  ] as const)("%s", (text, own) => {
+    expect(wordsBeforeAlsoCar(text)).toMatch(own);
+  });
+
+  it.each(["ফিল্ডারেও লাগে", "fielder eo lage", "এই প্যাডটা আছে?"])("%s has none", (text) => {
+    expect(wordsBeforeAlsoCar(text)).toBeNull();
   });
 });
 
