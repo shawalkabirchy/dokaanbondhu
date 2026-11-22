@@ -1,5 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { pcmToWav } from "@dokaanbondhu/core";
@@ -17,7 +25,8 @@ import {
 import { loadItems, type Item } from "./items";
 import { localClips } from "./recordings";
 import { runItems, type LoadClip, type RunState } from "./run";
-import { serveTranscripts } from "./transcripts";
+import { importTranscripts, mp3Of, packPage, splitParts } from "./transcript-packs";
+import { clipRows, serveTranscripts } from "./transcripts";
 import { cardsMarkdown, SPEAKERS, speakerSheet } from "./cards";
 import { buildReport, renderMarkdown, scoreItem } from "./score";
 import { Session, type EvalEnv } from "./session";
@@ -33,6 +42,11 @@ import { Session, type EvalEnv } from "./session";
 // npm run eval -- upload [--dir <folder>] [--ids <ids>]   the speakers' recordings (one folder per speaker, files named by
 //                         card code) to the private bucket as <shop_id>/eval/<id>.wav, 16 kHz mono (D235)
 // npm run eval -- transcripts [--dir <folder>] [--port 3300]   the page for typing what each clip says (D236)
+// npm run eval -- transcripts-pack [--parts 3] [--dir <folder>] [--out <folder>]   the clips not typed yet in equal
+//                         parts, each one HTML file with its clips inside, to share on Google Drive (D244); into
+//                         D:\cap\transcript-packs unless --out names another
+// npm run eval -- transcripts-import [--file <json>]   a returned part's typing into items.jsonl; without --file,
+//                         every .json file in the packs folder (D244)
 // The held-out split is for the final run only (build step 9); the default is the open split. Voice recordings are
 // read from the private recordings bucket with the project's secret key and converted with ffmpeg (spec 18.4).
 
@@ -100,6 +114,8 @@ async function main() {
       since: { type: "string" },
       dir: { type: "string" },
       port: { type: "string", default: "3300" },
+      parts: { type: "string", default: "3" },
+      out: { type: "string" },
     },
   });
   const all = loadItems(join(root, "items.jsonl"));
@@ -127,7 +143,45 @@ async function main() {
   // The recordings folder: D:\cap\eval-recordings by default (D235), beside the repo, so no path needs typing (Git Bash
   // drops the backslashes of a typed Windows path).
   const recordings = resolve(values.dir ?? join(root, "..", "..", "..", "eval-recordings"));
-  if ((command === "transcripts" || command === "upload") && !existsSync(recordings)) {
+  // The transcript packs and the files that come back: D:\cap\transcript-packs by default (D244), git-ignored like
+  // the recordings, since a pack holds people's voices.
+  const packs = resolve(values.out ?? join(root, "..", "..", "..", "transcript-packs"));
+  if (command === "transcripts-import") {
+    const itemsFile = join(root, "items.jsonl");
+    const files = values.file
+      ? [resolve(values.file)]
+      : existsSync(packs)
+        ? readdirSync(packs)
+            .filter((name) => name.toLowerCase().endsWith(".json"))
+            .sort()
+            .map((name) => join(packs, name))
+        : [];
+    if (!files.length) throw new Error(`no returned file in ${packs}: put it there, or name it with --file`);
+    for (const file of files) {
+      const result = importTranscripts(
+        readFileSync(itemsFile, "utf8"),
+        loadItems(itemsFile),
+        readFileSync(file, "utf8"),
+      );
+      writeFileSync(`${itemsFile}.tmp`, result.next);
+      renameSync(`${itemsFile}.tmp`, itemsFile);
+      print(
+        `${basename(file)} (${result.pack}): ${result.saved.length} saved into items.jsonl` +
+          (result.changed.length
+            ? `, ${result.changed.length} over a different one (${result.changed.join(", ")})`
+            : "") +
+          (result.empty.length
+            ? `; ${result.empty.length} not typed yet` +
+              (result.empty.length <= 10 ? ` (${result.empty.join(", ")})` : "")
+            : ""),
+      );
+    }
+    return;
+  }
+  if (
+    (command === "transcripts" || command === "upload" || command === "transcripts-pack") &&
+    !existsSync(recordings)
+  ) {
     throw new Error(
       `no recordings folder at ${recordings}; leave out --dir for D:\\cap\\eval-recordings, or in Git Bash write it ` +
         "with forward slashes (D:/cap/eval-recordings)",
@@ -151,6 +205,32 @@ async function main() {
       );
       process.exit(1);
     });
+    return;
+  }
+  if (command === "transcripts-pack") {
+    const rows = clipRows(join(root, "items.jsonl"), recordings).filter((row) => !row.transcript);
+    if (!rows.length) {
+      print(`every recording in ${recordings} already has its transcript`);
+      return;
+    }
+    const { found } = localClips(recordings, all);
+    const parts = splitParts(rows, Number(values.parts));
+    // The day in the pack's name ("18nov"), so a later pack (S1 and S2) never shares a name with this one.
+    const day = new Date()
+      .toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Dhaka" })
+      .replace(/\s+/g, "")
+      .toLowerCase();
+    mkdirSync(packs, { recursive: true });
+    for (const [index, part] of parts.entries()) {
+      const audio = new Map<string, Buffer>();
+      for (const row of part) audio.set(row.id, await mp3Of(found.get(row.id)!));
+      const name = `${day}-part-${index + 1}`;
+      const file = join(packs, `transcripts-${name}.html`);
+      const clips = part.map(({ id, speaker, card }) => ({ id, speaker, card }));
+      writeFileSync(file, packPage({ name, part: index + 1, of: parts.length, clips }, audio));
+      const speakers = [...new Set(part.map((row) => row.speaker))].join(", ");
+      print(`${file}: ${part.length} clips (${speakers}), ${(statSync(file).size / 1e6).toFixed(1)} MB`);
+    }
     return;
   }
   if (command === "upload") {
@@ -178,7 +258,10 @@ async function main() {
     return;
   }
   if (command !== "run" && command !== "say" && command !== "clips")
-    throw new Error(`unknown command ${command}; use run, score, say, clips, cards, upload or transcripts`);
+    throw new Error(
+      `unknown command ${command}; use run, score, say, clips, cards, upload, transcripts, transcripts-pack or ` +
+        "transcripts-import",
+    );
 
   const parsed = envSchema.safeParse(process.env);
   if (!parsed.success) {
