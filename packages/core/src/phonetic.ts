@@ -61,7 +61,8 @@ export function soundSimilarity(a: string, b: string): number {
 }
 
 const BUTTON_MAX_WORDS = 2;
-const BUTTON_MIN_SOUND = 0.75;
+/** How alike a spoken answer must sound to its button (D211); the evaluation's word error rate by sound uses it too (D246). */
+export const BUTTON_MIN_SOUND = 0.75;
 const BUTTON_MIN_LEAD = 0.25;
 
 /**

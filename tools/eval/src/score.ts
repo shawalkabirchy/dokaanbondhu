@@ -1,11 +1,15 @@
 import {
   asciiDigits,
+  BUTTON_MIN_SOUND,
   factsIn,
+  keySimilarity,
   MISHEARD_THOUSAND,
   normalize,
   parseAmount,
   repeatWord,
   SEE_IN_APP,
+  signSound,
+  soundOf,
   spokenSign,
   wordNumber,
 } from "@dokaanbondhu/core";
@@ -115,6 +119,8 @@ export interface ItemScore {
   totalMs: number | null;
   /** Voice items with a reference transcript: word errors of the first transcript against it (D64). */
   wer: { errors: number; words: number } | null;
+  /** The same counted by sound: a word heard alike is right, as the assistant's own matcher takes it (D246). */
+  werBySound: { errors: number; words: number } | null;
   notes: string[];
 }
 
@@ -359,6 +365,10 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
       item.channel === "voice" && item.reference_transcript && result.turns[0]?.transcript !== undefined
         ? wordErrors(item.reference_transcript, result.turns[0].transcript)
         : null,
+    werBySound:
+      item.channel === "voice" && item.reference_transcript && result.turns[0]?.transcript !== undefined
+        ? wordErrorsBySound(item.reference_transcript, result.turns[0].transcript)
+        : null,
   };
   if (result.status !== "done") {
     return {
@@ -466,6 +476,8 @@ export interface GroupReport {
   medianTotalMs: number | null;
   /** The speech model's word error rate over the voice items with a reference transcript (D64). */
   werRate: number | null;
+  /** The same counted by sound (D246): reported beside the strict rate, never instead of it. */
+  werBySoundRate: number | null;
 }
 
 function median(values: number[]): number | null {
@@ -476,6 +488,14 @@ function median(values: number[]): number | null {
 }
 
 const rate = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : null);
+/** Word errors over all words of the items measured, in percent. */
+const errorRate = (counts: ({ errors: number; words: number } | null)[]) => {
+  const measured = counts.flatMap((count) => (count ? [count] : []));
+  return rate(
+    measured.reduce((sum, count) => sum + count.errors, 0),
+    measured.reduce((sum, count) => sum + count.words, 0),
+  );
+};
 
 export function groupReport(scores: ItemScore[]): GroupReport {
   const scored = scores.filter((score) => score.scored);
@@ -499,14 +519,8 @@ export function groupReport(scores: ItemScore[]): GroupReport {
       scored.flatMap((score) => (score.firstTextMs === null ? [] : [score.firstTextMs])),
     ),
     medianTotalMs: median(scored.flatMap((score) => (score.totalMs === null ? [] : [score.totalMs]))),
-    werRate: (() => {
-      const measured = scores.flatMap((score) => (score.wer ? [score.wer] : []));
-      const words = measured.reduce((sum, wer) => sum + wer.words, 0);
-      return rate(
-        measured.reduce((sum, wer) => sum + wer.errors, 0),
-        words,
-      );
-    })(),
+    werRate: errorRate(scores.map((score) => score.wer)),
+    werBySoundRate: errorRate(scores.map((score) => score.werBySound)),
   };
 }
 
@@ -560,11 +574,11 @@ export function buildReport(
 export function renderMarkdown(report: Report): string {
   const cell = (value: number | null, suffix = "") => (value === null ? "–" : `${value}${suffix}`);
   const table = (groups: Record<string, GroupReport>) => [
-    "| Group | Items | Scored | Correct action | Exact part | Questions/item | Unnecessary | Zero rules | First text (median) | Total (median) | Speech WER |",
-    "|---|---|---|---|---|---|---|---|---|---|---|",
+    "| Group | Items | Scored | Correct action | Exact part | Questions/item | Unnecessary | Zero rules | First text (median) | Total (median) | Speech WER | Speech WER by sound |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...Object.entries(groups).map(
       ([name, g]) =>
-        `| ${name} | ${g.items} | ${g.scored} | ${cell(g.correctRate, "%")} (${g.correct}) | ${cell(g.exactPartRate, "%")} (${g.exactPart}/${g.exactPartOf}) | ${cell(g.questionsPerItem)} | ${g.unnecessaryQuestions} | ${g.zeroRuleViolations} | ${cell(g.medianFirstTextMs, " ms")} | ${cell(g.medianTotalMs, " ms")} | ${cell(g.werRate, "%")} |`,
+        `| ${name} | ${g.items} | ${g.scored} | ${cell(g.correctRate, "%")} (${g.correct}) | ${cell(g.exactPartRate, "%")} (${g.exactPart}/${g.exactPartOf}) | ${cell(g.questionsPerItem)} | ${g.unnecessaryQuestions} | ${g.zeroRuleViolations} | ${cell(g.medianFirstTextMs, " ms")} | ${cell(g.medianTotalMs, " ms")} | ${cell(g.werRate, "%")} | ${cell(g.werBySoundRate, "%")} |`,
     ),
   ];
   const lines = [
@@ -780,4 +794,57 @@ export function wordErrors(reference: string, heard: string): { errors: number; 
     previous = current;
   }
   return { errors: previous[hyp.length]!, words: ref.length };
+}
+
+/** A word's sound key; a sign said one by one sounds as its spelled name (k as "কে", 3 as "থ্রি"). */
+const soundKey = (word: string) => (/^[a-z0-9]$/.test(word) ? signSound(word) : soundOf(word));
+const isSign = (word: string) => /^[a-z0-9]$/.test(word);
+/** Signs said one by one are joined into one heard word at most this many at a time ("কেওয়াইবি" is k, y, b). */
+const MOST_GLUED_SIGNS = 9;
+
+/**
+ * Word errors counted by sound (D246), reported beside the strict count: a heard word is right when it sounds at
+ * least as alike to the typed one as the assistant needs to match a spoken answer to its button (BUTTON_MIN_SOUND,
+ * D211), so a spelling of the same sound ("অ্যাবজরবার", "অ্যাবজার্ভার") is no error; typed words heard as one word
+ * ("ব্রেক প্যাড" and "ব্রেকপ্যাড", signs glued as "কেওয়াইবি" or "485") or one typed word heard as two ("কোনতাকে"
+ * and "কোন তাকে") are right when they sound alike joined. Two numbers in digits must be equal. A word heard as
+ * another, left out or added still counts.
+ */
+export function wordErrorsBySound(reference: string, heard: string): { errors: number; words: number } {
+  const ref = werWords(reference);
+  const hyp = werWords(heard);
+  const alike = (a: string, b: string) => keySimilarity(a, b, true) >= BUTTON_MIN_SOUND;
+  const cost = Array.from({ length: ref.length + 1 }, () => Array<number>(hyp.length + 1).fill(Infinity));
+  cost[0]![0] = 0;
+  const relax = (i: number, j: number, value: number) => {
+    if (value < cost[i]![j]!) cost[i]![j] = value;
+  };
+  for (let i = 0; i <= ref.length; i++) {
+    for (let j = 0; j <= hyp.length; j++) {
+      const here = cost[i]![j]!;
+      if (here === Infinity) continue;
+      if (i < ref.length) relax(i + 1, j, here + 1);
+      if (j < hyp.length) relax(i, j + 1, here + 1);
+      if (i >= ref.length || j >= hyp.length) continue;
+      const word = hyp[j]!;
+      // Two numbers in digits are the same only when equal: 2020 is never 2000, however alike they look.
+      const same =
+        ref[i] === word ||
+        (!(/^\d+$/.test(ref[i]!) && /^\d+$/.test(word)) && alike(soundKey(ref[i]!), soundKey(word)));
+      relax(i + 1, j + 1, here + (same ? 0 : 1));
+      for (let k = 2; k <= MOST_GLUED_SIGNS && i + k <= ref.length; k++) {
+        const typed = ref.slice(i, i + k);
+        const signs = typed.every(isSign);
+        if (k > 2 && !signs) break;
+        const joined =
+          signs && /^\d+$/.test(word)
+            ? typed.join("") === word
+            : alike(typed.map(soundKey).join(""), soundKey(word));
+        if (joined) relax(i + k, j + 1, here);
+      }
+      if (j + 1 < hyp.length && alike(soundKey(ref[i]!), soundKey(word) + soundKey(hyp[j + 1]!)))
+        relax(i + 1, j + 2, here);
+    }
+  }
+  return { errors: cost[ref.length]![hyp.length]!, words: ref.length };
 }

@@ -8,6 +8,7 @@ import {
   scoreItem,
   werWords,
   wordErrors,
+  wordErrorsBySound,
   type ItemResult,
   type Trace,
   type TurnRecord,
@@ -501,6 +502,29 @@ describe("scoring", () => {
     expect(report.byStyle["banglish open"]).toMatchObject({ items: 1, correctRate: 0 });
     expect(Object.keys(report.byStyle)).not.toContain("null");
     expect(renderMarkdown(report)).toContain("## Chat by writing style");
+  });
+
+  it("counts word errors by sound beside the strict count (D246)", () => {
+    // A spelling of the same sound is no error by sound, though it is one strictly.
+    expect(wordErrors("শক অ্যাবজরবারের দাম", "শক অ্যাবজার্ভারের দাম").errors).toBe(1);
+    expect(wordErrorsBySound("শক অ্যাবজরবারের দাম", "শক অ্যাবজার্ভারের দাম")).toEqual({
+      errors: 0,
+      words: 3,
+    });
+    // Typed words heard as one, signs glued, and one typed word heard as two.
+    expect(wordErrorsBySound("ব্রেক প্যাড দাও", "ব্রেকপ্যাড দাও")).toEqual({ errors: 0, words: 3 });
+    expect(wordErrorsBySound("KYB-300115", "কেওয়াইবি থ্রি জিরো জিরো ওয়ান ওয়ান ফাইভ")).toEqual({
+      errors: 0,
+      words: 9,
+    });
+    expect(wordErrorsBySound("B-485 তাকে", "বি ফোর এইট ফাইভ তাকে").errors).toBe(0);
+    expect(wordErrorsBySound("কোনতাকে রাখা", "কোন তাকে রাখা")).toEqual({ errors: 0, words: 2 });
+    // A word heard as another, a number heard wrong, a word left out or added: still errors.
+    expect(wordErrorsBySound("শক আছে", "সব আছে").errors).toBe(1);
+    expect(wordErrorsBySound("হ্যারিয়ার ২০২০", "হ্যারিয়ার দুই হাজার").errors).toBe(1);
+    expect(wordErrorsBySound("দাম ৫৮৫০ টাকা", "দাম পাঁচ হাজার পঞ্চাশ টাকা").errors).toBe(1);
+    expect(wordErrorsBySound("আছে একটু চেক করো", "আছে").errors).toBe(3);
+    expect(wordErrorsBySound("দাম কত", "দাম কত টাকা").errors).toBe(1);
   });
 
   it("writes numbers alike on both sides before counting word errors (D245)", () => {

@@ -17,7 +17,7 @@ const SIGN_SOUND = new Map<string, string>([
 ]);
 
 /** Signs as they sound said one by one: "kyb300115" as "keoiaibitrijirojiro…". */
-const signSound = (signs: string) => [...signs].map((sign) => SIGN_SOUND.get(sign) ?? sign).join("");
+export const signSound = (signs: string) => [...signs].map((sign) => SIGN_SOUND.get(sign) ?? sign).join("");
 
 /**
  * The English digit words by sound, in both scripts ("জিরো" and "zero"): a misheard one is found by sound. The Bangla
