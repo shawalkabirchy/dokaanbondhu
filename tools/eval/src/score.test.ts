@@ -6,6 +6,7 @@ import {
   buildReport,
   renderMarkdown,
   scoreItem,
+  werWords,
   wordErrors,
   type ItemResult,
   type Trace,
@@ -500,6 +501,36 @@ describe("scoring", () => {
     expect(report.byStyle["banglish open"]).toMatchObject({ items: 1, correctRate: 0 });
     expect(Object.keys(report.byStyle)).not.toContain("null");
     expect(renderMarkdown(report)).toContain("## Chat by writing style");
+  });
+
+  it("writes numbers alike on both sides before counting word errors (D245)", () => {
+    // The transcripts write numbers in digits (D236); speech-to-text writes them in words.
+    expect(wordErrors("প্রোবক্স ২০১০-এর ক্লাচ", "প্রোবক্স দুই হাজার দশের ক্লাচ")).toEqual({
+      errors: 0,
+      words: 4,
+    });
+    expect(wordErrors("রহিম নগদে ১০০০০ টাকা দিসে", "রহিম নগদে দশ হাজার টাকা দিসে")).toEqual({
+      errors: 0,
+      words: 5,
+    });
+    expect(wordErrors("দাম ১ ০০০ টাকা", "দাম এক হাজার টাকা")).toEqual({ errors: 0, words: 3 });
+    expect(wordErrors("মদিনাকে ৪টা দাও", "মদিনাকে চারটা দাও")).toEqual({ errors: 0, words: 4 });
+    expect(wordErrors("রহিম কে ২ সেট", "রহিম কে দুই সেট")).toEqual({ errors: 0, words: 4 });
+    expect(wordErrors("২০১১ এর", "দুই হাজার এগারোর")).toEqual({ errors: 0, words: 2 });
+    // A code said sign by sign is one word per sign, so one misheard sign is one error.
+    expect(werWords("KYB-300115 নম্বরের")).toEqual(["k", "y", "b", "3", "0", "0", "1", "1", "5", "নম্বরের"]);
+    expect(wordErrors("KYB-300115 নম্বরের", "কে ওয়াই বি থ্রি জিরো জিরো ওয়ান ওয়ান ফাইভ নম্বরের")).toEqual({
+      errors: 0,
+      words: 10,
+    });
+    expect(wordErrors("ফোন ০১৭৫৫", "ফোন জিরো ওয়ান সেভেন ডাবল ফাইভ")).toEqual({ errors: 0, words: 6 });
+    expect(wordErrors("KYB-300115", "কে ওয়াই বি থ্রি জিরো জিনো ওয়ান ওয়ান ফাইভ").errors).toBe(1);
+    // A letter word alone stays the Bangla word; a year range is two years.
+    expect(werWords("এক্সিও ২০১০-এ লাগবে")).toEqual(["এক্সিও", "2010", "এ", "লাগবে"]);
+    expect(werWords("২০০১-২০০৬ সালের")).toEqual(["2001", "2006", "সালের"]);
+    // Two spellings of one sound are one word; a word heard differently still counts.
+    expect(wordErrors("আছে কী না", "আছে কিনা")).toEqual({ errors: 0, words: 3 });
+    expect(wordErrors("প্রোবক্স ২০১০", "প্রোবুক্স দুই হাজার")).toEqual({ errors: 2, words: 2 });
   });
 
   it("measures the speech model's word error rate on the first transcript, and names the models in use", () => {

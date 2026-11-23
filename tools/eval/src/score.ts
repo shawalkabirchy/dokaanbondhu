@@ -1,4 +1,14 @@
-import { asciiDigits, factsIn, normalize, SEE_IN_APP } from "@dokaanbondhu/core";
+import {
+  asciiDigits,
+  factsIn,
+  MISHEARD_THOUSAND,
+  normalize,
+  parseAmount,
+  repeatWord,
+  SEE_IN_APP,
+  spokenSign,
+  wordNumber,
+} from "@dokaanbondhu/core";
 import type { Item, LookupExpected, MustNotExpected, ReadExpected, WriteExpected } from "./items";
 
 // The scorer (spec 18.4; architecture 11.2): correct action, exact part after clarification, questions per item, the
@@ -597,10 +607,166 @@ export function renderMarkdown(report: Report): string {
   return lines.join("\n");
 }
 
-/** Word errors (substitutions, insertions, deletions) of a transcript against its reference, on normalized words. */
+const lower = (token: string) => token.normalize("NFC").toLowerCase();
+/** The words parseAmount multiplies by (hundred, thousand, lakh, crore), and a thousand as speech-to-text mishears it. */
+const MULTIPLIER_WORDS = new Set(
+  [
+    "শো",
+    "শ",
+    "sho",
+    "hundred",
+    "হাজার",
+    "hajar",
+    "hazar",
+    "thousand",
+    "লাখ",
+    "লক্ষ",
+    "lakh",
+    "lac",
+    "কোটি",
+    "koti",
+    "crore",
+  ].map(lower),
+);
+const multiplies = (token: string) =>
+  MULTIPLIER_WORDS.has(lower(token)) || MISHEARD_THOUSAND.has(lower(token));
+/** Hundreds in one word: দুইশ, পাঁচশো. */
+const gluedHundred = (token: string) => {
+  const stem = token.replace(/(শো|শ)$/, "");
+  return stem !== token && stem.length > 0 && wordNumber(stem) !== null;
+};
+const amountWord = (token: string) => wordNumber(token) !== null || multiplies(token) || gluedHundred(token);
+/** The Bangla digit words: everyday counting words, so never part of a run of signs said one by one. */
+const BANGLA_DIGITS = new Set(
+  ["শূন্য", "এক", "দুই", "তিন", "চার", "পাঁচ", "ছয়", "সাত", "আট", "নয়"].map(lower),
+);
+/** Endings a number takes ("৪টা", "চারটা", "২০১০-এর", "দশের"), longest first, each with one written form. */
+const NUMBER_ENDINGS: readonly (readonly [string, string])[] = [
+  ["টাতে", "টাতে"],
+  ["টার", "টার"],
+  ["টাই", "টাই"],
+  ["খানা", "খানা"],
+  ["য়ের", "এর"],
+  ["টা", "টা"],
+  ["টি", "টি"],
+  ["টো", "টা"],
+  ["জন", "জন"],
+  ["ের", "এর"],
+  ["এর", "এর"],
+  ["য়ে", "এ"],
+  ["তে", "তে"],
+  ["য়", "এ"],
+  ["ে", "এ"],
+  ["এ", "এ"],
+  ["র", "এর"],
+].map(([ending, form]) => [lower(ending!), lower(form!)] as const);
+/** Spellings of the same spoken words: the question's কী is said as কি, and কিনা is কি না. */
+const SAME_WORDS: ReadonlyMap<string, readonly string[]> = new Map([
+  [lower("কী"), [lower("কি")]],
+  [lower("কিনা"), [lower("কি"), lower("না")]],
+]);
+
+/** A number with its ending as two words, the ending in one form: "৪টা" and "চারটা" are 4 and টা. */
+function numberAndEnding(token: string): string[] {
+  const digits = asciiDigits(token).match(/^(\d+)(\D+)$/);
+  for (const [ending, form] of NUMBER_ENDINGS) {
+    if (digits && lower(digits[2]!) === ending) return [digits[1]!, form];
+    if (!digits && token.length > ending.length && lower(token).endsWith(ending)) {
+      const stem = token.slice(0, token.length - ending.length);
+      if (wordNumber(stem) !== null || gluedHundred(stem)) return [stem, form];
+    }
+  }
+  return [token];
+}
+
+/**
+ * The words the word error rate compares (D245): normalized (spec 10.1), then numbers written alike on both sides, as
+ * is usual before scoring speech-to-text, since the transcripts write numbers in digits (D236) and speech-to-text
+ * writes them in words. A number said with hundred, thousand or lakh is one word of digits ("দুই হাজার পনেরো" and
+ * "2015"), and so is a number word ("দুই" and "২"); a number's ending is a word of its own in one form ("চারটা" and
+ * "৪টা" are 4 and টা). Signs said one by one, a part number, a phone or a rack, are one word per sign ("কে ওয়াই বি
+ * থ্রি" and "KYB-3…" are k, y, b, 3), with ডাবল repeating the next; a letter word alone stays a word ("কে", "আর", the
+ * "এ" of "২০১০-এ"), since it is far more often Bangla than a letter. Two spellings of the same sound are one: কী is
+ * কি, কিনা is কি না. Anything heard differently still counts.
+ */
+export function werWords(text: string): string[] {
+  // Thousands written apart ("1 000", "১০,০০০") are one number; a number's ending is a word of its own.
+  const tokens: string[] = [];
+  const words = normalize(text).tokens.flatMap((token) => SAME_WORDS.get(lower(token)) ?? [token]);
+  for (const token of words.flatMap(numberAndEnding)) {
+    const previous = tokens.at(-1);
+    if (previous && /^\d+$/.test(asciiDigits(previous)) && /^\d{3}$/.test(asciiDigits(token)))
+      tokens[tokens.length - 1] = asciiDigits(previous) + asciiDigits(token);
+    else tokens.push(token);
+  }
+  const out: string[] = [];
+  let run: { token: string; signs: string }[] = [];
+  let repeat = 1;
+  const flush = () => {
+    const only = run.length === 1 ? run[0]! : null;
+    // A letter word alone is the word; a digit word alone is its digit.
+    if (only && !/^\d+$/.test(only.signs) && only.signs.length === 1) out.push(only.token);
+    else out.push(...run.flatMap((said) => [...said.signs]));
+    run = [];
+  };
+  const whole = (value: string) => {
+    flush();
+    for (let n = 0; n < repeat; n += 1) out.push(value);
+    repeat = 1;
+  };
+  const sign = (token: string, signs: string) => {
+    run.push({ token, signs: signs.repeat(repeat) });
+    repeat = 1;
+  };
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    let end = index;
+    while (end < tokens.length && amountWord(tokens[end]!)) end += 1;
+    if (tokens.slice(index, end).some((word) => multiplies(word) || gluedHundred(word))) {
+      const value = parseAmount(tokens.slice(index, end).join(" "));
+      if (value !== null) {
+        whole(String(value));
+        index = end - 1;
+        continue;
+      }
+    }
+    const written = asciiDigits(token).toLowerCase();
+    if (/^\d{4}-\d{4}$/.test(written)) {
+      flush();
+      out.push(...written.split("-")); // a range of years
+    } else if (/^[1-9]\d*$/.test(written)) whole(written);
+    else if (/^[a-z0-9-]+$/.test(written) && /\d/.test(written)) {
+      // A code written in one piece (04465-ta0-k10, 01755-201101): one word per sign.
+      flush();
+      out.push(...written.replace(/-/g, ""));
+    } else if (repeatWord(token) > 1) {
+      if (repeat > 1) {
+        flush();
+        out.push("ডাবল");
+      }
+      repeat = repeatWord(token);
+    } else if (BANGLA_DIGITS.has(lower(token)) || (wordNumber(token) !== null && spokenSign(token) === null))
+      whole(String(wordNumber(token)));
+    else {
+      const said = spokenSign(token) ?? (/^[a-z]$/.test(written) ? written : null);
+      if (said !== null) sign(token, said);
+      else {
+        flush();
+        if (repeat > 1) out.push("ডাবল");
+        repeat = 1;
+        out.push(token);
+      }
+    }
+  }
+  flush();
+  if (repeat > 1) out.push("ডাবল");
+  return out;
+}
+
+/** Word errors (substitutions, insertions, deletions) of a transcript against its reference, on the words above. */
 export function wordErrors(reference: string, heard: string): { errors: number; words: number } {
-  const ref = normalize(reference).tokens;
-  const hyp = normalize(heard).tokens;
+  const ref = werWords(reference);
+  const hyp = werWords(heard);
   let previous = Array.from({ length: hyp.length + 1 }, (_, j) => j);
   for (let i = 1; i <= ref.length; i++) {
     const current = [i];
