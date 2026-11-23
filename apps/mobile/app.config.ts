@@ -1,9 +1,8 @@
 import type { ExpoConfig } from "expo/config";
 
 // The app configuration (spec 15.1). Development builds may call http://localhost (the laptop server through
-// adb reverse), so they allow plain HTTP; the release build in step 9 accepts only https addresses.
-const release = process.env.APP_VARIANT === "release";
-
+// adb reverse), so they allow plain HTTP: the template's debug manifests switch it on for them alone. Every release
+// build (the public APK, D249) accepts only https addresses.
 const config: ExpoConfig = {
   name: "DokaanBondhu",
   slug: "dokaanbondhu",
@@ -14,6 +13,8 @@ const config: ExpoConfig = {
   icon: "./assets/images/icon.png",
   android: {
     package: "com.dokaanbondhu.app", // D30
+    // Raised with `version` for every new public APK (D249), so Android installs it over the old one.
+    versionCode: 1,
     adaptiveIcon: { foregroundImage: "./assets/images/adaptive-icon.png", backgroundColor: "#1f7a4d" },
     permissions: ["android.permission.RECORD_AUDIO"],
     // The app template's storage permissions are not needed: audio files stay in the app's own cache (D81). Drawing
@@ -38,7 +39,9 @@ const config: ExpoConfig = {
         enableDeviceDetection: false,
       },
     ],
-    ["expo-build-properties", { android: { usesCleartextTraffic: !release } }],
+    ["expo-build-properties", { android: { usesCleartextTraffic: false } }],
+    // The owner's own upload key for the release build (spec 15.1, D249).
+    "./plugins/with-release-signing",
     [
       "expo-splash-screen",
       { image: "./assets/images/splash-icon.png", imageWidth: 120, backgroundColor: "#ffffff" },

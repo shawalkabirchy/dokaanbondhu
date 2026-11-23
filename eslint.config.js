@@ -36,6 +36,21 @@ export default defineConfig([
     },
   },
   {
+    // The app's config plugins are CommonJS, because Expo loads them with require (spec 15.1).
+    files: ["apps/mobile/plugins/**/*.js"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: {
+        module: "writable",
+        require: "readonly",
+        describe: "readonly",
+        it: "readonly",
+        expect: "readonly",
+      },
+    },
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  {
     // Only packages/platform-db opens the platform database; everything else goes through withShop() (spec 7.3).
     files: ["**/*.ts", "**/*.tsx"],
     ignores: ["packages/platform-db/**"],
