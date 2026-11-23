@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>DokaanBondhu AI</title>
+    <meta name="claude:viewport-fit-sides" content="cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="A voice and chat assistant for car spare parts shops, in Bangla and Banglish. Ask for parts, prices, racks and dues, and record sales by speaking."
+    />
+    <meta name="theme-color" content="#0e3b26" />
+    <meta property="og:title" content="DokaanBondhu AI" />
+    <meta
+      property="og:description"
+      content="Talk to your shop: a voice and chat assistant for car spare parts shops, in Bangla and Banglish."
+    />
+    <meta property="og:image" content="https://dokaanbondhu.vercel.app/img/icon-512.png" />
+    <meta property="og:url" content="https://dokaanbondhu.vercel.app" />
+    <link rel="icon" href="img/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="img/apple-touch-icon.png" />
+    <!-- The landing page (spec D249): plain HTML, CSS and a little JavaScript, served by Vercel from this folder. -->
+    <script>
+      // The language before the first paint: the saved choice, else Bangla when the browser asks for it, else English.
+      (function () {
+        var lang = "en";
+        try {
+          lang = localStorage.getItem("db-lang") || "";
+        } catch (e) {
+          lang = "";
+        }
+        if (lang !== "bn" && lang !== "en") lang = /^bn\b/i.test(navigator.language || "") ? "bn" : "en";
+        document.documentElement.setAttribute("data-lang", lang);
+        document.documentElement.lang = lang;
+      })();
+    </script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-row">
+        <a class="brand" href="#hero" aria-label="DokaanBondhu AI">
+          <img src="img/icon.svg" alt="" width="36" height="36" />
+          <span>DokaanBondhu AI</span>
+        </a>
+        <nav class="menu" aria-label="Page sections">
+          <a href="#features"><span data-l="en">Features</span><span data-l="bn">যা পারে</span></a>
+          <a href="#how"><span data-l="en">How it works</span><span data-l="bn">যেভাবে কাজ করে</span></a>
+          <a href="#geargrid">GearGrid</a>
+          <a href="#price"><span data-l="en">Price</span><span data-l="bn">দাম</span></a>
+        </nav>
+        <div class="lang" role="group" aria-label="Language">
+          <button type="button" id="lang-bn" data-set-lang="bn" lang="bn">বাংলা</button>
+          <button type="button" id="lang-en" data-set-lang="en" lang="en">English</button>
+        </div>
+        <a class="top-cta" href="#download"
+          ><span data-l="en">Download</span><span data-l="bn">ডাউনলোড</span></a
+        >
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" id="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-text">
+            <h1>
+              <span data-l="en">Talk to your shop.</span>
+              <span data-l="bn">দোকানের সাথে কথা বলুন।</span>
+            </h1>
+            <p class="lead" data-l="en">
+              A voice and chat assistant for car spare parts shops, in Bangla and Banglish. Ask if a part is
+              in stock, what it costs, which rack it sits on, or who owes how much, and the answer comes from
+              your shop's own records. It writes down sales too, once you say yes.
+            </p>
+            <p class="lead" data-l="bn" lang="bn">
+              গাড়ির স্পেয়ার পার্টসের দোকানের জন্য ভয়েস আর চ্যাট সহকারী, বাংলা ও বাংলিশে। পার্ট আছে কি না,
+              দাম কত, কোন তাকে, কার বাকি কত: জিজ্ঞেস করলেই উত্তর আসে দোকানের নিজের হিসাব থেকে। বিক্রিও লিখে
+              রাখে, আপনি ‘হ্যাঁ’ বলার পর।
+            </p>
+            <div class="hero-actions">
+              <a
+                class="btn btn-gold"
+                href="https://github.com/shawalkabirchy/dokaanbondhu/releases/latest/download/DokaanBondhu-AI.apk"
+                rel="noopener"
+              >
+                <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span data-l="en">Download for Android</span><span data-l="bn">Android-এর জন্য ডাউনলোড</span>
+              </a>
+              <a class="link-light" href="#features"
+                ><span data-l="en">See what it can do</span><span data-l="bn">কী কী পারে দেখুন</span></a
+              >
+            </div>
+            <p class="fine" data-l="en">Version 0.1.0, about 63 MB, Android 7 or newer. Needs internet.</p>
+            <p class="fine" data-l="bn" lang="bn">
+              ভার্সন ০.১.০, প্রায় ৬৩ MB, Android 7 বা তার পরের। ইন্টারনেট লাগে।
+            </p>
+            <p class="ios-note" hidden>
+              <span data-l="en"
+                >This app is for Android phones. On an iPhone you can still try GearGrid in the browser.</span
+              >
+              <span data-l="bn"
+                >এই অ্যাপটি Android ফোনের জন্য। iPhone-এ ব্রাউজারে GearGrid চালিয়ে দেখতে পারেন।</span
+              >
+            </p>
+          </div>
+          <figure class="hero-phone">
+            <img
+              src="img/ask-year.webp"
+              width="560"
+              height="1154"
+              alt="The DokaanBondhu app asks which year of Noah, then answers: one reconditioned self motor, 5,500 taka, on rack C-2."
+            />
+            <span class="rack-tag" aria-hidden="true"
+              ><span data-l="en">Rack C-2</span><span data-l="bn">তাক C-2</span></span
+            >
+          </figure>
+        </div>
+      </section>
+
+      <section class="features" id="features">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>
+              <span data-l="en">Say it the way you would tell your staff</span
+              ><span data-l="bn">কর্মচারীকে যেভাবে বলেন, সেভাবেই বলুন</span>
+            </h2>
+            <p data-l="en">
+              Speak or type, in Bangla or Banglish. Every example below is a real line from our test shop,
+              with the answer it gave.
+            </p>
+            <p data-l="bn" lang="bn">
+              বলুন বা লিখুন, বাংলায় বা বাংলিশে। নিচের প্রতিটি উদাহরণ আমাদের টেস্ট দোকানে বলা আসল কথা, সাথে যে
+              উত্তর এসেছিল।
+            </p>
+          </div>
+
+          <div class="group">
+            <div class="group-text">
+              <h3><span data-l="en">Ask</span><span data-l="bn">জিজ্ঞেস করুন</span></h3>
+              <ul class="lines">
+                <li>
+                  <q class="voice">Axio 2014 shamner brake pad ache?</q>
+                  <p data-l="en">
+                    Two kinds: genuine, 3 sets at 4,500 taka; non-genuine, 6 sets at 1,800 taka. Both on rack
+                    B-3.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    দুই রকম আছে: জেনুইন ৩ সেট, ৪,৫০০ টাকা; নন-জেনুইন ৬ সেট, ১,৮০০ টাকা। দুটোই B-3 তাকে।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">pechoner ta?</q>
+                  <p data-l="en">
+                    It remembers the car: the Axio 2014's rear lining, 2 sets, 1,500 taka, rack B-4.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    গাড়িটা মনে রাখে: Axio 2014-এর পেছনের লাইনিং, ২ সেট, ১,৫০০ টাকা, B-4 তাকে।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">Axio 2014 shamner brake pad er paikari dam koto?</q>
+                  <p data-l="en">The wholesale prices: 4,200 and 1,600 taka.</p>
+                  <p data-l="bn" lang="bn">পাইকারি দাম: ৪,২০০ আর ১,৬০০ টাকা।</p>
+                </li>
+                <li>
+                  <q class="voice">C-2 rack e ki ki ache?</q>
+                  <p data-l="en">
+                    Self motor, dynamo, horn set, fuse box and relay, with the full list on screen.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    সেলফ মোটর, ডায়নামো, হর্ন সেট, ফিউজ বক্স, রিলে; পুরো তালিকা স্ক্রিনে।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">New Dhaka Garage er baki koto?</q>
+                  <p data-l="en">
+                    New Dhaka Garage owes 20,500 taka. Ask for their phone number next and it gives that too.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    নিউ ঢাকা গ্যারেজের বাকি ২০,৫০০ টাকা। এরপর ফোন নম্বর চাইলে সেটাও দেয়।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">stock er mot dam koto?</q>
+                  <p data-l="en">Your whole stock is worth 35,30,556 taka.</p>
+                  <p data-l="bn" lang="bn">স্টকের মোট দাম ৩৫,৩০,৫৫৬ টাকা।</p>
+                </li>
+              </ul>
+            </div>
+            <figure class="group-phone">
+              <img
+                src="img/part-cards.webp"
+                width="440"
+                height="907"
+                loading="lazy"
+                alt="Part cards for the Axio 2014 front brake pads: genuine and non-genuine, with stock, rack B-3 and price."
+              />
+            </figure>
+          </div>
+
+          <div class="group group-flip">
+            <div class="group-text">
+              <h3><span data-l="en">Get the work done</span><span data-l="bn">কাজ করিয়ে নিন</span></h3>
+              <p class="rule" data-l="en">
+                It reads every change back to you first. Nothing is saved until you say yes, and “no, 4 sets”
+                fixes it on the spot.
+              </p>
+              <p class="rule" data-l="bn" lang="bn">
+                প্রতিটি কাজ আগে পড়ে শোনায়। আপনি ‘হ্যাঁ’ না বলা পর্যন্ত কিছুই সেভ হয় না, আর “না, ৪ সেট” বললে
+                সাথে সাথে ঠিক হয়ে যায়।
+              </p>
+              <ul class="lines">
+                <li>
+                  <q class="voice"
+                    >Rahim Motors ke Axio 2014 er shamner non genuine brake pad dui set 3000 takay bakite
+                    dao</q
+                  >
+                  <p data-l="en">
+                    A sale on credit at your own price: 2 sets at 1,500 each, with the shop's usual 1,800
+                    shown beside it.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    নিজের দামে বাকিতে বিক্রি: ২ সেট, প্রতি সেট ১,৫০০ টাকা; পাশে দোকানের সাধারণ দাম ১,৮০০
+                    দেখায়।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">Rahim Motors ek set ferot dise</q>
+                  <p data-l="en">A return: 1 set back, and 1,500 taka off their due.</p>
+                  <p data-l="bn" lang="bn">ফেরত: ১ সেট, আর বাকি থেকে ১,৫০০ টাকা কমে।</p>
+                </li>
+                <li>
+                  <q class="voice">Nawabpur Auto Parts theke 5 set kinlam, proti set 1200 taka</q>
+                  <p data-l="en">
+                    A purchase from a supplier. Say “na, 4 set” and the sheet changes to 4 sets before you
+                    confirm.
+                  </p>
+                  <p data-l="bn" lang="bn">
+                    সাপ্লায়ার থেকে কেনা। “না, ৪ সেট” বললে হ্যাঁ বলার আগেই শিটে ৪ সেট হয়ে যায়।
+                  </p>
+                </li>
+                <li>
+                  <q class="voice">brake pad er dam 1900 taka koro</q>
+                  <p data-l="en">A price change, for the owner only, with a button to take it back.</p>
+                  <p data-l="bn" lang="bn">দাম বদল, শুধু মালিক পারেন; ফিরিয়ে নেওয়ার বোতামও আছে।</p>
+                </li>
+                <li>
+                  <q class="voice">Notun customer jog koro, Selim Auto</q>
+                  <p data-l="en">A new customer. It asks retail or wholesale, and for a phone number.</p>
+                  <p data-l="bn" lang="bn">নতুন কাস্টমার। খুচরা না পাইকারি আর ফোন নম্বর জিজ্ঞেস করে নেয়।</p>
+                </li>
+                <li>
+                  <q class="voice">brake pad ta C-1 e rakho</q>
+                  <p data-l="en">Moves the part to rack C-1, and says where it was before.</p>
+                  <p data-l="bn" lang="bn">পার্টটা C-1 তাকে রাখে, আর আগে কোথায় ছিল তাও বলে।</p>
+                </li>
+                <li>
+                  <q class="voice">brake pad Fielder eo lage</q>
+                  <p data-l="en">Records that the pad fits the Fielder too, after asking which years.</p>
+                  <p data-l="bn" lang="bn">
+                    প্যাডটা Fielder-এও লাগে বলে লিখে রাখে, কোন বছরের তা জিজ্ঞেস করে।
+                  </p>
+                </li>
+              </ul>
+            </div>
+            <figure class="group-phone">
+              <img
+                src="img/sale-yes.webp"
+                width="440"
+                height="907"
+                loading="lazy"
+                alt="The Save this? sheet for a sale to Rahim Motors: Axio front brake pad, non-genuine, 2 sets at 1,500 taka each (the shop's price 1,800), 3,000 taka on credit, with Yes and No buttons."
+              />
+            </figure>
+          </div>
+
+          <div class="pair-row">
+            <div class="mini">
+              <img
+                src="img/reminders.webp"
+                width="440"
+                height="907"
+                loading="lazy"
+                alt="The reminders card: 8 parts running low; 15 customers owe from over 30 days ago, 59,968 taka in all."
+              />
+              <div>
+                <h3><span data-l="en">It reminds you</span><span data-l="bn">মনে করিয়ে দেয়</span></h3>
+                <p data-l="en">
+                  Open the app and the day's reminders are at the top: 8 parts running low, and 15 customers
+                  who have owed for over 30 days, 59,968 taka in all. Tap one to see the list.
+                </p>
+                <p data-l="bn" lang="bn">
+                  অ্যাপ খুললেই ওপরে দিনের কথা: ৮টি পার্ট কম আছে, আর ১৫ জনের বাকি ৩০ দিনের বেশি পুরোনো, মোট
+                  ৫৯,৯৬৮ টাকা। চাপলে পুরো তালিকা।
+                </p>
+              </div>
+            </div>
+            <div class="mini">
+              <div
+                class="mic-scene"
+                role="img"
+                aria-label="A round green microphone floating over another app, with the answer card beside it: Rahim Motors owes 19,200 taka."
+              >
+                <span class="ghost-line"></span><span class="ghost-line short"></span
+                ><span class="ghost-block"></span><span class="ghost-line"></span
+                ><span class="ghost-line short"></span>
+                <span class="mic-card" lang="bn">রহিম মোটরসের বাকি ১৯,২০০ টাকা।</span>
+                <span class="mic-ball"
+                  ><svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
+                    <path
+                      d="M6 11a6 6 0 0 0 12 0M12 17v3"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    /></svg
+                ></span>
+              </div>
+              <div>
+                <h3>
+                  <span data-l="en">Over any other app</span><span data-l="bn">অন্য যেকোনো অ্যাপের ওপরে</span>
+                </h3>
+                <p data-l="en">
+                  Turn on the floating mic and a round mic stays on the screen while you use other apps. Hold
+                  it, ask, and the answer appears beside it.
+                </p>
+                <p data-l="bn" lang="bn">
+                  ভাসমান মাইক চালু করলে অন্য অ্যাপ চালানোর সময়ও একটা গোল মাইক স্ক্রিনে থাকে। চেপে ধরে জিজ্ঞেস
+                  করুন, পাশেই উত্তর দেখাবে।
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="how" id="how">
+        <div class="wrap">
+          <div class="section-head">
+            <h2><span data-l="en">How it works</span><span data-l="bn">যেভাবে কাজ করে</span></h2>
+          </div>
+          <ol class="steps">
+            <li>
+              <h3><span data-l="en">You ask</span><span data-l="bn">আপনি বলেন</span></h3>
+              <p data-l="en">
+                Hold the button and speak, or type. Bangla, Banglish, or both in one sentence.
+              </p>
+              <p data-l="bn" lang="bn">বোতাম চেপে ধরে বলুন, বা লিখুন। বাংলা, বাংলিশ, বা এক বাক্যে দুটোই।</p>
+            </li>
+            <li>
+              <h3>
+                <span data-l="en">It checks your records</span><span data-l="bn">দোকানের হিসাব দেখে</span>
+              </h3>
+              <p data-l="en">
+                It reads your shop app's database with a read-only login, so a question can never change
+                anything.
+              </p>
+              <p data-l="bn" lang="bn">
+                দোকানের অ্যাপের ডাটাবেস পড়ে শুধু-পড়ার লগইনে, তাই প্রশ্ন করে কখনো কিছু বদলায় না।
+              </p>
+            </li>
+            <li>
+              <h3>
+                <span data-l="en">It answers, and saves only after yes</span
+                ><span data-l="bn">উত্তর দেয়, ‘হ্যাঁ’ বললে তবেই সেভ</span>
+              </h3>
+              <p data-l="en">
+                Every number comes from your records, never a guess. A sale, return or payment is read back
+                first and saved only when you say yes.
+              </p>
+              <p data-l="bn" lang="bn">
+                প্রতিটি সংখ্যা আসে আপনার হিসাব থেকে, আন্দাজে নয়। বিক্রি, ফেরত বা জমা আগে পড়ে শোনায়, ‘হ্যাঁ’
+                বললে তবেই সেভ হয়।
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="plugin" id="plugin">
+        <div class="wrap plugin-grid">
+          <div>
+            <h2>
+              <span data-l="en">It plugs into the shop app you already use</span
+              ><span data-l="bn">আপনার দোকানের অ্যাপের সাথেই জুড়ে যায়</span>
+            </h2>
+            <p data-l="en">
+              DokaanBondhu AI is a plugin, not one more place to keep your books. It connects to your shop
+              software: it reads from its database and saves through the app's own API, so every sale lands in
+              the same books you already use.
+            </p>
+            <p data-l="bn" lang="bn">
+              DokaanBondhu AI আলাদা আরেকটা হিসাবের খাতা নয়, একটি প্লাগইন। আপনার দোকানের সফটওয়্যারের সাথে
+              জুড়ে যায়: ডাটাবেস থেকে পড়ে, আর অ্যাপের নিজের API দিয়ে সেভ করে। তাই প্রতিটি বিক্রি ওঠে আপনার
+              চেনা খাতাতেই।
+            </p>
+            <p class="fine-dark" data-l="en">
+              What it needs: your app's own API over a MySQL or PostgreSQL database. Shown working with
+              GearGrid, with a second test shop on MySQL built quite differently, and with a Laravel app.
+            </p>
+            <p class="fine-dark" data-l="bn" lang="bn">
+              যা লাগে: MySQL বা PostgreSQL ডাটাবেসের ওপর অ্যাপের নিজের API। চালিয়ে দেখানো হয়েছে GearGrid-এ,
+              MySQL-এ একদম অন্যভাবে বানানো আরেকটি টেস্ট দোকানে, আর একটি Laravel অ্যাপে।
+            </p>
+          </div>
+          <div
+            class="flow"
+            role="img"
+            aria-label="Your phone talks to DokaanBondhu AI, which reads your shop app's database and saves through its API."
+          >
+            <div class="node node-phone">
+              <strong><span data-l="en">Your phone</span><span data-l="bn">আপনার ফোন</span></strong>
+              <span data-l="en">Voice or chat</span><span data-l="bn">ভয়েস বা চ্যাট</span>
+            </div>
+            <div class="wire"><span></span></div>
+            <div class="node node-ai">
+              <img src="img/icon.svg" alt="" width="40" height="40" />
+              <strong>DokaanBondhu AI</strong>
+            </div>
+            <div class="wire wire-split"><span></span></div>
+            <div class="node node-app">
+              <strong><span data-l="en">Your shop app</span><span data-l="bn">দোকানের অ্যাপ</span></strong>
+              <span class="port"
+                ><b><span data-l="en">Database</span><span data-l="bn">ডাটাবেস</span></b>
+                <span data-l="en">read only</span><span data-l="bn">শুধু পড়া</span></span
+              >
+              <span class="port"
+                ><b>API</b> <span data-l="en">saves after yes</span
+                ><span data-l="bn">হ্যাঁ বললে সেভ</span></span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="geargrid" id="geargrid">
+        <div class="wrap gg-grid">
+          <div class="gg-text">
+            <p class="gg-name"><img src="img/geargrid-mark.svg" alt="" width="28" height="28" /> GearGrid</p>
+            <h2>
+              <span data-l="en">No shop software yet? Start with GearGrid.</span
+              ><span data-l="bn">দোকানের সফটওয়্যার নেই? GearGrid দিয়ে শুরু করুন।</span>
+            </h2>
+            <p data-l="en">
+              GearGrid is the shop app we built for car parts shops: sales and bills, purchases, stock,
+              customer and supplier dues, cheques and accounts, reports, and Excel import for your parts list.
+              It runs in the browser on a computer or a phone, and you can add it to your phone's home screen.
+              DokaanBondhu AI comes already connected.
+            </p>
+            <p data-l="bn" lang="bn">
+              GearGrid আমাদের বানানো দোকানের অ্যাপ, গাড়ির পার্টসের দোকানের জন্য: বিক্রি ও বিল, কেনা, স্টক,
+              কাস্টমার আর সাপ্লায়ারের বাকি, চেক ও হিসাব, রিপোর্ট, আর Excel থেকে পার্টসের তালিকা তোলা।
+              কম্পিউটার বা ফোনের ব্রাউজারে চলে, ফোনের হোম স্ক্রিনেও রাখা যায়। DokaanBondhu AI আগে থেকেই
+              জোড়া।
+            </p>
+            <div class="gg-actions">
+              <a class="btn btn-gg" href="https://geargrid-seven.vercel.app" rel="noopener"
+                ><span data-l="en">Open GearGrid</span><span data-l="bn">GearGrid খুলুন</span></a
+              >
+              <span class="fine-on-dark" data-l="en">Demo login by email, below.</span>
+              <span class="fine-on-dark" data-l="bn" lang="bn">ডেমো লগইন ইমেইলে, নিচে দেখুন।</span>
+            </div>
+          </div>
+          <figure class="gg-shots">
+            <img
+              class="gg-desktop"
+              src="img/geargrid-home.webp"
+              width="1440"
+              height="900"
+              loading="lazy"
+              alt="GearGrid's home page on a computer: today's sales, a bar chart of the last 30 days, and the balance of each account."
+            />
+            <img
+              class="gg-phone"
+              src="img/geargrid-phone.webp"
+              width="420"
+              height="933"
+              loading="lazy"
+              alt="GearGrid's home page on a phone."
+            />
+          </figure>
+        </div>
+      </section>
+
+      <section class="price" id="price">
+        <div class="wrap price-grid">
+          <div class="tag" aria-label="499 taka a month per shop, the first 2 months free">
+            <span class="tag-hole" aria-hidden="true"></span>
+            <span class="tag-amount"><span data-l="en">499</span><span data-l="bn">৪৯৯</span></span>
+            <span class="tag-unit"
+              ><span data-l="en">taka a month, per shop</span
+              ><span data-l="bn">টাকা প্রতি মাসে, দোকানপ্রতি</span></span
+            >
+            <span class="tag-free"
+              ><span data-l="en">First 2 months free</span><span data-l="bn">প্রথম ২ মাস ফ্রি</span></span
+            >
+          </div>
+          <div class="price-text">
+            <h2>
+              <span data-l="en">One price for the whole shop</span
+              ><span data-l="bn">পুরো দোকানের জন্য একটাই দাম</span>
+            </h2>
+            <ul class="ticks">
+              <li>
+                <span data-l="en">DokaanBondhu AI, by voice and by chat</span
+                ><span data-l="bn">DokaanBondhu AI, ভয়েসে আর চ্যাটে</span>
+              </li>
+              <li>
+                <span data-l="en">GearGrid included, if your shop has no software</span
+                ><span data-l="bn">দোকানে সফটওয়্যার না থাকলে GearGrid সাথেই</span>
+              </li>
+              <li>
+                <span data-l="en">Logins for the owner and every staff member</span
+                ><span data-l="bn">মালিক আর প্রত্যেক কর্মচারীর আলাদা লগইন</span>
+              </li>
+              <li>
+                <span data-l="en">No payment details for the free months; cancel any time</span
+                ><span data-l="bn">ফ্রি মাসগুলোতে পেমেন্টের তথ্য লাগে না; যখন খুশি বন্ধ করুন</span>
+              </li>
+            </ul>
+            <p class="fine-dark" data-l="en">
+              Online sign-up and payment are not open yet. Email us to get started.
+            </p>
+            <p class="fine-dark" data-l="bn" lang="bn">
+              অনলাইনে সাইন-আপ আর পেমেন্ট এখনো চালু হয়নি। শুরু করতে ইমেইল করুন।
+            </p>
+            <a class="btn btn-green" href="#contact"
+              ><span data-l="en">Email us</span><span data-l="bn">ইমেইল করুন</span></a
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="download" id="download">
+        <div class="wrap dl-grid">
+          <div>
+            <h2><span data-l="en">Get the app</span><span data-l="bn">অ্যাপটি নামান</span></h2>
+            <a
+              class="btn btn-gold btn-big"
+              href="https://github.com/shawalkabirchy/dokaanbondhu/releases/latest/download/DokaanBondhu-AI.apk"
+              rel="noopener"
+            >
+              <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span data-l="en">Download for Android</span><span data-l="bn">Android-এর জন্য ডাউনলোড</span>
+            </a>
+            <p class="fine" data-l="en">Version 0.1.0, about 63 MB, Android 7 or newer. Not on iPhone yet.</p>
+            <p class="fine" data-l="bn" lang="bn">
+              ভার্সন ০.১.০, প্রায় ৬৩ MB, Android 7 বা তার পরের। iPhone-এ এখনো নয়।
+            </p>
+            <p class="ios-note" hidden>
+              <span data-l="en"
+                >You are on an iPhone. This app needs an Android phone; GearGrid works in your browser.</span
+              >
+              <span data-l="bn"
+                >আপনি iPhone-এ আছেন। এই অ্যাপের জন্য Android ফোন লাগবে; GearGrid ব্রাউজারেই চলে।</span
+              >
+            </p>
+            <ol class="install">
+              <li data-l="en">Tap Download and wait for the file to finish.</li>
+              <li data-l="bn" lang="bn">ডাউনলোডে চাপুন, ফাইলটা নামা পর্যন্ত অপেক্ষা করুন।</li>
+              <li data-l="en">Open the file. If Android asks, allow your browser to install apps.</li>
+              <li data-l="bn" lang="bn">
+                ফাইলটি খুলুন। Android জিজ্ঞেস করলে ব্রাউজারকে অ্যাপ ইনস্টলের অনুমতি দিন।
+              </li>
+              <li data-l="en">
+                Android may warn that the app is not from Google Play. That is expected for now: choose to
+                install it anyway.
+              </li>
+              <li data-l="bn" lang="bn">
+                Google Play থেকে নয় বলে Android সতর্ক করতে পারে। এখনকার জন্য এটা স্বাভাবিক: তবুও ইনস্টল বেছে
+                নিন।
+              </li>
+              <li data-l="en">Open DokaanBondhu and log in with the demo login we email you.</li>
+              <li data-l="bn" lang="bn">DokaanBondhu খুলে আমাদের ইমেইলে পাঠানো ডেমো লগইন দিয়ে ঢুকুন।</li>
+            </ol>
+          </div>
+          <div class="qr-box">
+            <div
+              class="qr"
+              data-qr="https://dokaanbondhu.vercel.app"
+              role="img"
+              aria-label="QR code for dokaanbondhu.vercel.app"
+            ></div>
+            <p>
+              <span data-l="en"
+                >On a computer? Scan this with your phone's camera to open this page there.</span
+              ><span data-l="bn">কম্পিউটারে আছেন? ফোনের ক্যামেরায় স্ক্যান করুন, পাতাটা ফোনে খুলবে।</span>
+            </p>
+            <p class="qr-url">dokaanbondhu.vercel.app</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="contact" id="contact">
+        <div class="wrap contact-grid">
+          <div>
+            <h2><span data-l="en">Ask for a demo login</span><span data-l="bn">ডেমো লগইন চান</span></h2>
+            <p data-l="en">
+              The app has no public sign-up yet. Email us and we will send you a login for our test shop, for
+              the app and for GearGrid.
+            </p>
+            <p data-l="bn" lang="bn">
+              অ্যাপে এখনো নিজে নিজে সাইন-আপের ব্যবস্থা নেই। ইমেইল করুন, আমাদের টেস্ট দোকানের লগইন পাঠিয়ে দেব,
+              অ্যাপ আর GearGrid দুটোর জন্যই।
+            </p>
+          </div>
+          <div class="mail">
+            <a class="mail-address" id="mail-link" data-u="shawalkabirchy" data-d="gmail.com" href="#contact"
+              ><span class="mail-text">shawalkabirchy [at] gmail.com</span></a
+            >
+            <button type="button" id="mail-copy" class="btn btn-ghost">
+              <span data-l="en">Copy address</span><span data-l="bn">ঠিকানা কপি করুন</span>
+            </button>
+            <span class="copied" id="mail-copied" role="status" hidden
+              ><span data-l="en">Copied</span><span data-l="bn">কপি হয়েছে</span></span
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="privacy" id="privacy">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>
+              <span data-l="en">Your voice and your shop's data</span
+              ><span data-l="bn">আপনার কণ্ঠ আর দোকানের তথ্য</span>
+            </h2>
+          </div>
+          <dl class="facts">
+            <div>
+              <dt><span data-l="en">Your voice</span><span data-l="bn">কণ্ঠ</span></dt>
+              <dd data-l="en">
+                The microphone listens only while you hold the button or the floating mic. The recording goes
+                over a secure connection to our speech service, becomes text, and is not kept.
+              </dd>
+              <dd data-l="bn" lang="bn">
+                মাইক শোনে শুধু যখন বোতাম বা ভাসমান মাইক চেপে ধরেন। রেকর্ডিং নিরাপদ সংযোগে আমাদের স্পিচ
+                সার্ভিসে যায়, লেখায় বদলায়, তারপর রাখা হয় না।
+              </dd>
+            </div>
+            <div>
+              <dt><span data-l="en">Your records</span><span data-l="bn">হিসাব</span></dt>
+              <dd data-l="en">
+                Your books stay in your own shop app. The assistant reads them with a read-only login and
+                saves only what you confirm with yes.
+              </dd>
+              <dd data-l="bn" lang="bn">
+                হিসাব থাকে আপনার দোকানের অ্যাপেই। সহকারী সেটা পড়ে শুধু-পড়ার লগইনে, আর সেভ করে শুধু যা আপনি
+                ‘হ্যাঁ’ বলে নিশ্চিত করেন।
+              </dd>
+            </div>
+            <div>
+              <dt><span data-l="en">History</span><span data-l="bn">ইতিহাস</span></dt>
+              <dd data-l="en">
+                Your questions and the answers are kept in the app's History, so you can see what was done and
+                undo a sale or a price change.
+              </dd>
+              <dd data-l="bn" lang="bn">
+                প্রশ্ন আর উত্তর থাকে অ্যাপের ইতিহাসে, যাতে কী হয়েছে দেখতে পারেন আর বিক্রি বা দাম বদল ফিরিয়ে
+                নিতে পারেন।
+              </dd>
+            </div>
+            <div>
+              <dt><span data-l="en">AI services</span><span data-l="bn">AI সার্ভিস</span></dt>
+              <dd data-l="en">
+                An AI service turns your words into the right search and writes the answer; it sees your
+                question and the rows needed to answer it. We use Supabase for logins, Render for our server,
+                Modal for speech, Cloudflare Workers AI for the AI, and DeepSeek as the backup AI.
+              </dd>
+              <dd data-l="bn" lang="bn">
+                একটি AI সার্ভিস আপনার কথা থেকে ঠিক খোঁজটা বানায় আর উত্তর লেখে; সে দেখে আপনার প্রশ্ন আর
+                উত্তরের জন্য দরকারি সারিগুলো। লগইনের জন্য Supabase, সার্ভারের জন্য Render, স্পিচের জন্য Modal,
+                AI-এর জন্য Cloudflare Workers AI, আর ব্যাকআপ AI হিসেবে DeepSeek ব্যবহার করি।
+              </dd>
+            </div>
+            <div>
+              <dt><span data-l="en">Deleting</span><span data-l="bn">মুছে ফেলা</span></dt>
+              <dd data-l="en">We do not sell your data. To delete a login or your shop's data, email us.</dd>
+              <dd data-l="bn" lang="bn">
+                আমরা আপনার তথ্য বিক্রি করি না। কোনো লগইন বা দোকানের তথ্য মুছতে চাইলে ইমেইল করুন।
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-row">
+        <p class="brand brand-small">
+          <img src="img/icon.svg" alt="" width="24" height="24" /> DokaanBondhu AI
+        </p>
+        <p data-l="en">A capstone project, 2026.</p>
+        <p data-l="bn" lang="bn">একটি ক্যাপস্টোন প্রজেক্ট, ২০২৬।</p>
+        <p class="foot-links">
+          <a href="https://github.com/shawalkabirchy/dokaanbondhu" rel="noopener">DokaanBondhu on GitHub</a>
+          <a href="https://github.com/shawalkabirchy/geargrid" rel="noopener">GearGrid on GitHub</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>

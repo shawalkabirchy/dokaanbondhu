@@ -22,6 +22,20 @@ export default defineConfig([
     },
   },
   {
+    // The landing page's script (D249) runs in the browser; qrcode is the QR library it loads from cdnjs.
+    files: ["site/**/*.js"],
+    languageOptions: {
+      sourceType: "script",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        navigator: "readonly",
+        localStorage: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
+  {
     // Only packages/platform-db opens the platform database; everything else goes through withShop() (spec 7.3).
     files: ["**/*.ts", "**/*.tsx"],
     ignores: ["packages/platform-db/**"],

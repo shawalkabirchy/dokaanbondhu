@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" width="30" height="30">
+  <!-- GearGrid's mark (spec D207): a grid of nine with the marigold at its centre, in a lighter blue for a dark band. -->
+  <rect x="0" y="0" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="11" y="0" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="22" y="0" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="0" y="11" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="11" y="11" width="8" height="8" rx="2" fill="#f4b400"/>
+  <rect x="22" y="11" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="0" y="22" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="11" y="22" width="8" height="8" rx="2" fill="#6f7ce0"/>
+  <rect x="22" y="22" width="8" height="8" rx="2" fill="#6f7ce0"/>
+</svg>

@@ -1,7 +1,12 @@
 # DokaanBondhu CI (spec 18.3).
 name: CI
 
-on: [push, pull_request]
+# A change to the landing page alone (site/, D249) needs none of these checks.
+on:
+  push:
+    paths-ignore: ["site/**"]
+  pull_request:
+    paths-ignore: ["site/**"]
 
 jobs:
   node:
