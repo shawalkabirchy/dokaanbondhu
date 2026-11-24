@@ -279,6 +279,48 @@ export interface CustomerMatch {
 
 /** Score of a name that the spoken words begin (Rahim -> Rahim Motors): enough to be asked about, not assumed. */
 const BEGINS_NAME = 0.85;
+/** Words said from inside one name only (a word before them lost, D252): understood, but shown boldly. */
+const INSIDE_NAME = 0.8;
+/** How alike each said word must sound to the name's word, for words said from inside a name (D252). */
+const INSIDE_WORD_SOUND = 0.65;
+/** Words many shops' names share: words said from inside a name must hold another (D252). */
+const SHOP_WORD_KEYS = new Set(
+  [
+    "garage",
+    "auto",
+    "autos",
+    "motor",
+    "motors",
+    "works",
+    "parts",
+    "traders",
+    "trading",
+    "enterprise",
+    "store",
+    "house",
+    "center",
+    "point",
+    "solution",
+    "care",
+    "service",
+    "corporation",
+    "গ্যারেজ",
+    "অটো",
+    "মোটর",
+    "মোটরস",
+    "ওয়ার্কস",
+    "পার্টস",
+    "ট্রেডার্স",
+    "এন্টারপ্রাইজ",
+    "স্টোর",
+    "হাউস",
+    "সেন্টার",
+    "পয়েন্ট",
+    "সলিউশন",
+    "কেয়ার",
+    "সার্ভিস",
+  ].map((word) => phoneticKey(word)),
+);
 
 /** Company endings nobody says when naming a shop: "Nawabpur Auto Parts Ltd." is said "নবাবপুর অটো পার্টস" (D148). */
 const COMPANY_ENDINGS = new Set([
@@ -325,15 +367,42 @@ export function resolveCustomer(
       .slice(0, NBEST_WEIGHTS.length)
       .map((text, rank) => ({ text, weight: NBEST_WEIGHTS[rank] ?? 0 })),
   ];
-  const beginning = customers.filter((customer) => {
-    const keys = [customer.name, customer.nameBn ?? ""].map((name) =>
+  const keysOf = (customer: CatalogCustomer) =>
+    [customer.name, customer.nameBn ?? ""].map((name) =>
       nameTokens(name, dictionary).map((token) => phoneticKey(token)),
     );
-    return keys.some(
+  const beginning = customers.filter((customer) =>
+    keysOf(customer).some(
       (name) =>
         saidKeys.length > 0 && saidKeys.length < name.length && saidKeys.every((key, i) => key === name[i]),
-    );
-  });
+    ),
+  );
+  // The words said found further inside a name, a word before them not heard: "ঢাকা গ্যারেজ" is New Dhaka Garage
+  // when speech-to-text dropped "নিউ" (v-162, D252). Each word by sound, as Bangla letters write an English name
+  // ("গ্যারেজ", garage), and one of them more than a shop word, so "গ্যারেজ" alone is no one's name. Said with all
+  // its words or its beginning, a name is matched above.
+  const alike = (a: string, b: string) => a === b || keySimilarity(a, b, true) >= INSIDE_WORD_SOUND;
+  const shopWord = (key: string) => [...SHOP_WORD_KEYS].some((word) => alike(key, word));
+  const distinct = saidKeys.some((key) => key.length > 0 && !shopWord(key));
+  // A shop word may be written another way ("গ্যারেজ", garage); the name's own word must be the same ("রহিম" is never
+  // Mizanur Rahman's "Rahman").
+  const sameWord = (said: string, name: string) => (shopWord(said) ? alike(said, name) : said === name);
+  const inside = distinct
+    ? customers.filter(
+        (customer) =>
+          !beginning.includes(customer) &&
+          keysOf(customer).some(
+            (name) =>
+              saidKeys.length < name.length &&
+              name.some(
+                (_, start) =>
+                  start > 0 &&
+                  saidKeys.every((key, i) => start + i < name.length && sameWord(key, name[start + i]!)),
+              ),
+          ),
+      )
+    : [];
+  const partly = [...beginning, ...inside];
   // A name as speech-to-text wrote it, learned from corrections and added by the owner (D155).
   const learned = new Map<string, string[]>();
   for (const term of dictionary.terms) {
@@ -342,7 +411,8 @@ export function resolveCustomer(
   }
   const candidates: CustomerCandidate[] = customers
     .map((customer) => {
-      let score = beginning.includes(customer) ? BEGINS_NAME : 0;
+      // A name said from its beginning is taken; one said from inside is taken boldly, so the sheet shows it (D252).
+      let score = beginning.includes(customer) ? BEGINS_NAME : inside.includes(customer) ? INSIDE_NAME : 0;
       for (const name of [customer.name, customer.nameBn, ...(learned.get(customer.name) ?? [])].filter(
         (value): value is string => Boolean(value),
       )) {
@@ -361,7 +431,7 @@ export function resolveCustomer(
     .filter((candidate) => candidate.score > 0)
     .sort((a, b) => b.score - a.score);
   const [first, second] = candidates;
-  if (beginning.length > 1 || (first && second && second.score >= 0.85)) {
+  if (partly.length > 1 || (first && second && second.score >= 0.85)) {
     return { candidates, decision: "ambiguous" };
   }
   const decision = decide(first?.score ?? 0, second?.score ?? 0);

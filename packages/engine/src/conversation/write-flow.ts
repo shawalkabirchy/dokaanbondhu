@@ -176,6 +176,7 @@ const PART_KEYS = [
   "quality",
   "brand",
   "part_number",
+  "part_number_choices",
 ] as const;
 
 export interface WriteTurn {
@@ -550,7 +551,7 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
   let chosen = (frame.slots.part?.value as ChosenPart | undefined) ?? null;
   if ((slots.has("items") || slots.has("part")) && !chosen) {
     const query = partQueryOf(frame);
-    if (!query.part_type && !query.part_number) return ask("part_type");
+    if (!query.part_type && !query.part_number && !query.part_number_choices) return ask("part_type");
     const answered = answeredSlots(frame);
     const full = turn.complete(query, answered, slots.has("vehicle") ? { carFromRequest: false } : {});
     for (const [key, value] of Object.entries(full.query)) {

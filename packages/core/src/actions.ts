@@ -454,6 +454,12 @@ const PRICE_WORDS = new Set(
 );
 const SET_PRICE = [
   "করো",
+  "কর",
+  // "ask it to make it …", as staff said it in S1's run (v-171, D252): still a price change, so still the owner's
+  "করতে বল",
+  "করতে বলো",
+  "করতে বলুন",
+  "করতে বলেন",
   "করে দাও",
   "করে দিন",
   "করে দেন",
@@ -474,6 +480,11 @@ const SET_PRICE = [
   "rakho",
   "rakhen",
   "set koro",
+  "kor",
+  "korte bol",
+  "korte bolo",
+  "korte bolun",
+  "korte bolen",
 ];
 const SELLING = ["বিক্রি", "বেচো", "bikri", "becho", "sell"];
 
@@ -683,6 +694,13 @@ const QUESTION_WORDS = new Set(
 );
 const said = (tokens: string[], phrase: string) =>
   ` ${tokens.join(" ")} `.includes(` ${normalize(phrase).tokens.join(" ")} `);
+/** "করতে" before a বলো, বলুন or বলেন: asked to have it done ("দাম ৭০০ টাকা করতে বলুন"), not asked to be told (D252). */
+const ASK_TO_DO = new Set(["করতে", "korte"].map((word) => normalize(word).tokens.join(" ")));
+const TOLD = new Set(
+  ["বল", "বলো", "বলুন", "বলেন", "bol", "bolo", "bolun", "bolen"].map((word) =>
+    normalize(word).tokens.join(" "),
+  ),
+);
 
 /**
  * The kind of write a sentence asks for, or null: a sale ("দাও", "dao" with a payment word or a named customer), a
@@ -706,7 +724,13 @@ export function writeCueOf(
   const tokens = normalize(text).tokens;
   if (!tokens.length || text.trim().endsWith("?")) return null;
   // A price change names the price it sets (D171); every other write is said without a question word.
-  const asks = tokens.some((token) => QUESTION_WORDS.has(token) && !PRICE_WORDS.has(token));
+  // "করতে বলুন" (korte bolun, "ask it to make it") asks for a deed, not to be told: its বলুন is no question (D252).
+  const asks = tokens.some(
+    (token, index) =>
+      QUESTION_WORDS.has(token) &&
+      !PRICE_WORDS.has(token) &&
+      !(ASK_TO_DO.has(tokens[index - 1] ?? "") && TOLD.has(token)),
+  );
   if (asks) return null;
   if (WRITE_CUES.return.some((phrase) => said(tokens, phrase))) return "return";
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";

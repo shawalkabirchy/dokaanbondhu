@@ -27,7 +27,8 @@ const DIGIT_SOUNDS: readonly (readonly [string, string])[] = Object.entries(spel
   ([digit, words]) => words.slice(0, 2).map((word) => [digit, soundOf(word)] as const),
 );
 
-const DOUBLE = new Set(["ডাবল", "double", "dabol", "dabal", "dobol"].map(nfc));
+// ডবল as speech-to-text wrote it in S1's run (v-091, D252).
+const DOUBLE = new Set(["ডাবল", "ডবল", "ডাবোল", "double", "dabol", "dabal", "dobol"].map(nfc));
 const TRIPLE = new Set(["ট্রিপল", "triple", "tripol", "tripal"].map(nfc));
 /** How many times the next sign is said: ডাবল ফাইভ is 55. */
 export const repeatWord = (token: string) => (DOUBLE.has(nfc(token)) ? 2 : TRIPLE.has(nfc(token)) ? 3 : 1);
@@ -191,6 +192,38 @@ export interface SpokenPartNumber {
 const NONE: SpokenPartNumber = { number: null, close: [], span: null };
 
 /**
+ * A letter group said as a word, in the sound keys' letters (D252): "loc" as লক, "air" as এয়ার, "cha" as চা. Only a
+ * group of three letters or more with a vowel is sayable; "kyb" or "an" is said letter by letter.
+ */
+function groupAsWord(group: string): string | null {
+  if (group.length < 3 || !/[aeiou]/.test(group)) return null;
+  return group
+    .replace(/ch/g, "c")
+    .replace(/[cq]/g, "k")
+    .replace(/v/g, "b")
+    .replace(/w/g, "o")
+    .replace(/x/g, "ks")
+    .replace(/y/g, "i")
+    .replace(/z/g, "j");
+}
+
+/**
+ * How a part number may sound said aloud: every sign by its name, and a sayable letter group also as a word, the way
+ * the shop's own codes are said ("LOC-AIR-1178" as "লক এয়ার ওয়ান ওয়ান সেভেন এইট", D252).
+ */
+function numberSounds(number: string): string[] {
+  let sounds = [""];
+  for (const piece of asciiDigits(number)
+    .toLowerCase()
+    .match(/[a-z]+|[0-9]+/g) ?? []) {
+    const word = /^[a-z]+$/.test(piece) ? groupAsWord(piece) : null;
+    const forms = word ? [signSound(piece), word] : [signSound(piece)];
+    sounds = sounds.flatMap((sound) => forms.map((form) => sound + form));
+  }
+  return sounds;
+}
+
+/**
  * A part number said aloud, matched by sound against the shop's own part numbers (D237): the words just before or
  * after a cue (নম্বর, পার্ট …), or anywhere for an answer to "which part number?", compared with how each number
  * sounds said sign by sign. Taken only when one number is clearly nearest; several close ones are given for buttons,
@@ -232,14 +265,15 @@ export function partNumberBySound(
     if (key.length >= 4 && !numbers.has(key)) numbers.set(key, number);
   }
   const best = new Map<string, { score: number; span: [number, number] }>();
-  for (const [key, number] of numbers) {
-    const target = signSound(key.toLowerCase());
-    for (const window of heard) {
-      const longer = Math.max(window.sound.length, target.length);
-      if (Math.abs(window.sound.length - target.length) > longer * (1 - PART_NUMBER_MIN_SOUND)) continue;
-      const score = 1 - distance(window.sound, target) / longer;
-      const seen = best.get(number);
-      if (!seen || score > seen.score) best.set(number, { score, span: window.span });
+  for (const number of numbers.values()) {
+    for (const target of numberSounds(number)) {
+      for (const window of heard) {
+        const longer = Math.max(window.sound.length, target.length);
+        if (Math.abs(window.sound.length - target.length) > longer * (1 - PART_NUMBER_MIN_SOUND)) continue;
+        const score = 1 - distance(window.sound, target) / longer;
+        const seen = best.get(number);
+        if (!seen || score > seen.score) best.set(number, { score, span: window.span });
+      }
     }
   }
   const ranked = [...best].sort((a, b) => b[1].score - a[1].score);

@@ -38,6 +38,11 @@ export interface PartQuery {
   quality?: string;
   brand?: string;
   part_number?: string;
+  /**
+   * The shop's part numbers a number said aloud sounded close to, more than one, joined by "|" (D252): asked "X বা
+   * Y, কোনটা?" when no part number is known. Never from the model.
+   */
+  part_number_choices?: string;
   /** Only among these parts, with no car needed: a return's buyer's recent buys (D186). Never from the model. */
   part_ids?: string[];
 }
@@ -539,7 +544,8 @@ export function resolveCar(input: {
 }
 
 export async function findParts(input: FindPartsInput): Promise<FindPartsResult> {
-  const { query, catalog, dictionary } = input;
+  const { catalog, dictionary } = input;
+  let { query } = input;
   const bold: string[] = [];
   const resolved: Resolved = {
     partType: null,
@@ -551,6 +557,17 @@ export async function findParts(input: FindPartsInput): Promise<FindPartsResult>
     brand: null,
     bold,
   };
+
+  // A part number said aloud and heard close to several of the shop's own (D252): the user picks one.
+  if (!query.part_number && query.part_number_choices) {
+    const known = new Set(catalog.parts.flatMap((part) => part.partNumbers));
+    const options = query.part_number_choices
+      .split("|")
+      .map((number) => number.trim())
+      .filter((number) => known.has(number));
+    if (options.length > 1) return { kind: "ask", slot: "part_number", options, resolved };
+    if (options.length === 1) query = { ...query, part_number: options[0] };
+  }
 
   // A part number: an exact match is used, a near one only offered.
   if (query.part_number) {

@@ -467,6 +467,7 @@ function partQueryOf(args: Record<string, unknown>): PartQuery {
     "quality",
     "brand",
     "part_number",
+    "part_number_choices",
   ] as const) {
     const value = str(args[key]);
     if (value) query[key] = value;
@@ -692,7 +693,10 @@ export async function runTurn(
   };
   const state: TurnState = { ...current, history: [...current.history] };
   const said = input.text?.trim() ?? "";
-  const others = (input.hypotheses ?? []).slice(1);
+  // The transcript is the first guess, and the speech model's list the others: the list may put another guess first
+  // (S1's v-091 had "ফাইট" there, "ফাইভ" in the transcript), and a part detail read from it while the part number
+  // was read from the transcript made "ফাইট" a Honda Fit (D252).
+  const others = (input.hypotheses ?? []).filter((hypothesis) => hypothesis.trim() !== said);
 
   // Session context expires after 30 minutes without a turn, the customer after 10 (spec 9.8, D125).
   const idle = state.context.updatedAt ? now.getTime() - Date.parse(state.context.updatedAt) : 0;
@@ -756,13 +760,7 @@ export async function runTurn(
     mark("cleanup", since);
   }
   const text = cleaned.text;
-  const hypotheses = cleaned.replaced.length
-    ? [text, ...others]
-    : input.hypotheses?.length
-      ? input.hypotheses
-      : text
-        ? [text]
-        : [];
+  const hypotheses = text ? [text, ...others] : others;
   /** The words the LLM chose (D153): a frame slot holding one is shown in bold on the confirmation sheet. */
   const guessed = new Set(
     cleaned.replaced.flatMap(({ option }) =>
@@ -1109,6 +1107,13 @@ export async function runTurn(
         delete out.year;
         delete out.engine;
       }
+    } else if (!out.part_number_choices && numberChoices(out.part_number)) {
+      // Heard close to several of the shop's numbers: asked which, never the LLM's own guess at it (D252).
+      out.part_number_choices = numberChoices(out.part_number)!;
+      delete out.part_number;
+      delete out.vehicle;
+      delete out.year;
+      delete out.engine;
     }
     // A fitment names the part's car and a second car: its part takes neither the request's car nor a year it did not
     // say (D172).
@@ -1420,14 +1425,27 @@ export async function runTurn(
     // A part number said aloud sign by sign is the part (D237): the LLM's own guess at it ("0199", "30101") was dropped
     // above, and a part type or car it put beside it from the same words is not the part's.
     const saidNumber = partNumberIn();
+    const choices = saidNumber ? null : numberChoices(part.part_number);
+    // A car heard in a fitment's words is the car it adds, never the part's: the part said by number keeps no car the
+    // LLM gave it (v-122's Yaris, D252).
+    const keepsCar = heardSlots.has("vehicle_model") && !args.vehicle;
     if (saidNumber && missing("part_number")) {
       part.part_number = saidNumber.number;
       if (saidNumber.bySound) {
         if (!heardSlots.has("part_type")) delete part.part_type;
-        if (!heardSlots.has("vehicle_model")) {
+        if (!keepsCar) {
           delete part.vehicle;
           delete part.year;
         }
+      }
+    } else if (choices && missing("part_number")) {
+      // Heard close to several of the shop's numbers: the write asks which (D252), keeping no type or car the LLM put
+      // beside the number from its own words.
+      part.part_number_choices = choices;
+      if (!heardSlots.has("part_type")) delete part.part_type;
+      if (!keepsCar) {
+        delete part.vehicle;
+        delete part.year;
       }
     }
     // A count said with its unit or টা ("ekta", "দুই সেট") is the line's quantity when the model left it out, or put
@@ -1532,6 +1550,15 @@ export async function runTurn(
     );
     const kept = close.filter((number) => typed.has(number));
     return kept.length === 1 ? kept[0]! : null;
+  };
+  /**
+   * The shop's numbers a number said aloud sounded close to, joined for the search's question "X বা Y, কোনটা?"
+   * (D252), when the words name none clearly and the model gave none of the shop's own; null otherwise.
+   */
+  const numberChoices = (given?: unknown): string | null => {
+    if (partNumberIn()) return null;
+    if (typeof given === "string" && matchPartNumber(given, shopNumbers).exact) return null;
+    return spokenNumber.close.length > 1 ? spokenNumber.close.join("|") : null;
   };
 
   /**

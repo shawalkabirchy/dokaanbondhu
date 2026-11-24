@@ -714,3 +714,24 @@ describe("polite sales, tell-me questions and arrivals (D186)", () => {
     expect(writeCueOf("mal kal asche", { partyNamed: false, supplierNamed: false })).toBeNull();
   });
 });
+
+// Staff asking the assistant to change a price (S1's v-171, D252): "করতে বলুন" asks for a deed, not to be told.
+describe("a price change asked for with করতে বলুন (D252)", () => {
+  it.each([
+    { style: "Bangla", text: "লখিয়া বারোশো পাঁচ পাটের দাম কমিয়ে তিন হাজার তিনশ পঞ্চাশ টাকা করতে বলুন" },
+    { style: "Bangla", text: "১৭৮০১-১০০৪৭ পার্টের দাম কমিয়ে ৭০০ টাকা কর" },
+    { style: "Banglish", text: "loc hea 1205 er dam komiye 3350 taka korte bolun" },
+    { style: "Banglish", text: "17801 10047 part er dam komiye 700 taka kor" },
+  ])("is a price change: $text ($style)", ({ text }) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBe("price_update");
+  });
+
+  it.each([
+    { style: "Bangla", text: "দামটা বলুন" },
+    { style: "Bangla", text: "দাম ৫০০ টাকা কিনা বলুন" },
+    { style: "Banglish", text: "dam ta bolen" },
+    { style: "Banglish", text: "pad er dam koto bolo" },
+  ])("asking to be told is still a question: $text ($style)", ({ text }) => {
+    expect(writeCueOf(text, { partyNamed: false })).toBeNull();
+  });
+});

@@ -315,3 +315,34 @@ describe("customer resolver (spec 10.7)", () => {
     expect(resolveCustomer("Jamal Traders", [], customers, dictionary).decision).toBe("unclear");
   });
 });
+
+// S2's v-162 (D252): speech-to-text dropped "নিউ" from New Dhaka Garage.
+describe("a customer's name said from inside it (D252)", () => {
+  const customers: CatalogCustomer[] = [
+    { hostId: "c1", name: "New Dhaka Garage", nameBn: null },
+    { hostId: "c2", name: "Rahim Auto Garage", nameBn: null },
+    { hostId: "c3", name: "Mizanur Rahman", nameBn: null },
+    { hostId: "c4", name: "Rahim Motors", nameBn: null },
+  ];
+
+  it.each(["ঢাকা গ্যারেজ", "dhaka garage"])(
+    "is the one name holding the words, shown boldly (%s)",
+    (name) => {
+      const match = resolveCustomer(name, [], customers, dictionary);
+      expect(match.decision).toBe("understood_bold");
+      expect(match.candidates[0]?.customer.hostId).toBe("c1");
+    },
+  );
+
+  it.each(["গ্যারেজ", "garage", "অটো গ্যারেজ", "auto garage"])(
+    "a shop word alone is no one's name (%s)",
+    (name) => {
+      expect(resolveCustomer(name, [], customers, dictionary).decision).not.toMatch(/^understood/);
+    },
+  );
+
+  it.each(["রহিম", "rahim"])("a name's own word must be the same: রহিম is never Rahman (%s)", (name) => {
+    const match = resolveCustomer(name, [], customers, dictionary);
+    expect(match.candidates.map((candidate) => candidate.customer.hostId)).not.toContain("c3");
+  });
+});

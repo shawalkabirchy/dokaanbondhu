@@ -223,3 +223,28 @@ describe("price said in English is never a car (D237)", () => {
     ).toBe("Toyota Prius");
   });
 });
+
+// S1 and S2's run, the shop's staff (D252): the shop's own codes said as words, and ডবল for ডাবল.
+describe("the shop's own codes said as words (D252)", () => {
+  const known = ["LOC-AIR-1178", "LOC-AIR-1163", "LOC-RAD-1061", "KYB-300115", "NGK-0115"];
+  it.each([
+    // as the run heard them
+    { style: "Bangla", text: "লক ইয়ার ওয়ান ওয়াইন সেভেন এর পাটা প্রিয়াসেও লাগে", number: "LOC-AIR-1178" },
+    {
+      style: "Bangla",
+      text: "এলআরি আরএডি ওয়ান জিরো সিক্স ওয়াইন পার্টের দাম কমিয়ে করো",
+      number: "LOC-RAD-1061",
+    },
+    { style: "Bangla", text: "এনজিকে জিরো ডবল ওয়ান ফাইভ পাট্টা কোন কোনটি গাড়িতে লাগে", number: "NGK-0115" },
+    { style: "Banglish", text: "loc air one one seven eight part er dam koto", number: "LOC-AIR-1178" },
+    { style: "Banglish", text: "ngk zero double one five part ta kon gari te lage", number: "NGK-0115" },
+  ])("$text is $number ($style)", ({ text, number }) => {
+    expect(partNumberBySound(text, known).number).toBe(number);
+  });
+
+  it("a group without a vowel is still said letter by letter (KYB)", () => {
+    expect(partNumberBySound("কে ওয়াই বি থ্রি জিরো জিরো ওয়ান ওয়ান ফাইভ নম্বরের", known).number).toBe(
+      "KYB-300115",
+    );
+  });
+});
