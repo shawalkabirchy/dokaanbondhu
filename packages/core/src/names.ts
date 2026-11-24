@@ -113,6 +113,25 @@ const RACK_WORDS = new Set(
  */
 const WEAK_RACK_WORDS = new Set(["থাকে", "thake"].map((word) => normalize(word).tokens.join(" ")));
 
+/** "Which" before a rack word: "কোন তাকে", "kon rack e". */
+const WHICH = new Set(
+  ["কোন", "কোনো", "কোনটা", "kon", "kun", "konta", "which"].map((word) => normalize(word).tokens.join(" ")),
+);
+/** The rack words, and তাঁকে as speech-to-text writes তাকে with a nasal mark; only after "which", since it is also "him". */
+const ASKED_RACK = new Set([
+  ...RACK_WORDS,
+  ...["তাঁক", "তাঁকে", "তাঁকের", "র‍্যাকে", "rake"].map((word) => normalize(word).tokens.join(" ")),
+]);
+
+/**
+ * Whether the words ask which rack something is on: "which" with a rack word right after it ("নোয়ার রেডিয়েটর কোন
+ * তাঁকে রাখা", "kon take ache", v-030, D253). A rack's own contents ("বি-২ তাকে কী আছে") is not this question.
+ */
+export function asksWhichRack(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return tokens.some((token, index) => WHICH.has(token) && ASKED_RACK.has(tokens[index + 1] ?? ""));
+}
+
 /** Number words that are everyday words too, never a rack number: "বার" (times), "ashi" (I'm coming) (D121). */
 const NOT_RACK_NUMBERS = new Set(["বার", "ashi"].map((word) => word.normalize("NFC")));
 
@@ -207,8 +226,10 @@ export function racksInText(text: string, racks: readonly string[]): NamedInText
       const sign = spokenSign(token) !== null || wordNumber(token) !== null || byKey.has(rackKey(token));
       if (sign || RACK_WORDS.has(token) || WEAK_RACK_WORDS.has(token)) return;
       const next = [tokens[index - 1] ?? "", tokens[index + 1] ?? ""];
+      // A label said as one word ("বিটু" for B-2) beside a rack word, in a question as in a rack change (v-086, D253).
+      const glued = gluedRack(token);
       const rack = next.some((word) => RACK_WORDS.has(word))
-        ? bySaidKey.get(phoneticKey(token))
+        ? (bySaidKey.get(phoneticKey(token)) ?? (glued ? byKey.get(glued) : undefined))
         : next.some((word) => WEAK_RACK_WORDS.has(word))
           ? spelledLabel(token, byKey)
           : null;

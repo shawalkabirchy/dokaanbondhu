@@ -15,12 +15,14 @@ export interface Step {
 export function scripted(
   steps: Step[],
   cleanups: string[] = [],
-): LlmProvider & { calls: number; cleanupRequests: string[] } {
+): LlmProvider & { calls: number; cleanupRequests: string[]; prompts: string[] } {
   const llm = {
     id: "stub",
     external: false,
     calls: 0,
     cleanupRequests: [] as string[],
+    /** The user's message of each tool-loop call, with its candidates line (D253). */
+    prompts: [] as string[],
     async *stream(request: LlmRequest): AsyncIterable<LlmDelta> {
       if (request.messages[0]?.content === CLEANUP_PROMPT) {
         llm.cleanupRequests.push(String(request.messages[1]?.content ?? ""));
@@ -29,6 +31,8 @@ export function scripted(
         yield { type: "finish", reason: "stop" };
         return;
       }
+      const user = [...request.messages].reverse().find((message) => message.role === "user");
+      llm.prompts.push(String(user?.content ?? ""));
       const step = steps[llm.calls];
       llm.calls += 1;
       if (!step) throw new Error("the LLM was called more often than the script allows");

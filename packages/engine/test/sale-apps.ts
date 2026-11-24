@@ -60,6 +60,8 @@ export interface Shop {
   stock?: Record<string, number>;
   /** Each part's racks in the app (D195); B-3 by default, none for an empty list. */
   racks?: Record<string, string[]>;
+  /** Each part's racks as the catalog sync keeps them, when a test reads labels in a request (D253); none by default. */
+  catalogRacks?: Record<string, string[]>;
   /** Each part's reorder level, for the low-stock reminder (D194); none (0) by default. */
   reorder?: Record<string, number>;
   /** The app's own customer types, for a new customer (D173); GearGrid's by default. */
@@ -486,7 +488,8 @@ function catalogOf(shop: Shop): Catalog {
       partNumbers: [part.id.toUpperCase(), ...(part.numbers ?? [])],
       category: part.category ?? null,
       brand: part.brand,
-      attrs: {},
+      // The racks the catalog sync keeps per part (D195), when a test names them: the labels a request is read for.
+      attrs: shop.catalogRacks?.[part.id] ? { racks: shop.catalogRacks[part.id] } : {},
     })),
     vehicles: shop.vehicles,
     customers: [
@@ -574,6 +577,8 @@ export function connect(shop: Shop, api: Api = {}) {
       trace: outcome.trace,
       /** The turn's near-word clean-up calls (D153). */
       cleanups: llm.cleanupRequests,
+      /** What the LLM was sent, its candidates line included (D253). */
+      prompts: llm.prompts,
     };
   }
   /** The part the last dry run would sell. */

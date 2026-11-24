@@ -66,6 +66,7 @@ import {
   partNumberBySound,
   partsOfType,
   asksPhone,
+  asksWhichRack,
   phoneAnswer,
   phoneWord,
   EVERYDAY_WORDS,
@@ -456,6 +457,10 @@ const str = (value: unknown) => (typeof value === "string" && value.trim() ? val
 /** Everyday words of shop talk, normalized: never part of a name asked for (D162, D237). */
 const EVERYDAY_TOKENS = new Set(EVERYDAY_WORDS.map((word) => normalize(word).tokens.join(" ")));
 
+/** A year the model cut to its hundreds, the full one said: 2000 for "দুই হাজার বিশ্বের", 2020 (v-037, D253). */
+const cutShort = (given: number, said: number) =>
+  given !== said && given % 100 === 0 && given === Math.floor(said / 100) * 100;
+
 function partQueryOf(args: Record<string, unknown>): PartQuery {
   const query: PartQuery = {};
   for (const key of [
@@ -832,6 +837,8 @@ export async function runTurn(
   const heardSlots = new Map<string, string>();
   // Values that tied with a heard slot before the other guesses chose it: the LLM may not choose them instead (D158).
   const tiedSlots = new Map<string, string[]>();
+  // Values tied that no other guess chose, best first: none is taken, but a rack question still has its part (D253).
+  const untied = new Map<string, string[]>();
   // The words a part's name of several words was heard in: they are not also a car ("ইয়াল ফিল্ডার" is an air filter,
   // not a Fielder, D158).
   const partWords: string[] = [];
@@ -873,7 +880,10 @@ export async function runTurn(
         );
         const votes = tied.map((value) => said.filter((candidate) => candidate.value === value).length);
         const most = Math.max(...votes);
-        if (!most || votes.filter((count) => count === most).length > 1) return null;
+        if (!most || votes.filter((count) => count === most).length > 1) {
+          untied.set(concept, tied);
+          return null;
+        }
         best = { ...best, value: tied[votes.indexOf(most)]! };
         tiedSlots.set(concept, tied);
       }
@@ -1137,6 +1147,9 @@ export async function runTurn(
     )
       delete out.year;
     if (!out.year && said !== null) out.year = String(said);
+    // A year the model cut to its hundreds ("দুই হাজার বিশ্বের", 2020, as 2000) is the year the words say (v-037, D253).
+    if (!answeredYear && ownYear !== null && said !== null && cutShort(ownYear, said))
+      out.year = String(said);
     for (const [slot, concept] of [
       ["part_type", "part_type"],
       ["vehicle", "vehicle_model"],
@@ -1472,6 +1485,11 @@ export async function runTurn(
       if (heard && missing(key)) part[key] = heard;
     }
     if (saidYear && missing("year") && !twoCars) part.year = String(saidYear);
+    // A year the model cut to its hundreds is the one the words say (v-037, D253).
+    const given = missing("year")
+      ? null
+      : parseYear(normalize(String(part.year)).tokens, { now, bare: true });
+    if (saidYear && !twoCars && given !== null && cutShort(given, saidYear)) part.year = String(saidYear);
     return single ? { ...args, part } : { ...args, items: [{ ...line, part }] };
   };
 
@@ -1742,6 +1760,12 @@ export async function runTurn(
           );
         if (number && !cued && !elsewhere)
           return partsTool({ part_number: number }, (result) => record(`part_search: ${result}`));
+        // Which rack a car's part is on ("নোয়ার … রেডিওতের কোন তাঁকে রাখা"): the part search says it, with the part's
+        // rows, never the LLM's own query, which once looked for a "radio" (v-030, D253). The part is the one heard, or
+        // the best of a tie no other guess broke (radiator or radiator cap), which the search then asks about.
+        const rackPart = heardSlots.get("part_type") ?? untied.get("part_type")?.[0];
+        if (rackPart && heardSlots.has("vehicle_model") && asksWhichRack(text) && !cued && !elsewhere)
+          return partsTool({ part_type: rackPart }, (result) => record(`part_search: ${result}`));
         try {
           const result = await runReadQuery(deps.host.map, deps.host.run, sql);
           facts.read = result;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDictionary } from "./glossary";
-import { namesInText, rackSaid, racksInText } from "./names";
+import { asksWhichRack, namesInText, rackSaid, racksInText } from "./names";
 
 // The shop's own names said inside a request (D95, D108), in Bangla and Banglish (D96).
 
@@ -169,4 +169,43 @@ describe("racks in a request", () => {
       expect(racksInText(text, [...racks, "C-1"])).toEqual([]);
     },
   );
+});
+
+// The open half run again (D253): a rack said as one word in a question, and "which rack" asked.
+describe("a rack said as one word in a question (v-086, D253)", () => {
+  const labels = ["A-1", "A-2", "B-1", "B-2", "B-3", "B-8", "C-1", "C-2", "D-2", "E-1", "F-1", "F-2", "H-2"];
+  it.each([
+    { style: "Bangla", text: "বিটু তাকে কি কি মাল আছে", rack: "B-2" },
+    { style: "Bangla", text: "সিটু র‍্যাকে কী আছে", rack: "C-2" },
+    { style: "Banglish", text: "b2 take ki ki mal ache", rack: "B-2" },
+  ])("$text is $rack ($style)", ({ text, rack }) => {
+    expect(racksInText(text, labels).map((named) => named.name)).toEqual([rack]);
+  });
+
+  it.each(["বিটু ভাইকে টাকা দাও", "bitu bhai ke taka dao"])(
+    "a name is no rack without a rack word (%s)",
+    (text) => {
+      expect(racksInText(text, labels)).toEqual([]);
+    },
+  );
+});
+
+describe("which rack a part is on (v-030, D253)", () => {
+  it.each([
+    { style: "Bangla", text: "নোয়ার টু থাউসেন নাইনের রেডিওতের কোন তাঁকে রাখা" },
+    { style: "Bangla", text: "ফিল্ডারের ব্রেক প্যাড কোন তাকে আছে" },
+    { style: "Banglish", text: "fielder 2015 er brake pad kon take rakha" },
+    { style: "Banglish", text: "noah radiator kon rack e" },
+  ])("is asked in $text ($style)", ({ text }) => {
+    expect(asksWhichRack(text)).toBe(true);
+  });
+
+  it.each([
+    { style: "Bangla", text: "বি-২ তাকে কী আছে" },
+    { style: "Bangla", text: "তাঁকে বলো দাম কত" },
+    { style: "Banglish", text: "b2 take ki ache" },
+    { style: "Banglish", text: "kon gari te lage" },
+  ])("is not asked in $text ($style)", ({ text }) => {
+    expect(asksWhichRack(text)).toBe(false);
+  });
 });
