@@ -118,6 +118,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: ffmpeg (the MP3 test)
+        # A stuck download on GitHub's machine once held this step for 23 minutes (24 Nov): fail fast, run again.
+        timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - uses: astral-sh/setup-uv@v10.2.0
       - run: uv venv --python 3.11 && uv pip install -r requirements-test.txt
