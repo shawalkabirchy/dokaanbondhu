@@ -504,6 +504,25 @@ describe("scoring", () => {
     expect(renderMarkdown(report)).toContain("## Chat by writing style");
   });
 
+  it("reports voice items by speaker, with what the check of a speaker's recordings found (D250)", () => {
+    const found = done("x", [turn({ trace: trace({ lookups: [lookup(2014, [["04465-10010"]])] }) })]);
+    const missed = done("x", [turn({ trace: trace({ lookups: [lookup(2012, [])] }) })]);
+    const report = buildReport("r1", [
+      scoreItem({ ...pads, id: "v-001", channel: "voice", speaker: "S1" }, found),
+      scoreItem({ ...pads, id: "v-002", channel: "voice", speaker: "S1", split: "held_out" }, missed),
+      scoreItem({ ...pads, id: "v-005", channel: "voice", speaker: "S3" }, found),
+      scoreItem({ ...pads, id: "c-001", script_style: "bangla" }, found),
+    ]);
+    expect(report.bySpeaker.S1).toMatchObject({ items: 2, correctRate: 50 });
+    expect(report.bySpeaker["S1 held_out"]).toMatchObject({ items: 1, correctRate: 0 });
+    expect(report.bySpeaker.S3).toMatchObject({ items: 1, correctRate: 100 });
+    expect(Object.keys(report.bySpeaker)).not.toContain("null");
+    const markdown = renderMarkdown(report);
+    expect(markdown).toContain("## Voice by speaker");
+    expect(markdown).toContain("- **S1:** the phone removed the background noise");
+    expect(markdown).not.toContain("- **S3:**");
+  });
+
   it("counts word errors by sound beside the strict count (D246)", () => {
     // A spelling of the same sound is no error by sound, though it is one strictly.
     expect(wordErrors("শক অ্যাবজরবারের দাম", "শক অ্যাবজার্ভারের দাম").errors).toBe(1);

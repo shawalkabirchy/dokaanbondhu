@@ -109,6 +109,8 @@ export interface ItemScore {
   kind: string;
   /** Chat items: "bangla" or "banglish"; voice items: null. */
   style: string | null;
+  /** Voice items: who said it (S1 to S5); chat items: null. */
+  speaker?: string | null;
   scored: boolean;
   correct: boolean;
   exactPart: boolean | null;
@@ -357,6 +359,7 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     split: item.split,
     kind: item.kind,
     style: item.script_style ?? null,
+    speaker: item.channel === "voice" ? (item.speaker ?? null) : null,
     questions: result.turns.filter((turn) => turn.state === "CLARIFYING").length,
     unnecessary: result.unscripted,
     firstTextMs: result.turns[0]?.firstTextMs ?? null,
@@ -532,6 +535,8 @@ export interface Report {
   byKind: Record<string, GroupReport>;
   /** Chat items by how they are written, overall and per split: Bangla script against Banglish (D96). */
   byStyle: Record<string, GroupReport>;
+  /** Voice items by speaker, overall and per split, so a speaker's recordings are read on their own (D250). */
+  bySpeaker: Record<string, GroupReport>;
   zeroRules: { id: string; rule: string }[];
   notScored: { id: string; reason: string }[];
   failures: { id: string; kind: string; notes: string[] }[];
@@ -551,6 +556,7 @@ export function buildReport(
     );
   };
   const chat = scores.filter((score) => score.style);
+  const spoken = scores.filter((score) => score.speaker);
   return {
     runId,
     providers,
@@ -559,6 +565,10 @@ export function buildReport(
     byStyle: {
       ...groupBy((score) => score.style!, chat),
       ...groupBy((score) => `${score.style} ${score.split}`, chat),
+    },
+    bySpeaker: {
+      ...groupBy((score) => score.speaker!, spoken),
+      ...groupBy((score) => `${score.speaker} ${score.split}`, spoken),
     },
     zeroRules: scores.flatMap((score) => score.zeroRules.map((rule) => ({ id: score.id, rule }))),
     notScored: scores
@@ -570,6 +580,11 @@ export function buildReport(
     scores,
   };
 }
+
+/** What the report must say beside a speaker's numbers, from the check of their recordings before upload. */
+export const SPEAKER_NOTES: Readonly<Record<string, string>> = {
+  S1: "the phone removed the background noise (MP3 with noise reduction on, against the sheet's rule), so S1's numbers are a best case; it does not count as recorded in the shop (D250).",
+};
 
 export function renderMarkdown(report: Report): string {
   const cell = (value: number | null, suffix = "") => (value === null ? "–" : `${value}${suffix}`);
@@ -603,6 +618,18 @@ export function renderMarkdown(report: Report): string {
   ];
   if (Object.keys(report.byStyle).length) {
     lines.push("## Chat by writing style (Bangla script, Banglish)", "", ...table(report.byStyle), "");
+  }
+  if (Object.keys(report.bySpeaker).length) {
+    const speakers = new Set(Object.keys(report.bySpeaker).map((name) => name.split(" ")[0]!));
+    const notes = Object.entries(SPEAKER_NOTES).filter(([speaker]) => speakers.has(speaker));
+    lines.push(
+      "## Voice by speaker",
+      "",
+      ...table(report.bySpeaker),
+      "",
+      ...notes.map(([speaker, note]) => `- **${speaker}:** ${note}`),
+      ...(notes.length ? [""] : []),
+    );
   }
   if (report.zeroRules.length) {
     lines.push("## Zero rules", "", ...report.zeroRules.map((z) => `- ${z.id}: ${z.rule}`), "");
