@@ -1,7 +1,7 @@
 import { CANNOT_ANSWER_NOW } from "@dokaanbondhu/core";
 import { cardAnswer } from "./card-answer";
 import type { Item, WriteExpected } from "./items";
-import type { ItemResult, TurnRecord } from "./score";
+import { notByMainModels, type ItemResult, type TurnRecord } from "./score";
 import type { Session } from "./session";
 
 // The runner (spec 18.4): each item in its own conversation, as the user it names; questions answered from its
@@ -25,11 +25,12 @@ export interface RunState {
 
 export class DailyLimitReached extends Error {}
 
-/** A turn that failed because the LLM's daily allowance is used up. */
+/**
+ * A turn the main LLM could not answer because its daily allowance is used up, whether or not the backup answered it:
+ * only the main one's answers count (D254), so the run stops and continues the next day.
+ */
 function dailyLimit(turn: TurnRecord): boolean {
-  return (
-    turn.reply === CANNOT_ANSWER_NOW && (turn.trace?.fallbacks ?? []).some((f) => f.includes("daily-limit"))
-  );
+  return (turn.trace?.fallbacks ?? []).some((f) => f.includes("daily-limit"));
 }
 
 function tooMany(turn: TurnRecord): boolean {
@@ -118,6 +119,24 @@ export async function runItems(
   loadClip: LoadClip = async () => null,
 ): Promise<RunState> {
   delete state.stopped;
+  // Run again, in place, every item not answered by the main models alone (D254): the backup LLM answered a turn, or
+  // the speech worker did not take the recording. A stopped run continues with them first.
+  for (const [at, earlier] of state.results.entries()) {
+    if (!notByMainModels(earlier)) continue;
+    const item = items.find((candidate) => candidate.id === earlier.id);
+    if (!item) continue;
+    try {
+      const clip = item.channel === "voice" ? await loadClip(item) : null;
+      state.results[at] = await runChatItem(item, sessions[item.as], clip);
+    } catch (error) {
+      if (!(error instanceof DailyLimitReached)) throw error;
+      state.stopped = { at: new Date().toISOString(), reason: "the LLM's daily allowance is used up" };
+      save(state);
+      return state;
+    }
+    save(state);
+    log(`${item.id} again: ${notByMainModels(state.results[at]!) ?? "on the main models"}`);
+  }
   let rateLimited = 0;
   for (let index = state.nextIndex; index < items.length; index++) {
     const item = items[index]!;
@@ -129,6 +148,9 @@ export async function runItems(
     if (!result) {
       try {
         result = await runChatItem(item, sessions[item.as], clip);
+        // The speech worker did not take the recording (it was restarting): once more at once (D254).
+        if (clip && result.turns.some((turn) => turn.errors.includes("SPEECH_UNAVAILABLE")))
+          result = await runChatItem(item, sessions[item.as], clip);
       } catch (error) {
         if (error instanceof DailyLimitReached) {
           state.nextIndex = index;

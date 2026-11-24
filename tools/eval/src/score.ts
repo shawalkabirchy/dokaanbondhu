@@ -350,6 +350,18 @@ function readAnswered(expected: ReadExpected, result: ItemResult, notes: string[
   return ok;
 }
 
+/**
+ * Why an item was not answered by the main models alone (D254): the backup LLM answered a turn (the main one's daily
+ * allowance used up, or it failed), or the speech worker did not take the recording. Null when the main models did.
+ */
+export function notByMainModels(result: ItemResult): string | null {
+  if (result.turns.some((turn) => (turn.errors ?? []).includes("SPEECH_UNAVAILABLE")))
+    return "the speech worker did not answer: run it again (--resume)";
+  if (result.turns.some((turn) => (turn.trace?.fallbacks ?? []).length > 0))
+    return "answered by the backup LLM, not the main one: run it again on the main one (--resume)";
+  return null;
+}
+
 export function scoreItem(item: Item, result: ItemResult): ItemScore {
   const notes: string[] = [];
   const zeroRules: string[] = [];
@@ -461,6 +473,11 @@ export function scoreItem(item: Item, result: ItemResult): ItemScore {
     if (result.undone === false) notes.push("not undone: reset the test shop before the next run");
     correct = matches && saved && zeroRules.length === 0;
   }
+  // Only the main models' answers count (D254): an item the backup LLM answered any turn of, or whose recording the
+  // speech worker did not take, is run again on them (--resume); a zero rule it broke is still reported.
+  const notMain = notByMainModels(result);
+  if (notMain)
+    return { ...base, scored: false, correct: false, exactPart: null, zeroRules, notes: [notMain, ...notes] };
   return { ...base, scored: true, correct, exactPart, zeroRules, notes };
 }
 

@@ -28,7 +28,7 @@ import { runItems, type LoadClip, type RunState } from "./run";
 import { importTranscripts, mp3Of, packPage, splitParts } from "./transcript-packs";
 import { clipRows, serveTranscripts } from "./transcripts";
 import { cardsMarkdown, SPEAKERS, speakerSheet } from "./cards";
-import { buildReport, renderMarkdown, scoreItem } from "./score";
+import { buildReport, notByMainModels, renderMarkdown, scoreItem } from "./score";
 import { Session, type EvalEnv } from "./session";
 
 // npm run eval -- run [--split open|held_out|all] [--channel chat|voice|all] [--style bangla|banglish|all]
@@ -368,7 +368,13 @@ async function main() {
   if (values.resume) {
     const runId = values.run ?? latestRun();
     state = JSON.parse(readFileSync(join(runsDir, runId, "run-state.json"), "utf8")) as RunState;
-    print(`resuming ${runId} at item ${state.nextIndex + 1} of ${state.itemIds.length}`);
+    const again = state.results.filter((result) => notByMainModels(result)).length;
+    print(
+      `resuming ${runId}: ${again} item(s) not answered by the main models first (D254), then ` +
+        (state.nextIndex < state.itemIds.length
+          ? `item ${state.nextIndex + 1} of ${state.itemIds.length}`
+          : "nothing more: every item has run"),
+    );
   } else {
     const kinds = values.kind?.split(",");
     const ids = values.ids?.split(",");

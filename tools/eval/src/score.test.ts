@@ -732,4 +732,54 @@ describe("runner", () => {
     );
     expect(finished.results[0]).toMatchObject({ id: "v-7", status: "skipped", reason: "not recorded yet" });
   });
+
+  // Only the main models' answers count (D254).
+  it("stops at the main LLM's daily limit even when the backup answered", async () => {
+    const backup = turn({ reply: "done", trace: trace({ fallbacks: ["cf: http 429 daily-limit"] }) });
+    await expect(runChatItem(pads, fakeSession([backup]))).rejects.toBeInstanceOf(DailyLimitReached);
+  });
+
+  it("does not score an item the backup LLM or no speech worker answered", () => {
+    const found = done("x", [turn({ trace: trace({ lookups: [lookup(2014, [["04465-10010"]])] }) })]);
+    expect(scoreItem(pads, found)).toMatchObject({ scored: true, correct: true });
+    const backup = done("x", [
+      turn({ trace: trace({ lookups: [lookup(2014, [["04465-10010"]])], fallbacks: ["cf: timeout"] }) }),
+    ]);
+    expect(scoreItem(pads, backup)).toMatchObject({ scored: false, correct: false });
+    expect(scoreItem(pads, backup).notes[0]).toMatch(/backup LLM/);
+    const deaf = done("x", [turn({ errors: ["SPEECH_UNAVAILABLE"] })]);
+    expect(scoreItem(pads, deaf)).toMatchObject({ scored: false });
+    expect(scoreItem(pads, deaf).notes[0]).toMatch(/speech worker/);
+    const report = buildReport("r", [scoreItem(pads, found), scoreItem(pads, backup), scoreItem(pads, deaf)]);
+    expect(report.groups.all).toMatchObject({ items: 3, scored: 1, correctRate: 100 });
+    expect(report.notScored.map((n) => n.reason)).toEqual([
+      expect.stringMatching(/backup LLM/),
+      expect.stringMatching(/speech worker/),
+    ]);
+  });
+
+  it("runs again, in place, an item the backup LLM answered, when resumed", async () => {
+    const backup = done(pads.id, [
+      turn({ reply: "old", trace: trace({ fallbacks: ["cf: http 429 daily-limit"] }) }),
+    ]);
+    const state: RunState = {
+      runId: "r",
+      startedAt: "",
+      itemIds: [pads.id],
+      builtActions: [],
+      nextIndex: 1,
+      results: [backup],
+    };
+    const session = fakeSession([turn({ reply: "new" })]);
+    const finished = await runItems(
+      [pads],
+      state,
+      { owner: session, staff: session },
+      () => {},
+      () => {},
+    );
+    expect(finished.results).toHaveLength(1);
+    expect(finished.results[0]?.turns[0]?.reply).toBe("new");
+    expect(finished.stopped).toBeUndefined();
+  });
 });
