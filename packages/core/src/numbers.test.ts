@@ -7,6 +7,7 @@ import {
   parseEngineCode,
   parseYear,
   parseYearRange,
+  partOfYear,
   saidYearRange,
   yearRangeText,
 } from "./numbers";
@@ -234,4 +235,33 @@ describe("a year range said (D240)", () => {
       expect(read(text)).toBeNull();
     },
   );
+});
+
+// v-037 (D255): a year said with an ending ("দুই হাজার পনেরোর", "dui hajar bisher") was read as 2000.
+describe("a year said with an ending (D255)", () => {
+  it.each([
+    { style: "Bangla", text: "দুই হাজার পনেরোর ব্রেক প্যাড", year: 2015 },
+    { style: "Bangla", text: "হেরিয়ার দুই হাজার বিশের ওয়াটার পাম্প", year: 2020 },
+    { style: "Bangla", text: "দুই হাজার দশের এক্সিও", year: 2010 },
+    { style: "Bangla", text: "দুই হাজার নয়ের প্রিমিও", year: 2009 },
+    { style: "Banglish", text: "axio dui hajar poneror brake pad", year: 2015 },
+    { style: "Banglish", text: "harrier dui hajar bisher water pump", year: 2020 },
+    { style: "Banglish", text: "dui hajar egaror allion", year: 2011 },
+  ])("“$text” is $year ($style)", ({ text, year }) => {
+    expect(parseYear(tokens(text), { now })).toBe(year);
+  });
+
+  it("the word after a thousand is the year's only when it is a number", () => {
+    const said = tokens("হেরিয়ার দুই হাজার বিশ্বের ওয়াটার পাম্প");
+    expect(said.map((_, index) => partOfYear(said, index))).toEqual([
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
+    const money = tokens("দুই হাজার টাকা দাও");
+    expect(money.map((_, index) => partOfYear(money, index))).toEqual([false, false, false, false]);
+  });
 });

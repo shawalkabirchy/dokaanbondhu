@@ -153,3 +153,68 @@ describe("which rack a car's part is on, the model writing its own query (v-030)
     });
   }
 });
+
+// v-037 once more (D255): in the voice run the clean-up made "বিশ্বের" (twenty) "Bajaj Discover 125", so the words said
+// 2000; and a year said with an ending ("দুই হাজার পনেরোর") was read as 2000 too.
+/** Each app with the test shop's motorbike among its vehicles, the name the clean-up offered (a new parts list, so the
+ * app's dictionary is built again with it). */
+const withBike = (app: Shop): Shop => ({
+  ...app,
+  parts: [...app.parts],
+  vehicles: [
+    ...app.vehicles,
+    {
+      hostId: "bajaj-discover",
+      make: "Bajaj",
+      model: "Discover 125",
+      yearFrom: 2012,
+      yearTo: 2020,
+      engineCode: null,
+      vehicleType: "motorcycle",
+    },
+  ],
+});
+/** Each app's part, said with its car, before the year and after it. */
+const SAID_PART: Record<string, { bangla: [string, string]; banglish: [string, string]; part: object }> = {
+  GearGrid: {
+    bangla: ["ফিল্ডার", "ব্রেক প্যাড আছে"],
+    banglish: ["fielder", "brake pad ache"],
+    part: { part_type: "brake pad", vehicle: "Fielder" },
+  },
+  "shop B": {
+    bangla: ["ফিল্ডার", "ব্রেক প্যাড আছে"],
+    banglish: ["fielder", "brake pad ache"],
+    part: { part_type: "brake pad", vehicle: "Fielder" },
+  },
+  "an app with its own words": {
+    bangla: ["Tucson", "Platinum ব্রেক প্যাড আছে"],
+    banglish: ["tucson", "platinum brake pad ache"],
+    part: { part_type: "brake pad", vehicle: "Tucson", quality: "Platinum" },
+  },
+};
+/** The year's last word as said: misheard (v-037's "বিশ্বের"), or with its ending. */
+const YEAR_WORDS = [
+  { style: "Bangla", word: "বিশ্বের", year: 2020 },
+  { style: "Bangla", word: "পনেরোর", year: 2015 },
+  { style: "Banglish", word: "bisshwer", year: 2020 },
+  { style: "Banglish", word: "poneror", year: 2015 },
+] as const;
+
+describe("a year said with an ending, the clean-up offered a name for it (v-037, D255)", () => {
+  for (const app of [geargrid, shopB, ownWords].map(withBike)) {
+    it.each(YEAR_WORDS)(`“dui hajar $word” is $year (${app.name}, $style)`, async ({ style, word, year }) => {
+      const said = SAID_PART[app.name]!;
+      const [car, rest] = style === "Bangla" ? said.bangla : said.banglish;
+      const text = `${car} ${style === "Bangla" ? "দুই হাজার" : "dui hajar"} ${word} ${rest}`;
+      // The clean-up's answer in the run: the year's word as the shop's motorbike.
+      const cleanup = JSON.stringify({ replaced: [{ heard: word, meant: "Bajaj Discover 125" }] });
+      const shop = connect(app, { evalMode: true, cleanups: [cleanup] });
+      const answer = await shop.say(fresh(), { text }, [
+        ...call("find_parts", { ...said.part, year: "2000" }),
+        { text: "" },
+      ]);
+      expect(answer.trace.lookups[0]?.resolved.year, answer.reply).toBe(year);
+      expect(answer.trace.cleanup ?? []).toEqual([]);
+    });
+  }
+});

@@ -147,6 +147,33 @@ export function saidYearRange(tokens: readonly string[], now: Date = new Date())
  * হাজার as speech-to-text wrote it in the owner's tests (D152): "এক হাজত দুইশ". Taken only right after a number, so
  * হাজত (custody) is never a number by itself.
  */
+/** Endings a year's last number takes ("দুই হাজার পনেরোর", "dui hajar bisher"), longest first (D255). */
+const YEAR_ENDINGS = ["য়ের", "ের", "এর", "র", "য়ে", "য়", "তে", "এ", "ে", "er", "te", "r", "e"].map(nfc);
+
+/** A year's last number, said with or without an ending: "পনেরোর" and "poneror" are 15, "বিশের" 20 (v-037, D255). */
+function yearPart(token: string): number | null {
+  const whole = wordNumber(token);
+  if (whole !== null) return whole;
+  const word = nfc(token);
+  for (const ending of YEAR_ENDINGS) {
+    if (word.length <= ending.length || !word.endsWith(ending)) continue;
+    const value = wordNumber(word.slice(0, word.length - ending.length));
+    if (value !== null && value < 100) return value;
+  }
+  return null;
+}
+
+/**
+ * Whether the word at `index` is a year's last number right after a thousand ("দুই হাজার বিশ্বের", "dui hajar
+ * poneror"): part of the year, never a misheard name for the clean-up to rewrite (v-037's "Bajaj Discover", D255).
+ */
+export function partOfYear(tokens: readonly string[], index: number): boolean {
+  const before = tokens[index - 1];
+  const word = tokens[index];
+  if (!before || !word || !THOUSAND.has(nfc(before))) return false;
+  return MISHEARD_TWENTY.has(nfc(word)) || yearPart(word) !== null;
+}
+
 /** Thousand said in English, in either script (D157). */
 const ENGLISH_THOUSAND = ["thousand", "থাউজেন্ড", "থাউসেন্ড", "থাউজ্যান্ড"];
 const THOUSAND = new Set(["হাজার", "hajar", "hazar", ...ENGLISH_THOUSAND, ...MISHEARD_THOUSAND].map(nfc));
@@ -163,7 +190,7 @@ function spokenYear(tokens: readonly string[], index: number): number | null {
   const at = (offset: number) => nfc(tokens[index + offset] ?? "");
   const rest = (offset: number) => {
     if (MISHEARD_TWENTY.has(at(offset))) return 20;
-    const value = wordNumber(tokens[index + offset] ?? "");
+    const value = yearPart(tokens[index + offset] ?? "");
     // "ফোর টিন": a digit and teen, split by speech-to-text
     if (value !== null && value >= 3 && value <= 9 && TEEN.has(at(offset + 1))) return 10 + value;
     return value !== null && value < 100 ? value : 0;

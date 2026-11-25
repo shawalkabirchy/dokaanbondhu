@@ -8,6 +8,7 @@ import {
   EVERYDAY_WORDS,
   isNumberWord,
   knownWords,
+  partOfYear,
   matchConcept,
   namesInText,
   normalize,
@@ -316,10 +317,14 @@ export function nearHints(input: NearInput): NearHint[] {
     );
   // A digit word misheard or glued next to other digits ("জিরো ওয়াইন" is 0 1, never a wiper; D237).
   const digits = new Set(digitRun(tokens).flatMap((read, index) => (read === null ? [] : [tokens[index]!])));
+  // A year's last number after a thousand, with its ending or misheard ("দুই হাজার বিশ্বের" is 2020): never a name, as
+  // "বিশ্বের" had become "Bajaj Discover 125" and the year 2000 (v-037, D255).
+  const yearWords = new Set(tokens.filter((_, index) => partOfYear(tokens, index)));
   const numeric = (token: string) =>
     [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form)) ||
     gluedQuantity(token) ||
-    digits.has(token);
+    digits.has(token) ||
+    yearWords.has(token);
   const unclear = (token: string) =>
     !EVERYDAY.has(token) &&
     !numeric(token) &&

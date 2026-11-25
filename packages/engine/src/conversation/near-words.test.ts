@@ -215,3 +215,15 @@ describe("a number's words, a rack and the speaker's role are never a name (D237
     expect(unplaced(text).filter((heard) => /হারজার|হাজতো|harjar/.test(heard))).toEqual([]);
   });
 });
+
+// v-037 (D255): the clean-up made "বিশ্বের" (twenty, misheard after "দুই হাজার") a motorbike, and the year 2000.
+describe("a year's last number after a thousand is never a name (D255)", () => {
+  it.each([
+    { style: "Bangla", text: "হেরিয়ার দুই হাজার বিশ্বের ওয়াটার পাম্প কি আছে", word: "বিশ্বের" },
+    { style: "Bangla", text: "এক্সিও দুই হাজার পনেরোর ব্রেক প্যাড আছে", word: "পনেরোর" },
+    { style: "Banglish", text: "harrier dui hajar bisshwer water pump ki ache", word: "bisshwer" },
+    { style: "Banglish", text: "axio dui hajar poneror brake pad ache", word: "poneror" },
+  ])("$word in “$text” ($style)", ({ text, word }) => {
+    expect(hintsOf(text).filter((hint) => hint.heard.split(" ").includes(word))).toEqual([]);
+  });
+});
