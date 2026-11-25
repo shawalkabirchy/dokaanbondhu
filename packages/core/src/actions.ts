@@ -23,6 +23,11 @@ const MULTIPLIERS: ReadonlyMap<string, number> = new Map(
   ).flatMap(([value, words]) => words.map((word) => [nfc(word), value] as const)),
 );
 const HUNDRED_ENDINGS = ["শো", "শ", "sho"];
+/** A number's stem before শো as speech-to-text writes it: "দুঃশ" for দুইশ, 200 (v-169, D257). */
+const MISHEARD_STEMS: ReadonlyMap<string, number> = new Map([
+  [nfc("দুঃ"), 2],
+  [nfc("দু"), 2],
+]);
 const FRACTIONS: ReadonlyMap<string, number> = new Map(
   Object.entries(numbers.fractions.whole).map(([word, value]) => [nfc(word), value]),
 );
@@ -35,8 +40,9 @@ function valueOf(token: string): number | null {
   if (word !== null) return word;
   for (const ending of HUNDRED_ENDINGS) {
     if (token.length > ending.length && nfc(token).endsWith(ending)) {
-      const stem = wordNumber(token.slice(0, -ending.length));
-      if (stem !== null && stem < 100) return stem * 100;
+      const stem = token.slice(0, -ending.length);
+      const value = wordNumber(stem) ?? MISHEARD_STEMS.get(nfc(stem)) ?? null;
+      if (value !== null && value < 100) return value * 100;
     }
   }
   return null;
@@ -379,7 +385,29 @@ const WRITE_CUES: Record<"sale" | "payment" | "stock_in" | "return", string[]> =
     "joma dilo",
     "joma",
   ],
-  stock_in: ["কিনলাম", "কিনেছি", "স্টকে তোলো", "স্টক ইন", "kinlam", "kinechi", "stock e tolo", "stock in"],
+  stock_in: [
+    "কিনলাম",
+    "কিনেছি",
+    "স্টকে তোলো",
+    "স্টক ইন",
+    "kinlam",
+    "kinechi",
+    "stock e tolo",
+    "stock in",
+    // goods received, said as staff say it (c-128, c-156, c-160, D257)
+    "মাল উঠান",
+    "মাল উঠাও",
+    "মাল উঠাইছি",
+    "মাল উঠালাম",
+    "মাল তোলো",
+    "মাল তুলেন",
+    "mal uthan",
+    "mal uthao",
+    "mal uthaisi",
+    "mal uthalam",
+    "mal tolo",
+    "mal tulen",
+  ],
 };
 
 /** Goods arriving ("…থেকে দশটা এলো", "theke aslo"): a purchase only with its supplier named (D186). */
@@ -514,10 +542,39 @@ const PUT_ON_RACK = new Set(
     "shoriye",
   ].map((word) => normalize(word).tokens.join(" ")),
 );
-const RACK_NAMES = new Set(
-  ["র‍্যাক", "র‍্যাকে", "র‍্যাকের", "তাক", "তাকে", "তাকের", "rack", "racke", "tak", "take", "taker"].map(
-    (word) => normalize(word).tokens.join(" "),
+/**
+ * A word of a rack change, its rack word or its verb (রেক, তাকে, সরিয়ে, রাখো): never a misheard name for the clean-up,
+ * which once made "সরিয়ে" a relay (v-206, D257).
+ */
+export function isRackWord(token: string): boolean {
+  const word = normalize(token).tokens.join(" ");
+  return RACK_NAMES.has(word) || PUT_ON_RACK.has(word);
+}
+
+/** "লিখে" before রাখো: "write it down", a record kept, never a part put on a rack (D257). */
+const WRITE_DOWN = new Set(
+  ["লিখে", "লেখে", "লিইখা", "লেইখা", "likhe", "lekhe", "likha", "leikha"].map((word) =>
+    normalize(word).tokens.join(" "),
   ),
+);
+const RACK_NAMES = new Set(
+  [
+    "র‍্যাক",
+    "র‍্যাকে",
+    "র‍্যাকের",
+    // র‍্যাক as speech-to-text writes it (v-206, D257)
+    "রেক",
+    "রেকে",
+    "রেকের",
+    "তাক",
+    "তাকে",
+    "তাকের",
+    "rack",
+    "racke",
+    "tak",
+    "take",
+    "taker",
+  ].map((word) => normalize(word).tokens.join(" ")),
 );
 const SET_RACK = new Set(
   ["করো", "করেন", "করুন", "বদলাও", "বদলে", "koro", "koren", "korun", "bodlao", "bodle", "change"].map(
@@ -545,7 +602,11 @@ function saysRack(text: string, tokens: string[]): boolean {
   const rackWord = tokens.some((token) => RACK_NAMES.has(token));
   // The rack left out: the change still starts, and its question asks which rack (D202).
   if (!rackSaid(text)) return rackWord && tokens.some((token) => CHANGE_RACK.has(token));
-  if (tokens.some((token) => PUT_ON_RACK.has(token))) return true;
+  // "লিখে রাখো" (write it down) keeps a record, it puts nothing on a rack (v-163, D257).
+  const puts = tokens.some(
+    (token, index) => PUT_ON_RACK.has(token) && !WRITE_DOWN.has(tokens[index - 1] ?? ""),
+  );
+  if (puts) return true;
   return rackWord && tokens.some((token) => SET_RACK.has(token));
 }
 
@@ -736,6 +797,9 @@ export function writeCueOf(
   if (WRITE_CUES.payment.some((phrase) => said(tokens, phrase))) return "payment";
   if (WRITE_CUES.stock_in.some((phrase) => said(tokens, phrase))) return "stock_in";
   if (options.supplierNamed && ARRIVED.some((phrase) => said(tokens, phrase))) return "stock_in";
+  // A fitment said ("…হায়েসেও লাগে, লিখে রাখো") is one before a rack: a part number's "কে টেন" had become rack K-10
+  // and "রাখো" a rack change (v-163, D257).
+  if (saysFits(tokens)) return "add_fitment";
   if (saysRack(text, tokens)) return "rack_update";
   if (tokens.some((token) => PRICE_WORDS.has(token))) {
     const sets = SET_PRICE.some((phrase) => said(tokens, phrase));

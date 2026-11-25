@@ -61,6 +61,9 @@ import {
   lowStockAnswer,
   oldDuesAnswer,
   reminderCueOf,
+  asksNoneLeft,
+  isWhoWord,
+  noneLeftAnswer,
   type ReminderKind,
   matchPartNumber,
   partNumberBySound,
@@ -550,7 +553,8 @@ function tableOf(result: ReadQueryResult, title: string): ReplyEvent {
 
 /** A reminder's list (D194); null when the app does not keep what it needs. */
 type ReminderFacts =
-  { kind: "low_stock"; lines: LowStock[] | null } | { kind: "old_dues"; lines: OldDue[] | null };
+  | { kind: "low_stock"; lines: LowStock[] | null; noneLeft?: boolean }
+  | { kind: "old_dues"; lines: OldDue[] | null };
 
 /** The facts gathered so far, for the grounding check and the template answer. */
 interface Facts {
@@ -567,7 +571,9 @@ function remindersAnswer(reminders: ReminderFacts[]): string {
     reminder.lines === null
       ? SEE_IN_APP
       : reminder.kind === "low_stock"
-        ? lowStockAnswer(reminder.lines)
+        ? reminder.noneLeft
+          ? noneLeftAnswer(reminder.lines)
+          : lowStockAnswer(reminder.lines)
         : oldDuesAnswer(reminder.lines),
   );
   const last = sentences.length - 1;
@@ -586,7 +592,7 @@ function reminderTable(reminder: ReminderFacts, now: Date): ReplyEvent | null {
   if (reminder.kind === "low_stock")
     return {
       type: "table",
-      title: "কম স্টক",
+      title: reminder.noneLeft ? "স্টক শেষ" : "কম স্টক",
       columns: [
         { key: "part", label: "পার্ট", kind: "text" },
         { key: "stock", label: "স্টক", kind: "number" },
@@ -933,11 +939,14 @@ export async function runTurn(
   const added: AddedRecord[] = [];
   // A write said as an instruction ("…বাকিতে দাও", "joma nao", "kinlam"): the matching capability, which the turn
   // starts even when the model reaches for a search or a lookup first (D140).
+  const cueOptions = {
+    partyNamed: named.some((name) => name.kind === "customer" || name.kind === "supplier"),
+    supplierNamed: named.some((name) => name.kind === "supplier"),
+  };
+  // The cue is read in the words as said too: the clean-up made "নোয়াতেও" (Noah, also) "নোয়া", and the fitment
+  // said became a search (v-135, D257).
   const cueKind = text
-    ? writeCueOf(text, {
-        partyNamed: named.some((name) => name.kind === "customer" || name.kind === "supplier"),
-        supplierNamed: named.some((name) => name.kind === "supplier"),
-      })
+    ? (writeCueOf(text, cueOptions) ?? (said && said !== text ? writeCueOf(said, cueOptions) : null))
     : null;
   const cued = cueKind ? (offered.find((item) => item.template === cueKind) ?? null) : null;
 
@@ -1101,6 +1110,23 @@ export async function runTurn(
    * is the request's candidate, and a year it left out or gave in a form that cannot be read is the request's own;
    * an unreadable year the request does not have is dropped, so it is asked.
    */
+  /** The brand the words name exactly, not inside a name or a part number, nor a make before its car (D257). */
+  const brandSaid = (() => {
+    if (!hypotheses[0]) return null;
+    const tokens = normalize(hypotheses[0]).tokens;
+    const best = matchConcept("brand", hypotheses[0], [], deps.dictionary).candidates.find(
+      (candidate) => candidate.score >= 0.9 && !inName(candidate.heard) && !inNumber(candidate.heard),
+    );
+    if (!best) return null;
+    const words = normalize(best.heard).tokens;
+    const at = tokens.findIndex((_, index) => words.every((word, offset) => tokens[index + offset] === word));
+    const after = at >= 0 ? tokens.slice(at + words.length, at + words.length + 2).join(" ") : "";
+    const make = deps.host.catalog.vehicles.some(
+      (vehicle) => vehicle.make.trim().toLowerCase() === best.value.trim().toLowerCase(),
+    );
+    const car = after ? matchConcept("vehicle_model", after, [], deps.dictionary).candidates[0] : undefined;
+    return make && car && car.score >= 0.8 ? null : best.value;
+  })();
   const completed = (
     query: PartQuery,
     answered: ReadonlySet<string> = new Set(),
@@ -1165,6 +1191,9 @@ export async function runTurn(
         : null;
       if (heard && given && given !== heard && tiedSlots.get(concept)?.includes(given)) out[slot] = heard;
     }
+    // A brand said by its exact name ("vezel 2013 e Honda brake pad"): the search's, when the model left it out (c-062,
+    // D257). Never one by sound only, and never a make said with its car ("Honda Fit").
+    if (!out.brand && !out.part_number && brandSaid) out.brand = brandSaid;
     // The remembered car (D125, D126): it completes a search that names no car; the same car said without a year
     // keeps its year. A year the user did not say is used only for that car (D127): one the LLM gives another car
     // was copied from earlier words, so it is asked instead. A part number is looked up as it is.
@@ -1709,9 +1738,17 @@ export async function runTurn(
   /** A reminder's list read from the app (D194), kept as a fact and shown as a table. */
   const remind = async (kind: ReminderKind): Promise<ReminderFacts> => {
     const read = { map: deps.host.map!, run: deps.host.run! };
+    // "একদম শেষ" (none left): the low list's empty parts only (v-084, D257).
+    const noneLeft = kind === "low_stock" && asksNoneLeft(text);
     const reminder: ReminderFacts =
       kind === "low_stock"
-        ? { kind, lines: await lowStock(read, deps.host.catalog, now) }
+        ? {
+            kind,
+            noneLeft,
+            lines: await lowStock(read, deps.host.catalog, now).then((lines) =>
+              lines && noneLeft ? lines.filter((line) => line.stock <= 0) : lines,
+            ),
+          }
         : { kind, lines: await oldDues(read, deps.host.catalog, now) };
     (facts.reminders ??= []).push(reminder);
     for (const line of reminder.lines ?? []) {
@@ -1738,6 +1775,12 @@ export async function runTurn(
         if (cued && !["payment", "add_fitment", "add_customer", "add_supplier"].includes(cued.template)) {
           record(`write: ${cued.name}`);
           return startCued(cued, partQueryOf(args) as Record<string, unknown>);
+        }
+        // A fitment said with the part's number ("LOC-AIR-1163 … নোয়াতেও লাগে"): the number names the part, so no search
+        // is needed and the fitment starts from the words (v-135, D257).
+        if (cued?.template === "add_fitment" && numberSaid()) {
+          record(`write: ${cued.name}`);
+          return startCued(cued, {});
         }
         return partsTool(partQueryOf(args), record);
       }
@@ -1960,6 +2003,31 @@ export async function runTurn(
       default: {
         // A capability's tool: its frame, then a question or the confirmation; the LLM's text is not used (spec 9.5).
         const capability = offered.find((item) => item.name === call.name);
+        if (capability?.template === "add_fitment" && cueKind !== "add_fitment" && !frameOpen) {
+          // A fitment is added only when the words say so ("…তেও লাগে", "লিখে রাখো"): "…সুইফট ২০১৬-এ লাগবে" asks
+          // whether it fits, and had been offered as one to add (v-194, D257). It is answered as that question.
+          const part = (args.part ?? {}) as Record<string, unknown>;
+          const car = args.vehicle;
+          const model = str(typeof car === "object" && car ? (car as { model?: unknown }).model : car);
+          const year = str(typeof car === "object" && car ? (car as { year?: unknown }).year : undefined);
+          return partsTool(
+            { ...partQueryOf(part), ...(model ? { vehicle: model } : {}), ...(year ? { year } : {}) },
+            (result) => record(`fit question: ${result}`),
+          );
+        }
+        if (
+          cued &&
+          ["add_fitment", "stock_in"].includes(cued.template) &&
+          capability &&
+          capability.template !== cued.template &&
+          !frameOpen
+        ) {
+          // The words say a fitment ("…হায়েসেও লাগে, লিখে রাখো") or stock coming in ("mal uthan") and the model another
+          // write: the words win, as a cued sale does (D140). A part number's "কে টেন" had become a move to rack K-10
+          // (v-163), and "mal uthan" a sale on credit (c-128, D257).
+          record(`write: ${cued.name}`);
+          return startCued(cued, {});
+        }
         if (capability) {
           // The whole request: an answer to "which Rahim?" carries the request it answers, so the amount said
           // in it is still said (D186).
@@ -2295,7 +2363,8 @@ export async function runTurn(
     reminderCue &&
     !heardSlots.has("part_type") &&
     !heardSlots.has("vehicle_model") &&
-    !named.some((name) => name.kind === "customer" || name.kind === "supplier")
+    // "purono baki kar kar?": "kar" (whose) is no customer's name (c-210, D257).
+    !named.some((name) => (name.kind === "customer" || name.kind === "supplier") && !isWhoWord(name.heard))
   ) {
     const reminder = await remind(reminderCue);
     trace.tool_calls.push({

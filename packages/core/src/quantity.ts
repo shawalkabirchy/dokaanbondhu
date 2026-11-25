@@ -153,3 +153,21 @@ export function checkQuantity(said: SaidQuantity, part: PartUnit): QuantityCheck
   }
   return { ok: false, reason: "ask_unit" }; // piece against set, or the reverse: asked, never converted
 }
+
+/**
+ * One thing said by its ending, with no number (D257): "প্যাডটা", "প্যাডটি", "pad ta". Bangla's -টা/-টি after a
+ * word names one of it ("সামনের ব্রেক প্যাডটা ফেরত দিছে": the one front pad set). A number with it ("দুইটা", "duita")
+ * is a quantity, so false; so is a sentence with any quantity said.
+ */
+export function saysOne(tokens: readonly string[]): boolean {
+  if (parseQuantity(tokens)) return false;
+  return tokens.some((raw, index) => {
+    const token = raw.normalize("NFC");
+    const bangla = /^(.+)(টা|টি)$/u.exec(token);
+    if (bangla)
+      return wordNumber(bangla[1]!) === null && !/^[০-৯\d]+$/u.test(bangla[1]!) && bangla[1]!.length > 1;
+    if (token !== "ta" && token !== "ti") return false;
+    const before = tokens[index - 1] ?? "";
+    return before.length > 1 && wordNumber(before) === null && !/\d/.test(before);
+  });
+}

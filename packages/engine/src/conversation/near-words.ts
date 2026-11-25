@@ -7,6 +7,8 @@ import {
   gluedRack,
   EVERYDAY_WORDS,
   isNumberWord,
+  isRackWord,
+  isWhoWord,
   knownWords,
   partOfYear,
   matchConcept,
@@ -328,6 +330,10 @@ export function nearHints(input: NearInput): NearHint[] {
   const unclear = (token: string) =>
     !EVERYDAY.has(token) &&
     !numeric(token) &&
+    // a rack change's own words: "সরিয়ে" had become a relay (v-206, D257)
+    !isRackWord(token) &&
+    // "kar" (whose) in "purono baki kar kar?": no customer's name, it had become Karim Auto (c-210, D257)
+    !isWhoWord(token) &&
     !known.has(token) &&
     !sharedName(token) &&
     !appWordOf(token) &&

@@ -28,6 +28,13 @@ const LOW_STOCK = [
   "শেষ হয়ে",
   "শেষ হচ্ছে",
   "অর্ডার দিতে হবে",
+  // almost out, asked other ways (c-103, D257)
+  "শেষের দিকে",
+  "শেষের পথে",
+  "ফুরিয়ে আসছে",
+  "shesher dike",
+  "shesher pothe",
+  "furiye ashche",
   "kom ache",
   "kom poreche",
   "kom porche",
@@ -68,6 +75,42 @@ const OLD_DUES = [
   "overdue",
 ];
 
+/** Out of stock, none left at all (D257): "কোন মাল একদম শেষ", "ki ki stock nai". The low list, only its empty parts. */
+const NONE_LEFT = [
+  "একদম শেষ",
+  "একেবারে শেষ",
+  "পুরো শেষ",
+  "স্টক নেই",
+  "স্টক নাই",
+  "স্টকে নেই",
+  "স্টকে নাই",
+  "শেষ হয়ে গেছে",
+  "আউট অফ স্টক",
+  "ekdom shesh",
+  "ekebare shesh",
+  "puro shesh",
+  "stock nei",
+  "stock nai",
+  "stock e nei",
+  "stock e nai",
+  "shesh hoye geche",
+  "out of stock",
+  "zero stock",
+];
+
+/** Words that ask "whose" or "who" (কার, কার কার, kader): never a customer's name in an old-dues question (c-210). */
+const WHO_WORDS = new Set(
+  ["কার", "কারা", "কাদের", "কে", "kar", "kara", "kader", "ke", "karo", "কারো"].map((word) =>
+    normalize(word).tokens.join(" "),
+  ),
+);
+
+/** True when every word of a name heard is a "who" word: "purono baki kar kar?" names no customer (D257). */
+export function isWhoWord(heard: string): boolean {
+  const tokens = normalize(heard).tokens;
+  return tokens.length > 0 && tokens.every((token) => WHO_WORDS.has(token));
+}
+
 const said = (tokens: string[], phrase: string) =>
   ` ${tokens.join(" ")} `.includes(` ${normalize(phrase).tokens.join(" ")} `);
 
@@ -81,7 +124,14 @@ export function reminderCueOf(text: string): ReminderKind | null {
   if (!tokens.length) return null;
   if (OLD_DUES.some((phrase) => said(tokens, phrase))) return "old_dues";
   if (LOW_STOCK.some((phrase) => said(tokens, phrase))) return "low_stock";
+  if (asksNoneLeft(text)) return "low_stock";
   return null;
+}
+
+/** The low list asked for its empty parts only ("কোন মাল একদম শেষ", "stock nai", D257). */
+export function asksNoneLeft(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return NONE_LEFT.some((phrase) => said(tokens, phrase));
 }
 
 export interface LowStockLine {
@@ -109,6 +159,14 @@ export function lowStockAnswer(lines: LowStockLine[]): string {
   if (!lines.length) return "এখন কোনো পার্ট কম নেই।";
   const names = namesToSay(lines);
   const count = `${banglaDigits(String(lines.length))}টি পার্ট কম আছে`;
+  return `${count}${names ? `: ${names.join(", ")}` : ""}। ${SEE_ON_SCREEN}`;
+}
+
+/** "২টি পার্ট একদম শেষ: বল জয়েন্ট, টাই রড এন্ড। বিস্তারিত স্ক্রিনে দেখুন।" (D257) */
+export function noneLeftAnswer(lines: LowStockLine[]): string {
+  if (!lines.length) return "এখন কোনো পার্ট একদম শেষ হয়নি।";
+  const names = namesToSay(lines);
+  const count = `${banglaDigits(String(lines.length))}টি পার্ট একদম শেষ`;
   return `${count}${names ? `: ${names.join(", ")}` : ""}। ${SEE_ON_SCREEN}`;
 }
 

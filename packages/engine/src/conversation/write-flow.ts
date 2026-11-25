@@ -16,6 +16,7 @@ import {
   optionBySound,
   parseAmount,
   parseQuantity,
+  saysOne,
   parseYear,
   paymentText,
   phoneOf,
@@ -25,6 +26,7 @@ import {
   question,
   quantity as quantityText,
   rackSaid,
+  racksInText,
   refundText,
   resolveCustomer,
   resultText,
@@ -592,10 +594,49 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
         offers,
       );
     }
+    // A year none of the car's parts fits, in a write ("ল্যান্সারের দুই হাজার ছাব্বিশের", 2016 heard as 2026): asked
+    // once more, with the car's years when the search gives them; never dropped, so a part that does not fit is never
+    // picked (v-148, D257).
+    if (
+      result.kind === "none" &&
+      full.query.year &&
+      full.query.vehicle &&
+      !full.query.part_number &&
+      !answered.has("year") &&
+      !frame.slots.year_again
+    ) {
+      const withoutYear = { ...full.query };
+      delete withoutYear.year;
+      const again = await turn.find(withoutYear);
+      if (again.kind !== "none") {
+        frame.slots.year_again = understood(String(full.query.year));
+        delete frame.slots.year;
+        const years = again.kind === "ask" && again.slot === "year" ? again.options : [];
+        return askSlot(
+          "year",
+          question({ slot: "year", vehicle: String(full.query.vehicle) }),
+          years.map((option, index) => ({
+            id: `opt-${index + 1}`,
+            label: option.replace("-", "–"),
+            value: option,
+          })),
+        );
+      }
+    }
     if (result.kind === "none" || result.unmet) return { kind: "parts", result, query: full.query };
     let rows = result.rows;
     const picked = str(frame.slots.part_pick?.value);
     if (picked) rows = rows.filter((row) => row.hostPartId === picked);
+    if (rows.length > 1 && capability.template === "rack_update") {
+      // One number on two parts, the rack it is on now said ("B-2 theke soriye G-4 e rakhen"): that rack picks it,
+      // never a question of quality the speaker cannot answer (c-206, D257).
+      const target = str(frame.slots.new_rack?.value);
+      const from = racksInText(frame.request ?? turn.request, turn.racks ?? [])
+        .map((rack) => rack.name)
+        .filter((rack) => rack !== target);
+      const there = rows.filter((row) => row.rack !== null && from.includes(row.rack));
+      if (there.length) rows = there;
+    }
     if (rows.length > 1) {
       const separated = separatingSlot(rows, turn.tier, answered);
       if (separated) {
@@ -789,7 +830,9 @@ export async function advanceWrite(frame: RequestFrame, turn: WriteTurn): Promis
     const unit = chosen.unit ?? "piece";
     const slot = frame.slots.quantity;
     const forReturn = sale ? { returning: true } : {};
-    if (!slot && sale?.left === 1) frame.slots.quantity = understood(1, { display: quantityText(1, unit) });
+    // A return said of "the" part ("প্যাডটা ফেরত দিছে", "pad ta ferot") is one, shown on the sheet, never asked (D257).
+    const one = sale?.left === 1 || (sale !== null && saysOne(normalize(frame.request ?? "").tokens));
+    if (!slot && one) frame.slots.quantity = understood(1, { display: quantityText(1, unit) });
     else if (!slot) return ask("quantity", { unit, ...forReturn });
     else if (typeof slot.value !== "number") {
       const said =
