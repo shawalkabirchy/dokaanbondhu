@@ -1160,7 +1160,8 @@ const EACH_BEFORE = new Set(
     "each",
   ].map(word),
 );
-const TAKA = new Set(["টাকা", "taka", "tk", "৳"].map(word));
+// টাকার with দামে or after প্রতি: "প্রত্যেকটা দুইশ পঞ্চাশ টাকার দামে" is 250 each (v-169, D257)
+const TAKA = new Set(["টাকা", "টাকার", "taka", "takar", "tk", "৳"].map(word));
 
 /**
  * The price a sale's request sets (D176, D177): with টাকায় or দামে the price of what the line says, with করে or

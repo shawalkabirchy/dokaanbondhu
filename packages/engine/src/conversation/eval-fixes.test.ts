@@ -538,3 +538,33 @@ describe("the clean-up's answers in the 16 clips' run, never taken (v-169, c-103
     });
   }
 });
+
+describe("a sale's price said “… টাকার দামে”, the model's price nobody said (v-169)", () => {
+  for (const app of APPS) {
+    const said = PART_SAID[app.name]!;
+    it.each([
+      {
+        style: "Bangla",
+        text: `রহিম মোটরসকে দুইটা ${said.bangla} প্রত্যেকটা দুঃশ পঞ্চাশ টাকার দামে বাকিতে বিক্রি করং`,
+      },
+      {
+        style: "Banglish",
+        text: `rahim motors ke duita ${said.banglish} prottekta duisho ponchash takar dame bakite bikri koro`,
+      },
+    ])(`is 250 each on the sheet (${app.name}, $style)`, async ({ text }) => {
+      const shop = connect(app, { role: "owner" });
+      // The model's call in the run: a price of 2050 nobody said.
+      const reply = await shop.say(fresh(), { text }, [
+        ...call("record_sale", {
+          customer: "Rahim Motors",
+          items: [{ part: said.part, quantity: "2", price: "2050" }],
+          payment: "due",
+        }),
+        { text: "" },
+      ]);
+      expect(reply.confirm, reply.reply).toBeDefined();
+      const body = shop.calls.at(-1)?.body as { items: Record<string, unknown>[] };
+      expect(body.items[0]).toMatchObject({ quantity: 2, unit_price_taka: 250 });
+    });
+  }
+});

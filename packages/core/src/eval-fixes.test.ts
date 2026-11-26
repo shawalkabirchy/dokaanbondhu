@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRackWord, parseAmount, writeCueOf } from "./actions";
+import { isRackWord, parseAmount, salePriceOf, writeCueOf } from "./actions";
 import { saysOne } from "./quantity";
 import { asksNoneLeft, isWhoWord, reminderCueOf } from "./reminders";
 import { normalize } from "./text";
@@ -55,6 +55,21 @@ describe("money and how many (D257)", () => {
   ])("“the” part is one; a number said is not ($style)", ({ one, two }) => {
     expect(saysOne(normalize(one).tokens)).toBe(true);
     expect(saysOne(normalize(two).tokens)).toBe(false);
+  });
+});
+
+describe("a sale's price said “… টাকার দামে” (v-169, D257)", () => {
+  it.each([
+    {
+      style: "Bangla",
+      text: "জনতা অটোকে দুইটা নোয়া দুই হাজার পনেরে নন জেনুইন মোবিল ফিল্টার প্রত্যেকটা দুঃশ পঞ্চাশ টাকার দামে বাকিতে বিক্রি করং",
+    },
+    {
+      style: "Banglish",
+      text: "janata auto ke duita noah 2015 er non genuine mobil filter prottekta duisho ponchash takar dame bakite bikri koro",
+    },
+  ])("is 250 each ($style)", ({ text }) => {
+    expect(salePriceOf(text)).toEqual({ amount: 250, each: true });
   });
 });
 
