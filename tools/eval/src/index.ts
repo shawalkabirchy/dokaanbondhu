@@ -76,7 +76,12 @@ const uploadEnvSchema = z.object({
 });
 
 function latestRun(): string {
-  const runs = existsSync(runsDir) ? readdirSync(runsDir).sort() : [];
+  // only a full run's folder (it has run-state.json): a clip run's "clips-…" folder sorts after the dated ones
+  const runs = existsSync(runsDir)
+    ? readdirSync(runsDir)
+        .filter((name) => existsSync(join(runsDir, name, "run-state.json")))
+        .sort()
+    : [];
   const last = runs.at(-1);
   if (!last) throw new Error("no earlier run in tools/eval/runs");
   return last;
