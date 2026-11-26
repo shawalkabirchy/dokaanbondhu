@@ -988,6 +988,27 @@ export function customerKindOf(
   return null;
 }
 
+/** "Don't know" said to a question (D257): "জানি না", "মনে নেই", "jani na", "mone nai". */
+const DONT_KNOW = [
+  "জানি না",
+  "জানিনা",
+  "জানি নাই",
+  "জানি নে",
+  "মনে নেই",
+  "মনে নাই",
+  "jani na",
+  "janina",
+  "jani nai",
+  "mone nei",
+  "mone nai",
+  "dont know",
+  "don't know",
+];
+export function saysDontKnow(text: string): boolean {
+  const tokens = normalize(text).tokens;
+  return DONT_KNOW.some((phrase) => said(tokens, phrase));
+}
+
 const NO_PHONE = ["নেই", "নাই", "না", "জানি না", "পরে", "nei", "nai", "na", "no", "none", "jani na", "pore"];
 
 /**

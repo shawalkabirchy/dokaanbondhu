@@ -401,3 +401,140 @@ describe("a brand said by its exact name, the model leaving it out (c-062)", () 
     expect(reply.trace.lookups[0]?.resolved.brand ?? null).toBeNull();
   });
 });
+
+// The fixes checked on the 16 clips once more (D257): stock coming in with its supplier not known, its count, and the
+// clean-up's answers in that run.
+
+/** Each app's part said with its car and year, for stock coming in and a sale. */
+const PART_SAID: Record<string, { bangla: string; banglish: string; part: object }> = {
+  GearGrid: {
+    bangla: "ফিল্ডার ২০১৫ এর ব্রেক প্যাড",
+    banglish: "fielder 2015 er brake pad",
+    part: { part_type: "brake pad", vehicle: "Fielder", year: "2015" },
+  },
+  "shop B": {
+    bangla: "ফিল্ডার ২০১৫ এর ব্রেক প্যাড",
+    banglish: "fielder 2015 er brake pad",
+    part: { part_type: "brake pad", vehicle: "Fielder", year: "2015" },
+  },
+  "an app with its own words": {
+    bangla: "Tucson ২০১৮ এর Platinum ব্রেক প্যাড",
+    banglish: "tucson 2018 er platinum brake pad",
+    part: { part_type: "brake pad", vehicle: "Tucson", year: "2018", quality: "Platinum" },
+  },
+};
+
+/** Answers each question the write asks, as the card would, until the sheet or a question it has no answer for. */
+async function toSheet(
+  shop: ReturnType<typeof connect>,
+  first: Awaited<ReturnType<ReturnType<typeof connect>["say"]>>,
+  answers: Record<string, string>,
+) {
+  let reply = first;
+  for (let step = 0; step < 5 && reply.asked && answers[reply.asked]; step += 1)
+    reply = await shop.say(reply.state, { text: answers[reply.asked]! }, [{ text: "" }]);
+  return reply;
+}
+
+describe("stock coming in, the supplier not known (c-128, c-156, c-160)", () => {
+  for (const app of APPS) {
+    const said = PART_SAID[app.name]!;
+    it.each([
+      { style: "Bangla", text: `দুইটা ${said.bangla} মাল উঠান ৪০০ করে`, dontKnow: "জানি না" },
+      { style: "Banglish", text: `duita ${said.banglish} mal uthan 400 kore`, dontKnow: "jani na" },
+    ])(
+      `“don't know” is told the supplier is needed, and asked again (${app.name}, $style)`,
+      async ({ text, dontKnow }) => {
+        const shop = connect(app);
+        const first = await shop.say(fresh(), { text }, [
+          ...call("stock_in", { items: [{ part: said.part, quantity: "2", unit_cost: "400" }] }),
+          { text: "" },
+        ]);
+        const asked = await toSheet(shop, first, { unit_cost: "400" });
+        expect(asked.asked, asked.reply).toBe("supplier");
+        const reply = await shop.say(asked.state, { text: dontKnow }, [{ text: "" }]);
+        expect(reply.reply).toBe(
+          "কার কাছ থেকে মাল এসেছে, সেটা ছাড়া স্টকে তোলা যায় না। সাপ্লায়ারের নাম বলুন।",
+        );
+        expect(reply.asked).toBe("supplier");
+        expect(reply.trace.llm_calls).toBe(0);
+      },
+    );
+
+    it.each([
+      { style: "Bangla", text: `নবাবপুর অটো পার্টস থেকে দশটা ${said.bangla} মাল উঠান ৪০০ করে`, cash: "নগদ" },
+      {
+        style: "Banglish",
+        text: `nawabpur auto parts theke doshta ${said.banglish} mal uthan 400 kore`,
+        cash: "nogod",
+      },
+    ])(
+      `the count said, never the price the model put in as it (${app.name}, $style)`,
+      async ({ text, cash }) => {
+        const shop = connect(app);
+        // The model's call in the run: the price as the count.
+        const first = await shop.say(fresh(), { text }, [
+          ...call("stock_in", {
+            supplier: "Nawabpur Auto Parts",
+            items: [{ part: said.part, quantity: "400", unit_cost: "400" }],
+          }),
+          { text: "" },
+        ]);
+        const reply = await toSheet(shop, first, {
+          unit_cost: "400",
+          payment: cash,
+          supplier: "Nawabpur Auto Parts",
+        });
+        expect(reply.confirm?.text, reply.reply).toMatch(/১০ সেট|১০টা/);
+        expect(reply.confirm?.text).not.toMatch(/৪০০ সেট|৪০০টা/);
+      },
+    );
+  }
+});
+
+describe("the clean-up's answers in the 16 clips' run, never taken (v-169, c-103)", () => {
+  for (const app of APPS) {
+    const said = PART_SAID[app.name]!;
+    it.each([
+      {
+        style: "Bangla",
+        text: `রহিম মোটরসকে দুইটা ${said.bangla} প্রত্যেকটা দুঃশ পঞ্চাশ টাকার দামে বাকিতে দাও`,
+        heard: "দুঃশ",
+      },
+      {
+        style: "Banglish",
+        text: `rahim motors ke duita ${said.banglish} prottekta duisho ponchash takar dame bakite dao`,
+        heard: "duisho",
+      },
+    ])(`two hundred is no “bush” (${app.name}, $style)`, async ({ text, heard }) => {
+      const shop = connect(app, { cleanups: [JSON.stringify({ replaced: [{ heard, meant: "বুশ" }] })] });
+      const reply = await shop.say(fresh(), { text }, [
+        ...call("record_sale", {
+          customer: "Rahim Motors",
+          items: [{ part: said.part, quantity: "2", price: "250" }],
+          payment: "due",
+        }),
+        { text: "" },
+      ]);
+      expect(reply.trace.cleanup ?? [], reply.reply).toEqual([]);
+      expect(JSON.stringify(reply.cleanups)).not.toContain(heard);
+    });
+  }
+
+  for (const app of APPS) {
+    const stocked: Shop = {
+      ...app,
+      stock: { [app.parts[0]!.id]: 0, [app.parts[1]!.id]: 1 },
+      reorder: Object.fromEntries(app.parts.map((part) => [part.id, 2])),
+    };
+    it.each([
+      { style: "Bangla", text: "কোন কোন মাল শেষের দিকে?", heard: "শেষের", meant: "সাইলেন্সার" },
+      { style: "Banglish", text: "kon kon mal shesher dike?", heard: "shesher", meant: "Silencer" },
+    ])(`“almost out” is no silencer (${app.name}, $style)`, async ({ text, heard, meant }) => {
+      const shop = connect(stocked, { cleanups: [JSON.stringify({ replaced: [{ heard, meant }] })] });
+      const reply = await shop.say(fresh(), { text }, [{ text: "" }]);
+      expect(reply.reply).toMatch(/^২টি পার্ট কম আছে/);
+      expect(reply.trace.cleanup ?? []).toEqual([]);
+    });
+  }
+});

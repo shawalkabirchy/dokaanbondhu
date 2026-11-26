@@ -105,6 +105,15 @@ const WHO_WORDS = new Set(
   ),
 );
 
+/** The words of the reminders' phrases ("শেষের", "দিকে", "kom", "baki"): never a misheard name (c-103, D257). */
+const REMINDER_WORDS = new Set(
+  [...LOW_STOCK, ...OLD_DUES, ...NONE_LEFT].flatMap((phrase) => normalize(phrase).tokens),
+);
+export function isReminderWord(token: string): boolean {
+  const words = normalize(token).tokens;
+  return words.length > 0 && words.every((word) => REMINDER_WORDS.has(word));
+}
+
 /** True when every word of a name heard is a "who" word: "purono baki kar kar?" names no customer (D257). */
 export function isWhoWord(heard: string): boolean {
   const tokens = normalize(heard).tokens;

@@ -61,6 +61,7 @@ import {
   lowStockAnswer,
   oldDuesAnswer,
   reminderCueOf,
+  saysDontKnow,
   asksNoneLeft,
   isWhoWord,
   noneLeftAnswer,
@@ -75,6 +76,9 @@ import {
   EVERYDAY_WORDS,
   gluedRack,
 } from "@dokaanbondhu/core";
+
+/** "Don't know" to the supplier question (D257): stock comes in from someone, so it is asked again. */
+const NEED_SUPPLIER = "কার কাছ থেকে মাল এসেছে, সেটা ছাড়া স্টকে তোলা যায় না। সাপ্লায়ারের নাম বলুন।";
 import { cleanTranscript, nearHints } from "./near-words";
 import { commonValues } from "./keyterms";
 import {
@@ -1498,7 +1502,16 @@ export async function runTurn(
         parseQuantity(normalize(String(value)).tokens)?.value ?? Number(asciiDigits(String(value)));
       return !Number.isFinite(number) || !saidNumbers(text).has(number);
     };
-    if (item && unsaid(line.quantity)) {
+    // The line's price put in as its count ("doshta … 400 kore" as 400 sets): the count said is the quantity (c-160,
+    // D257).
+    const asNumber = (value: unknown) =>
+      value === undefined || value === null || value === "" ? NaN : Number(asciiDigits(String(value)));
+    const priceAsCount =
+      Number.isFinite(asNumber(line.quantity)) &&
+      [line.unit_cost, line.price, line.unit_price].some(
+        (price) => asNumber(price) === asNumber(line.quantity),
+      );
+    if (item && (unsaid(line.quantity) || priceAsCount)) {
       const tokens = normalize(text, deps.dictionary.variants).tokens;
       const said = tokens
         .map((_, index) => parseQuantity(tokens.slice(index, index + 2)))
@@ -2201,6 +2214,10 @@ export async function runTurn(
       now,
     });
     const correction = filled ? null : correctedSlot(text, deps.dictionary, now);
+    // "জানি না" to "কার কাছ থেকে?": stock coming in needs its supplier, so it is said, and the question stays; the
+    // answer had gone to the model and come back empty (c-128, c-156, c-160, D257).
+    if (!filled && !correction && asked === "supplier" && frame.capabilityId && saysDontKnow(text))
+      final = { kind: "answer", text: NEED_SUPPLIER };
     // A name asked again because it was heard unclearly, now answered: how it was heard may be learned (D155).
     if ((filled === "customer" || filled === "supplier") && frame.capabilityId) {
       const said = frame.slots[`said_${filled}`]?.value;

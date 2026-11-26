@@ -8,6 +8,7 @@ import {
   EVERYDAY_WORDS,
   isNumberWord,
   isRackWord,
+  isReminderWord,
   isWhoWord,
   knownWords,
   partOfYear,
@@ -55,7 +56,9 @@ const NEAR_SOUND = 0.55;
 /** A word that sounds this much like an everyday word is that word misheard ("সেন্ট" for "সেট"), never a name. */
 const EVERYDAY_SOUND = 0.75;
 /** Hundreds said as one word: দুইশ, তিনশো. */
-const HUNDREDS = /^(এক|দুই|দু|তিন|চার|পাঁচ|ছয়|ছ|সাত|আট|নয়)শো?$/u;
+/** Hundreds typed in Banglish, one word: "duisho", "tinsho", "pachsho" (D257). */
+const HUNDREDS_LATIN = /^(ek|dui|du|tin|char|pach|panch|choy|soy|sat|at|aat|noy|nou)s?h?o+w?$/;
+const HUNDREDS = /^(এক|দুই|দুঃ|দু|তিন|চার|পাঁচ|ছয়|ছ|সাত|আট|নয়)শো?$/u;
 /**
  * How close the LLM's answer must sound to a listed name to be that name, written in the other script (New Dhaka
  * Garage written নিউ ঢাকা গ্যারেজ sounds 0.62 alike).
@@ -323,7 +326,9 @@ export function nearHints(input: NearInput): NearHint[] {
   // "বিশ্বের" had become "Bajaj Discover 125" and the year 2000 (v-037, D255).
   const yearWords = new Set(tokens.filter((_, index) => partOfYear(tokens, index)));
   const numeric = (token: string) =>
-    [token, ...stripEnding(token)].some((form) => isNumberWord(form) || HUNDREDS.test(form)) ||
+    [token, ...stripEnding(token)].some(
+      (form) => isNumberWord(form) || HUNDREDS.test(form) || HUNDREDS_LATIN.test(form),
+    ) ||
     gluedQuantity(token) ||
     digits.has(token) ||
     yearWords.has(token);
@@ -334,6 +339,8 @@ export function nearHints(input: NearInput): NearHint[] {
     !isRackWord(token) &&
     // "kar" (whose) in "purono baki kar kar?": no customer's name, it had become Karim Auto (c-210, D257)
     !isWhoWord(token) &&
+    // a reminder's own words: "শেষের" (in "শেষের দিকে", almost out) had become a silencer (c-103, D257)
+    !isReminderWord(token) &&
     !known.has(token) &&
     !sharedName(token) &&
     !appWordOf(token) &&

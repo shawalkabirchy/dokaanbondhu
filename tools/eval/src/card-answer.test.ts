@@ -108,3 +108,12 @@ describe("a question answered from the card (D237)", () => {
     );
   });
 });
+
+describe("the supplier named on the card (D257)", () => {
+  it("answers who the stock came from with the card's name", () => {
+    expect(cardAnswer(v119, { slot: "supplier" })).toBe("Bangshal Motor Supply");
+  });
+  it("says nothing when the card names no supplier", () => {
+    expect(cardAnswer(v205, { slot: "supplier" })).toBeNull();
+  });
+});

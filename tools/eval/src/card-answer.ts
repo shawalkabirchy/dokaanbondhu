@@ -17,6 +17,8 @@ const FROM_SLOTS: Record<string, string> = {
   quantity: "quantity",
   amount: "amount",
   new_rack: "rack",
+  // the supplier named on the card ("received from Nawabpur Auto Parts Ltd."), as the speaker would answer (D257)
+  supplier: "supplier",
 };
 
 /** The details the card names: the expected search, or the write's part, its own values, and a fitment's new car. */
