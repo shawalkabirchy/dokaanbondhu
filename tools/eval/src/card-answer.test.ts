@@ -117,3 +117,26 @@ describe("the supplier named on the card (D257)", () => {
     expect(cardAnswer(v205, { slot: "supplier" })).toBeNull();
   });
 });
+
+describe("a year range on the card (D257)", () => {
+  const v135 = itemSchema.parse({
+    id: "v-135",
+    channel: "voice",
+    split: "held_out",
+    kind: "write",
+    as: "owner",
+    task_card: "As the owner: record that part LOC-AIR-1163 (air filter) also fits the 2007-2013 Noah",
+    task_card_bn: "মালিক হিসেবে: লিখে রাখুন LOC-AIR-1163 পার্টটা ২০০৭-২০১৩ সালের নোয়াতেও লাগে",
+    expected: {
+      action: "add_fitment",
+      slots: { vehicle: { model: "Toyota Noah", year: 2007 } },
+      part_key: "LOC-AIR-1163",
+    },
+    script: { confirm: "yes" },
+  });
+  it("taps the button with the card's years, a hyphen there and a dash on the button", () => {
+    expect(cardAnswer(v135, { slot: "fit_year", options: ["2001–2007", "2007–2013", "2014–2021"] })).toBe(
+      "2007–2013",
+    );
+  });
+});

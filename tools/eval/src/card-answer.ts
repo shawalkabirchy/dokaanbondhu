@@ -39,9 +39,13 @@ function cardDetails(item: Item): Record<string, unknown> {
   };
 }
 
+/** A year range written with a hyphen ("2007-2013") as its two years, as a button's "2007–2013" reads (D257). */
+const apartRanges = (text: string) =>
+  asciiDigits(text).replace(/\b((?:19|20)\d{2})\s*[-–]\s*((?:19|20)\d{2})\b/g, "$1 $2");
+
 /** The card's words, each number whole ("5,850" is 5850), for finding a value said on it. */
 function cardWords(item: Item): string {
-  const text = asciiDigits(`${item.task_card} ${item.task_card_bn ?? ""}`).replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const text = apartRanges(`${item.task_card} ${item.task_card_bn ?? ""}`).replace(/(\d),(?=\d{3}\b)/g, "$1");
   return ` ${normalize(text).tokens.join(" ")} `;
 }
 
@@ -49,7 +53,9 @@ function cardWords(item: Item): string {
 export function cardAnswer(item: Item, turn: Pick<TurnRecord, "slot" | "options">): string | null {
   if (turn.options?.length) {
     // A button's own words, before its details ("এয়ার ফিল্টার, Toyota"), all on the card; only when one button is.
-    const forms = new Set(normalize(`${item.task_card_bn ?? ""} ${item.task_card}`).forms.flat());
+    const forms = new Set(
+      normalize(apartRanges(`${item.task_card_bn ?? ""} ${item.task_card}`)).forms.flat(),
+    );
     const fitting = turn.options.filter((label) => {
       const words = normalize(label.split(",")[0] ?? "").forms;
       return words.length > 0 && words.every((word) => word.some((form) => forms.has(form)));
